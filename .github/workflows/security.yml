@@ -1,0 +1,93 @@
+# Phase 11, Slice 11.4 — Dependency & code scanning + SBOM.
+#   * npm audit  — flags vulnerable JavaScript/TypeScript packages.
+#   * cargo audit — flags vulnerable Rust crates (RustSec advisory DB).
+#   * CodeQL     — static analysis scanner for the JS/TS sources.
+#   * SBOM       — CycloneDX software bill of materials, generated on each build
+#                  and uploaded as a build artifact.
+name: Security
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm audit (JS deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Fails the job (= flags the PR) when a high/critical advisory is found.
+      - name: npm audit
+        run: npm run audit
+
+  cargo-audit:
+    name: cargo audit (Rust deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit
+        working-directory: src-tauri
+        run: cargo audit
+
+  codeql:
+    name: CodeQL (static analysis)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+
+  sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Generate npm SBOM (CycloneDX)
+        run: npm run sbom
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+      - name: Generate Rust SBOM (CycloneDX)
+        working-directory: src-tauri
+        run: cargo cyclonedx --format json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom.json
+            src-tauri/**/*.cdx.json
+          if-no-files-found: warn

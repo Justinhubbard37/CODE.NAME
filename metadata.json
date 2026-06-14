@@ -1,0 +1,6 @@
+{
+  "name": "CODE NAME",
+  "description": "Local-first, model-agnostic agent harness over a self-growing knowledge ecosystem (Knowledge Graph, GraphRAG, vector store). Two-pane governed desktop workspace with hard capability gates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

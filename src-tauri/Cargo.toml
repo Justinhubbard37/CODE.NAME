@@ -1,0 +1,29 @@
+[package]
+name = "codename"
+version = "0.1.0"
+description = "CODE NAME — local-first agent harness"
+authors = ["CODE NAME"]
+edition = "2021"
+
+[lib]
+name = "codename_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# HTTP client for the Rust shell to talk to the loopback sidecar (Phase 1).
+# http-only (no TLS) — we only ever call 127.0.0.1.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
+# OS keychain for API keys (Phase 2.4) — Windows Credential Manager / macOS
+# Keychain / Linux Secret Service. Keeps secrets out of plain-text files.
+keyring = "2"
+# Structured logging — Phase 9, Slice 9.1
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"

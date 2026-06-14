@@ -1,0 +1,30 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Playwright e2e (Phase 11, Slice 11.2)
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Generated SBOMs (Phase 11, Slice 11.4)
+sbom.json
+*.cdx.json
+
+# Python / sidecar caches
+sidecar/**/__pycache__/
+sidecar/**/*.pyc
+
+# Updater signing keys (Phase 12, Slice 12.3) - never commit private keys
+*.key
+.tauri/

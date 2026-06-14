@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/*
+ * Offline-first fonts: no network @import. We use the platform's built-in
+ * sans and monospace stacks so the app renders fully with no internet.
+ * (Space Grotesk / JetBrains Mono can be re-added later as bundled font files
+ *  via @fontsource if we want the exact look without a network call.)
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Consolas", "JetBrains Mono", SFMono-Regular, monospace;
+}
+
+/*
+ * Phase 10 Slice 10.5 — theme polish.
+ * Centralised design tokens for the dark "command console" look so spacing,
+ * surfaces, and accents are consistent and tunable from one place instead of
+ * being scattered as literals. Existing Tailwind neutral-/emerald- classes
+ * still work; these tokens are additive and used by the polished surfaces.
+ */
+:root {
+  --surface-base: #0a0a0a;       /* app background            */
+  --surface-raised: #171717;     /* neutral-900 panels        */
+  --surface-overlay: #0a0a0acc;  /* translucent trays/dialogs */
+  --border-subtle: #262626;      /* neutral-800 hairlines     */
+  --border-strong: #404040;      /* neutral-700 active edges  */
+  --accent: #34d399;             /* emerald-400 primary accent*/
+  --accent-dim: #34d39933;       /* accent at low opacity     */
+  --space-tight: 0.375rem;
+  --space-snug: 0.75rem;
+  --space-roomy: 1.25rem;
+  --radius: 2px;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: var(--surface-base);
+  overflow: hidden;
+}
+
+/* Accessibility (Slice 10.2 groundwork): a visible, consistent keyboard-focus
+ * ring everywhere, without affecting mouse users. Components may override with
+ * their own focus-visible styles. */
+:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--accent-dim);
+}
+
+/* Custom styles for ReactFlow specific to the dark theme */
+.react-flow__edge-path {
+  stroke-dasharray: 2, 2;
+}
+
+/* Hide horizontal scrollbar on the task tab strip */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Slimmer scrollbars in dark panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
