@@ -8,6 +8,8 @@
 
 use std::fmt;
 
+use serde::Serialize;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Gate {
     Tools,
@@ -123,6 +125,126 @@ impl GateSnapshot {
             Gate::Network => self.network,
             Gate::Filesystem => self.filesystem,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GateValues {
+    pub filesystem: bool,
+    pub network: bool,
+    pub tools: bool,
+}
+
+impl GateValues {
+    pub const fn new(filesystem: bool, network: bool, tools: bool) -> Self {
+        Self {
+            filesystem,
+            network,
+            tools,
+        }
+    }
+
+    pub fn is_open(self, gate: Gate) -> bool {
+        match gate {
+            Gate::Tools => self.tools,
+            Gate::Network => self.network,
+            Gate::Filesystem => self.filesystem,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GatePolicyCeiling {
+    pub max_filesystem: bool,
+    pub max_network: bool,
+    pub max_tools: bool,
+}
+
+impl Default for GatePolicyCeiling {
+    fn default() -> Self {
+        Self {
+            max_filesystem: true,
+            max_network: true,
+            max_tools: true,
+        }
+    }
+}
+
+impl GatePolicyCeiling {
+    pub const fn new(max_filesystem: bool, max_network: bool, max_tools: bool) -> Self {
+        Self {
+            max_filesystem,
+            max_network,
+            max_tools,
+        }
+    }
+
+    pub fn allows(self, gate: Gate) -> bool {
+        match gate {
+            Gate::Tools => self.max_tools,
+            Gate::Network => self.max_network,
+            Gate::Filesystem => self.max_filesystem,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LockedGate {
+    pub gate: &'static str,
+    pub reason: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveGateState {
+    pub filesystem: bool,
+    pub network: bool,
+    pub tools: bool,
+    pub changed_by_policy: bool,
+    pub locked_gates: Vec<LockedGate>,
+}
+
+impl EffectiveGateState {
+    pub fn values(&self) -> GateValues {
+        GateValues::new(self.filesystem, self.network, self.tools)
+    }
+}
+
+pub fn apply_gate_policy(requested: GateValues, ceiling: GatePolicyCeiling) -> EffectiveGateState {
+    let filesystem = requested.filesystem && ceiling.max_filesystem;
+    let network = requested.network && ceiling.max_network;
+    let tools = requested.tools && ceiling.max_tools;
+
+    let mut locked_gates = Vec::new();
+    if requested.filesystem && !ceiling.max_filesystem {
+        locked_gates.push(LockedGate {
+            gate: Gate::Filesystem.as_str(),
+            reason: "filesystem gate is locked closed by Rust policy",
+        });
+    }
+    if requested.network && !ceiling.max_network {
+        locked_gates.push(LockedGate {
+            gate: Gate::Network.as_str(),
+            reason: "network gate is locked closed by Rust policy",
+        });
+    }
+    if requested.tools && !ceiling.max_tools {
+        locked_gates.push(LockedGate {
+            gate: Gate::Tools.as_str(),
+            reason: "tools gate is locked closed by Rust policy",
+        });
+    }
+
+    EffectiveGateState {
+        filesystem,
+        network,
+        tools,
+        changed_by_policy: filesystem != requested.filesystem
+            || network != requested.network
+            || tools != requested.tools,
+        locked_gates,
     }
 }
 
@@ -665,5 +787,100 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn fully_open_ceiling_applies_requested_gates() {
+        let requested = GateValues::new(true, false, true);
+        let effective = apply_gate_policy(requested, GatePolicyCeiling::default());
+        assert_eq!(effective.values(), requested);
+        assert!(!effective.changed_by_policy);
+        assert!(effective.locked_gates.is_empty());
+    }
+
+    #[test]
+    fn closing_gates_is_always_allowed() {
+        let requested = GateValues::new(false, false, false);
+        let ceiling = GatePolicyCeiling::new(false, false, false);
+        let effective = apply_gate_policy(requested, ceiling);
+        assert_eq!(effective.values(), requested);
+        assert!(!effective.changed_by_policy);
+        assert!(effective.locked_gates.is_empty());
+    }
+
+    #[test]
+    fn network_lock_keeps_requested_network_open_closed() {
+        let effective = apply_gate_policy(
+            GateValues::new(true, true, true),
+            GatePolicyCeiling::new(true, false, true),
+        );
+        assert_eq!(effective.values(), GateValues::new(true, false, true));
+        assert!(effective.changed_by_policy);
+        assert!(effective
+            .locked_gates
+            .iter()
+            .any(|locked| locked.gate == "network"));
+    }
+
+    #[test]
+    fn tools_lock_keeps_requested_tools_open_closed() {
+        let effective = apply_gate_policy(
+            GateValues::new(true, true, true),
+            GatePolicyCeiling::new(true, true, false),
+        );
+        assert_eq!(effective.values(), GateValues::new(true, true, false));
+        assert!(effective.changed_by_policy);
+        assert!(effective
+            .locked_gates
+            .iter()
+            .any(|locked| locked.gate == "tools"));
+    }
+
+    #[test]
+    fn filesystem_lock_keeps_requested_filesystem_open_closed() {
+        let effective = apply_gate_policy(
+            GateValues::new(true, true, true),
+            GatePolicyCeiling::new(false, true, true),
+        );
+        assert_eq!(effective.values(), GateValues::new(false, true, true));
+        assert!(effective.changed_by_policy);
+        assert!(effective
+            .locked_gates
+            .iter()
+            .any(|locked| locked.gate == "filesystem"));
+    }
+
+    #[test]
+    fn multiple_locked_gates_remain_closed() {
+        let effective = apply_gate_policy(
+            GateValues::new(true, true, true),
+            GatePolicyCeiling::new(false, false, true),
+        );
+        assert_eq!(effective.values(), GateValues::new(false, false, true));
+        assert_eq!(effective.locked_gates.len(), 2);
+    }
+
+    #[test]
+    fn gate_policy_result_is_deterministic() {
+        let requested = GateValues::new(true, true, true);
+        let ceiling = GatePolicyCeiling::new(false, true, false);
+        let first = apply_gate_policy(requested, ceiling);
+        let second = apply_gate_policy(requested, ceiling);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn gate_policy_response_does_not_contain_sensitive_data() {
+        let effective = apply_gate_policy(
+            GateValues::new(true, true, true),
+            GatePolicyCeiling::new(false, false, false),
+        );
+        let serialized = serde_json::to_string(&effective).expect("serialize effective gates");
+        for forbidden in ["Bearer", "token", "api", "secret", "prompt", "sk-"] {
+            assert!(
+                !serialized.to_lowercase().contains(forbidden),
+                "effective gate response should not contain sensitive term '{forbidden}'"
+            );
+        }
     }
 }

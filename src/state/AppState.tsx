@@ -28,6 +28,7 @@ import type {
   ChatMessage,
   ConfigProfile,
   Endpoint,
+  EffectiveGateState,
   NodeData,
   QuarantineItem,
   SecurityGates,
@@ -395,15 +396,37 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // process level (Phase 1.3), not just in the UI. No-op in a plain browser.
   useEffect(() => {
     if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+    let cancelled = false;
     import('@tauri-apps/api/core')
       .then(({ invoke }) =>
-        invoke('set_gates', {
+        invoke<EffectiveGateState>('set_gates', {
           filesystem: gates.filesystem,
           network: gates.network,
           tools: gates.tools,
         }),
       )
+      .then((effective) => {
+        if (cancelled) return;
+        setGates((current) => {
+          if (
+            current.filesystem === effective.filesystem &&
+            current.network === effective.network &&
+            current.tools === effective.tools
+          ) {
+            return current;
+          }
+          return {
+            filesystem: effective.filesystem,
+            network: effective.network,
+            tools: effective.tools,
+          };
+        });
+      })
       .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, [gates]);
 
   const activeProfile = useMemo(

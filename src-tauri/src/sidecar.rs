@@ -18,6 +18,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+use crate::policy::{apply_gate_policy, EffectiveGateState, GatePolicyCeiling, GateValues};
+
 #[derive(Default, Clone, Serialize)]
 pub struct SidecarInfo {
     pub status: String, // stopped | starting | ready | restarting | error
@@ -44,6 +46,9 @@ pub struct GateState {
     pub filesystem: AtomicBool,
     pub network: AtomicBool,
     pub tools: AtomicBool,
+    max_filesystem: AtomicBool,
+    max_network: AtomicBool,
+    max_tools: AtomicBool,
 }
 
 impl Default for GateState {
@@ -52,29 +57,143 @@ impl Default for GateState {
             filesystem: AtomicBool::new(true),
             network: AtomicBool::new(true),
             tools: AtomicBool::new(true),
+            max_filesystem: AtomicBool::new(true),
+            max_network: AtomicBool::new(true),
+            max_tools: AtomicBool::new(true),
         }
     }
 }
 
 impl GateState {
+    #[cfg(test)]
+    pub fn with_policy_ceiling(ceiling: GatePolicyCeiling) -> Self {
+        Self {
+            filesystem: AtomicBool::new(ceiling.max_filesystem),
+            network: AtomicBool::new(ceiling.max_network),
+            tools: AtomicBool::new(ceiling.max_tools),
+            max_filesystem: AtomicBool::new(ceiling.max_filesystem),
+            max_network: AtomicBool::new(ceiling.max_network),
+            max_tools: AtomicBool::new(ceiling.max_tools),
+        }
+    }
+
     pub fn tools_open(&self) -> bool {
         self.tools.load(Ordering::SeqCst)
     }
     pub fn network_open(&self) -> bool {
         self.network.load(Ordering::SeqCst)
     }
+    #[allow(dead_code)]
     pub fn filesystem_open(&self) -> bool {
         self.filesystem.load(Ordering::SeqCst)
+    }
+
+    pub fn policy_ceiling(&self) -> GatePolicyCeiling {
+        GatePolicyCeiling::new(
+            self.max_filesystem.load(Ordering::SeqCst),
+            self.max_network.load(Ordering::SeqCst),
+            self.max_tools.load(Ordering::SeqCst),
+        )
+    }
+
+    pub fn apply_requested(&self, requested: GateValues) -> EffectiveGateState {
+        let effective = apply_gate_policy(requested, self.policy_ceiling());
+        self.filesystem
+            .store(effective.filesystem, Ordering::SeqCst);
+        self.network.store(effective.network, Ordering::SeqCst);
+        self.tools.store(effective.tools, Ordering::SeqCst);
+        effective
     }
 }
 
 /// Webview → shell: push the current gate state. Called whenever the user
-/// toggles a gate so the Rust enforcement stays in sync with the UI.
+/// toggles a gate. Rust applies its policy ceiling and returns the effective
+/// state so the webview cannot keep displaying a gate Rust refused to open.
 #[tauri::command]
-pub fn set_gates(filesystem: bool, network: bool, tools: bool, gates: State<GateState>) {
-    gates.filesystem.store(filesystem, Ordering::SeqCst);
-    gates.network.store(network, Ordering::SeqCst);
-    gates.tools.store(tools, Ordering::SeqCst);
+pub fn set_gates(
+    filesystem: bool,
+    network: bool,
+    tools: bool,
+    gates: State<GateState>,
+) -> EffectiveGateState {
+    gates.apply_requested(GateValues::new(filesystem, network, tools))
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    #[test]
+    fn fully_open_policy_applies_requested_state() {
+        let gates = GateState::default();
+        let effective = gates.apply_requested(GateValues::new(true, false, true));
+
+        assert_eq!(effective.values(), GateValues::new(true, false, true));
+        assert!(gates.filesystem_open());
+        assert!(!gates.network_open());
+        assert!(gates.tools_open());
+        assert!(!effective.changed_by_policy);
+    }
+
+    #[test]
+    fn closing_gates_is_allowed_even_with_closed_policy_ceiling() {
+        let gates = GateState::with_policy_ceiling(GatePolicyCeiling::new(false, false, false));
+        let effective = gates.apply_requested(GateValues::new(false, false, false));
+
+        assert_eq!(effective.values(), GateValues::new(false, false, false));
+        assert!(!gates.filesystem_open());
+        assert!(!gates.network_open());
+        assert!(!gates.tools_open());
+        assert!(!effective.changed_by_policy);
+    }
+
+    #[test]
+    fn network_policy_lock_blocks_direct_reopen_attempt() {
+        let gates = GateState::with_policy_ceiling(GatePolicyCeiling::new(true, false, true));
+        let effective = gates.apply_requested(GateValues::new(true, true, true));
+
+        assert_eq!(effective.values(), GateValues::new(true, false, true));
+        assert!(gates.filesystem_open());
+        assert!(!gates.network_open());
+        assert!(gates.tools_open());
+        assert!(effective.changed_by_policy);
+    }
+
+    #[test]
+    fn tools_policy_lock_blocks_direct_reopen_attempt() {
+        let gates = GateState::with_policy_ceiling(GatePolicyCeiling::new(true, true, false));
+        let effective = gates.apply_requested(GateValues::new(true, true, true));
+
+        assert_eq!(effective.values(), GateValues::new(true, true, false));
+        assert!(gates.filesystem_open());
+        assert!(gates.network_open());
+        assert!(!gates.tools_open());
+        assert!(effective.changed_by_policy);
+    }
+
+    #[test]
+    fn filesystem_policy_lock_blocks_direct_reopen_attempt() {
+        let gates = GateState::with_policy_ceiling(GatePolicyCeiling::new(false, true, true));
+        let effective = gates.apply_requested(GateValues::new(true, true, true));
+
+        assert_eq!(effective.values(), GateValues::new(false, true, true));
+        assert!(!gates.filesystem_open());
+        assert!(gates.network_open());
+        assert!(gates.tools_open());
+        assert!(effective.changed_by_policy);
+    }
+
+    #[test]
+    fn multiple_policy_locks_block_direct_reopen_attempts() {
+        let gates = GateState::with_policy_ceiling(GatePolicyCeiling::new(false, false, true));
+        let effective = gates.apply_requested(GateValues::new(true, true, true));
+
+        assert_eq!(effective.values(), GateValues::new(false, false, true));
+        assert!(!gates.filesystem_open());
+        assert!(!gates.network_open());
+        assert!(gates.tools_open());
+        assert_eq!(effective.locked_gates.len(), 2);
+    }
 }
 
 /// Maximum backoff cap in milliseconds.

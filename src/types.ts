@@ -75,6 +75,11 @@ export interface SecurityGates {
   tools: boolean;
 }
 
+export interface EffectiveGateState extends SecurityGates {
+  changedByPolicy: boolean;
+  lockedGates: { gate: string; reason: string }[];
+}
+
 export interface ConfigProfile {
   id: string;
   name: string;
