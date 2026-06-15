@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSecret, setSecret, deleteSecret } from '../../lib/secrets';
+import { secretPresent, setSecret, deleteSecret } from '../../lib/secrets';
 import { useApp } from '../../state/AppState';
 
 // Secrets the app knows about — keyed by the same name as the env-var fallback.
@@ -21,7 +21,7 @@ export function SecretsPanel() {
   useEffect(() => {
     (async () => {
       const p: Record<string, boolean> = {};
-      for (const s of SECRETS) p[s.name] = !!(await getSecret(s.name));
+      for (const s of SECRETS) p[s.name] = await secretPresent(s.name);
       setPresent(p);
     })();
   }, []);
@@ -85,8 +85,8 @@ export function SecretsPanel() {
         </div>
       ))}
       <div className="text-[8px] font-mono text-neutral-600 leading-relaxed">
-        Stored in your OS keychain, not in a plain-text file. If the keychain is
-        unavailable, the app falls back to VITE_ env vars.
+        Stored in your OS keychain, not in a plain-text file. Secret values are
+        not readable from the webview after saving.
       </div>
     </div>
   );

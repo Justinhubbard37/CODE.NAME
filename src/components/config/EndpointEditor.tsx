@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { useFocusTrap } from '../../lib/a11y';
 import { LOCKED_ENDPOINT_IDS } from '../../config/defaults';
-import { getSecret, setSecret } from '../../lib/secrets';
+import { secretPresent, setSecret } from '../../lib/secrets';
 import type { Endpoint, EndpointKind } from '../../types';
 
 const KINDS: EndpointKind[] = ['ollama', 'lmstudio', 'openai', 'custom', 'gemini', 'a2a'];
@@ -65,7 +65,7 @@ export function EndpointEditor({
   const needsKey = !isLocal || kind === 'gemini' || !!endpoint.apiKeyEnv || !!endpoint.usesCloud;
 
   useEffect(() => {
-    (async () => setKeySet(!!(await getSecret(secretName))))();
+    (async () => setKeySet(await secretPresent(secretName)))();
   }, [secretName]);
 
   const save = async () => {

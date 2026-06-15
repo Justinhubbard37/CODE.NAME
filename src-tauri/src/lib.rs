@@ -27,6 +27,7 @@ pub fn run() {
             sidecar::sidecar_pool_create,
             sidecar::sidecar_pool_release,
             secrets::secret_get,
+            secrets::secret_present,
             secrets::secret_set,
             secrets::secret_delete,
             model::model_list,

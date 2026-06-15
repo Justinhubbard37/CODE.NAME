@@ -5,13 +5,13 @@
  *   - ollama            -> POST /api/chat        (NDJSON stream)
  *   - openai / lmstudio -> POST /v1/chat/completions (SSE stream)
  *   - custom            -> OpenAI-compatible by default
- *   - gemini (cloud)    -> @google/genai stream  (secondary)
+ *   - gemini (cloud)    -> deferred until Rust-owned provider routing
  *
- * If an endpoint is unreachable (offline, gate closed, no key) the caller
+ * If an endpoint is unreachable (offline, gate closed, no key, deferred cloud)
  * receives a synthetic local stream so the canvas always responds.
  */
 import type { Endpoint, ConfigProfile } from '../types';
-import { getSecret } from './secrets';
+import { secretPresent } from './secrets';
 
 export interface ChatTurn {
   role: 'user' | 'assistant' | 'system';
@@ -26,22 +26,9 @@ export interface StreamCallbacks {
   signal?: AbortSignal;
 }
 
-function env(name?: string): string | undefined {
-  if (!name) return undefined;
-  const e = (import.meta as unknown as { env?: Record<string, string> }).env || {};
-  return e[name] || e['VITE_' + name] || e[name.replace(/^VITE_/, '')];
-}
-
-/**
- * Resolve an endpoint's API key: prefer the OS keychain (set via the Secrets
- * panel), then fall back to an environment variable of the same name. Keeps the
- * env path working when the keychain is unavailable.
- */
-async function resolveKey(apiKeyEnv?: string): Promise<string | undefined> {
-  if (!apiKeyEnv) return undefined;
-  const vault = await getSecret(apiKeyEnv);
-  if (vault) return vault;
-  return env(apiKeyEnv);
+async function hasKey(apiKeyEnv?: string): Promise<boolean> {
+  if (!apiKeyEnv) return false;
+  return secretPresent(apiKeyEnv);
 }
 
 function isTauri(): boolean {
@@ -57,41 +44,40 @@ export async function pingEndpoint(ep: Endpoint): Promise<{ ok: boolean; detail:
   const t = setTimeout(() => ctl.abort(), 2500);
   const keyName = keyNameFor(ep);
   const cloud = reachesNetwork(ep);
-  let key: string | undefined;
+  let keySet = false;
   try {
-    key = await resolveKey(keyName);
+    keySet = await hasKey(keyName);
     // Local-first: an endpoint that needs a key but has none is reported offline
     // WITHOUT any network call — nothing leaves the machine until a key exists.
-    if (keyName && !key) {
+    if (keyName && !keySet) {
       clearTimeout(t);
       return { ok: false, detail: 'no API key' };
     }
     if (ep.kind === 'gemini') {
       clearTimeout(t);
-      return { ok: true, detail: 'API key present' };
+      return { ok: false, detail: 'Gemini cloud routing deferred to Slice 1.4' };
     }
     // Cloud endpoints aren't probed from the webview (CORS would block it). A
     // present key marks them ready; their model list is fetched via the shell.
     if (cloud) {
       clearTimeout(t);
-      return { ok: true, detail: key ? 'key set' : 'reachable' };
+      return { ok: true, detail: keySet ? 'key set' : 'reachable' };
     }
     const url =
       ep.kind === 'ollama'
         ? `${ep.baseUrl.replace(/\/$/, '')}/api/tags`
         : `${ep.baseUrl.replace(/\/$/, '')}/v1/models`;
     const headers: Record<string, string> = {};
-    if (key) headers.Authorization = `Bearer ${key}`;
     const res = await fetch(url, { signal: ctl.signal, headers });
     clearTimeout(t);
     if (res.ok) return { ok: true, detail: `HTTP ${res.status}` };
     // A cloud endpoint with a key that fails the model-list probe is still usable
     // for chat (cloud listing paths vary) — mark it ready instead of blocking.
-    if (cloud && key) return { ok: true, detail: `key set (list HTTP ${res.status})` };
+    if (cloud && keySet) return { ok: true, detail: `key set (list HTTP ${res.status})` };
     return { ok: false, detail: `HTTP ${res.status}` };
   } catch (err) {
     clearTimeout(t);
-    if (cloud && key) return { ok: true, detail: 'key set (probe skipped)' };
+    if (cloud && keySet) return { ok: true, detail: 'key set (probe skipped)' };
     return { ok: false, detail: err instanceof Error ? err.name : 'unreachable' };
   }
 }
@@ -145,7 +131,6 @@ export async function listModels(ep: Endpoint): Promise<string[]> {
         kind: ep.kind,
         baseUrl: ep.baseUrl,
         keyName,
-        fallbackKey: env(keyName),
       });
     } catch {
       return [];
@@ -155,8 +140,6 @@ export async function listModels(ep: Endpoint): Promise<string[]> {
   const t = setTimeout(() => ctl.abort(), 2500);
   const base = ep.baseUrl.replace(/\/$/, '');
   const headers: Record<string, string> = {};
-  const key = await resolveKey(keyNameFor(ep));
-  if (key) headers.Authorization = `Bearer ${key}`;
   try {
     const url = ep.kind === 'ollama' ? `${base}/api/tags` : `${base}/v1/models`;
     const res = await fetch(url, { signal: ctl.signal, headers });
@@ -224,7 +207,6 @@ async function streamModelViaShell(
       baseUrl: ep.baseUrl,
       model: ep.model,
       keyName,
-      fallbackKey: env(keyName),
       temperature: profile.temperature,
       numCtx: profile.contextWindow,
       messages: turns,
@@ -243,8 +225,6 @@ async function streamOllama(
   cb: StreamCallbacks,
 ): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const key = await resolveKey(keyNameFor(ep));
-  if (key) headers.Authorization = `Bearer ${key}`;
   const res = await fetch(`${ep.baseUrl.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers,
@@ -287,8 +267,6 @@ async function streamOpenAI(
   cb: StreamCallbacks,
 ): Promise<string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const key = await resolveKey(keyNameFor(ep));
-  if (key) headers.Authorization = `Bearer ${key}`;
   const res = await fetch(`${ep.baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
     method: 'POST',
     headers,
@@ -328,25 +306,10 @@ async function streamOpenAI(
 }
 
 async function streamGemini(ep: Endpoint, turns: ChatTurn[], cb: StreamCallbacks): Promise<string> {
-  const key = await resolveKey(keyNameFor(ep));
-  if (!key) throw new Error('no API key');
+  if (!(await hasKey(keyNameFor(ep)))) throw new Error('no API key');
   cb.onModel?.(ep.model); // Gemini serves the requested model
-
-  const { GoogleGenAI } = await import('@google/genai');
-  const ai = new GoogleGenAI({ apiKey: key });
-  const contents = turns
-    .filter((t) => t.role !== 'system')
-    .map((t) => ({ role: t.role === 'assistant' ? 'model' : 'user', parts: [{ text: t.content }] }));
-  const stream = await ai.models.generateContentStream({ model: ep.model, contents });
-  let full = '';
-  for await (const chunk of stream) {
-    const tok = (chunk as { text?: string }).text ?? '';
-    if (tok) {
-      full += tok;
-      cb.onToken(tok);
-    }
-  }
-  return full;
+  void turns;
+  throw new Error('Gemini cloud routing deferred to Slice 1.4');
 }
 
 /**

@@ -470,9 +470,17 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         command: "secret_get",
         required_gates: NO_GATES,
         risk: risk(RiskLevel::Critical, RiskLevel::None, RiskLevel::None, RiskLevel::None),
-        rationale: "Returns raw keychain secret material to the webview and must be replaced.",
+        rationale: "Deprecated compatibility command; must deny raw keychain secret reads.",
         priority: PolicyPriority::Critical,
         replacement: Some("secret_present"),
+    },
+    CommandPolicy {
+        command: "secret_present",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::None, RiskLevel::None),
+        rationale: "Presence-only keychain query that does not expose raw secret material.",
+        priority: PolicyPriority::High,
+        replacement: None,
     },
     CommandPolicy {
         command: "secret_set",
@@ -720,7 +728,12 @@ mod tests {
 
     #[test]
     fn secret_commands_are_marked_secret_related() {
-        for command in ["secret_get", "secret_set", "secret_delete"] {
+        for command in [
+            "secret_get",
+            "secret_present",
+            "secret_set",
+            "secret_delete",
+        ] {
             let policy = policy_for_command(command).expect("secret command policy");
             assert!(
                 policy.risk.is_secret_related(),

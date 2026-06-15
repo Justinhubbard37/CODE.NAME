@@ -29,16 +29,15 @@ pub struct ModelReq {
     pub base_url: String,
     pub model: String,
     pub key_name: Option<String>,
-    pub fallback_key: Option<String>,
     pub temperature: f64,
     pub num_ctx: u32,
     pub messages: Vec<ChatMsg>,
     pub cloud: bool,
 }
 
-/// Read the API key from the OS keychain by name; fall back to a value passed
-/// from the webview (used only for env-var keys, not keychain keys).
-fn read_key(key_name: &Option<String>, fallback: &Option<String>) -> Option<String> {
+/// Read the API key from the OS keychain by name. Raw key material never comes
+/// from the webview.
+fn read_key(key_name: &Option<String>) -> Option<String> {
     if let Some(name) = key_name {
         if let Ok(entry) = keyring::Entry::new(SERVICE, name) {
             if let Ok(pw) = entry.get_password() {
@@ -48,7 +47,7 @@ fn read_key(key_name: &Option<String>, fallback: &Option<String>) -> Option<Stri
             }
         }
     }
-    fallback.clone().filter(|s| !s.is_empty())
+    None
 }
 
 async fn http_error(resp: reqwest::Response, model: &str) -> String {
@@ -71,10 +70,9 @@ pub async fn model_list(
     kind: String,
     base_url: String,
     key_name: Option<String>,
-    fallback_key: Option<String>,
 ) -> Result<Vec<String>, String> {
     let base = base_url.trim_end_matches('/');
-    let key = read_key(&key_name, &fallback_key);
+    let key = read_key(&key_name);
     let url = if kind == "ollama" {
         format!("{base}/api/tags")
     } else {
@@ -128,7 +126,7 @@ pub async fn model_stream(
         return Err("network gate closed".to_string());
     }
     let base = req.base_url.trim_end_matches('/');
-    let key = read_key(&req.key_name, &req.fallback_key);
+    let key = read_key(&req.key_name);
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .build()
