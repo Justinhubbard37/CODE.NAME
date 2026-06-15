@@ -1,93 +1,42 @@
-# CODE NAME 2 Active Build Checklist
-
-## Current Build Rule
-
-Every approved slice must produce visible product behavior.
-
-A slice is not complete unless it includes:
-
-- [ ] User-visible feature
-- [ ] Clear UI path
-- [ ] Backend test coverage
-- [ ] Frontend/typecheck verification
-- [ ] Manual verification steps
-- [ ] Commit hash
-- [ ] "How to see it working" notes
-
----
-
-## Completed Foundation
-
-- [x] Phase 0 - Stabilization
-  - Commit: `a0eedd7`
-  - Result: repo baseline, docs cleanup, Windows-safe clean script
-
-- [x] Phase 1.1 - Rust Policy Core
-  - Commit: `e3fcf6eea099c5c7ebe9121d99a30496bf766416`
-  - Result: Rust command policy registry and tests
-
-- [x] Phase 1.2 - Rust-Effective Gate State
-  - Commit: `f4767d0432538929862496e729831c9d2838115c`
-  - Result: Rust owns effective runtime gate state
-
-- [x] Phase 1.3 - Remove Raw Secret Reads
-  - Commit: `a16865e71c917daeba40ce64c9d77345c2ad6f3c`
-  - Result: frontend can no longer read raw secrets
-
-- [x] Phase 1.4 - Provider Classification and Network Gate
-  - Commit: `e2aba98dba6465035f6b642a1b7d9ebc6482810b`
-  - Result: Rust blocks cloud-capable model paths when Network is closed
-
----
-
 ## Active Product Milestone
 
-# Milestone 1 - SQLite Knowledge Base MVP
+# Milestone 2 - Knowledge Graph Linker MVP
 
-Goal: make CODE NAME 2 store, search, and display real local knowledge from SQLite.
+Goal: make ingested SQLite documents and chunks create connected graph structure.
 
 Definition of done:
 
-- [x] Rust-owned SQLite database exists
-- [x] database lives in app-local data directory
-- [x] schema migrations exist
-- [x] `documents` table exists
-- [x] `chunks` table exists
-- [x] `entities` table exists
-- [x] `relationships` table exists
-- [x] `chunk_entities` table exists
-- [x] `retrieval_events` table exists
-- [x] text ingestion writes to SQLite
-- [x] deterministic chunking works
-- [x] SQLite search returns matching chunks
-- [x] UI shows live document count
-- [x] UI shows live chunk count
-- [x] UI shows live entity count
-- [x] UI shows live relationship count
-- [x] UI has visible KB search or search-result path
-- [x] manual verification steps are documented
-- [x] `cargo test --all-features --locked` passes
-- [x] `npm run lint` passes
-- [x] `npm test` passes or known sandbox `spawn EPERM` is elevated-rerun verified
-- [x] commit created
+- [ ] SQLite documents project into graph document nodes
+- [ ] SQLite chunks project into graph chunk nodes
+- [ ] document -> chunk edges exist
+- [ ] deterministic entity extraction runs on chunk text
+- [ ] extracted entities are stored in SQLite
+- [ ] chunk -> entity edges exist
+- [ ] document -> entity edges exist
+- [ ] entity -> entity co-occurrence edges exist when entities appear in the same chunk
+- [ ] graph UI shows connected document/chunk/entity structure
+- [ ] clicking or searching shows why nodes are connected
+- [ ] tests prove graph projection/linking works
+- [ ] manual verification steps are documented
+- [ ] commit created
 
 Target commit:
 
-`feat: add sqlite knowledge base foundation`
+`feat: link sqlite knowledge into graph`
 
 ---
 
 ## Next Slice
 
-## Phase 2A - SQLite Knowledge Base Foundation
+## Phase 2B - Knowledge Graph Linker MVP
 
-Status: COMPLETED
+Status: READY TO EXECUTE
 
 Required visible result:
 
-ingest text -> SQLite stores documents/chunks -> search finds chunks -> UI shows live KB stats
+ingest text -> SQLite stores documents/chunks -> deterministic entities are extracted -> graph shows connected document/chunk/entity nodes
 
-No more security-only slices until this is complete.
+No more backend-only slices until graph linking is visible.
 
 ---
 
@@ -101,28 +50,31 @@ No more security-only slices until this is complete.
 - [x] search
 - [x] live stats UI
 
-### Milestone 2 - Retrieval MVP
+### Milestone 2 - Knowledge Graph Linker MVP
+
+- [ ] project SQLite documents into graph nodes
+- [ ] project SQLite chunks into graph nodes
+- [ ] create document -> chunk edges
+- [ ] extract deterministic entities from chunk text
+- [ ] store entities in SQLite
+- [ ] create chunk -> entity edges
+- [ ] create entity co-occurrence edges
+- [ ] show connected graph structure in UI
+
+### Milestone 3 - Retrieval MVP
 
 - [ ] query SQLite chunks
 - [ ] rank search results
 - [ ] show source snippets
 - [ ] connect retrieval results to chat context
 
-### Milestone 3 - Chat With Knowledge Base
+### Milestone 4 - Chat With Knowledge Base
 
 - [ ] user asks a question
 - [ ] app retrieves relevant chunks
 - [ ] model receives retrieved context
 - [ ] answer shows source snippets
 - [ ] works with local model route or synthetic fallback
-
-### Milestone 4 - Knowledge Graph Extraction
-
-- [ ] extract entities from ingested text
-- [ ] store entities in SQLite
-- [ ] store relationships in SQLite
-- [ ] show entities/relationships in graph UI
-- [ ] link graph nodes back to chunks/documents
 
 ### Milestone 5 - Real GraphRAG
 
@@ -142,7 +94,7 @@ No more security-only slices until this is complete.
 
 ---
 
-## Deferred Until After SQLite KB MVP
+## Deferred Until After Graph Linker MVP
 
 - [ ] Sidecar command gate enforcement
 - [ ] Browser harness lockdown
@@ -163,7 +115,7 @@ Use this section after every completed slice.
 
 Date: 2026-06-15
 
-Commit: `feat: add sqlite knowledge base foundation` (exact hash recorded in final owner-review response)
+Commit: `fa5c8a351256453d0bb65d6bf41bbb8724ac61de`
 
 What changed in the app:
 
@@ -174,20 +126,17 @@ What changed in the app:
 
 How I verified it:
 
-- `cargo test --all-features --locked`
-- `npm run lint`
-- `npm test` hit known sandbox `Error: spawn EPERM`
-- Elevated `npm test`
-- Required SQLite/IndexedDB and GraphRAG/embedding search checks
-
-Manual verification steps:
-
-1. Run the desktop app.
-2. Drop a `.txt` or `.md` file onto the left pane.
-3. Confirm the Archive Index `SQLite KB` panel shows initialized `v1`.
-4. Confirm document and chunk counts increase.
-5. Type a word from the ingested file into the Graph Search field and press Enter.
-6. Confirm `SQLite KB chunks` results appear under the search field and in the Archive Index result area.
+- Dropped `kb-smoke-test.txt` into the app.
+- Confirmed SQLite KB showed initialized `v1`.
+- Confirmed document count increased to `1`.
+- Confirmed chunk count increased to `1`.
+- Searched `UniqueSearchTerm7391`.
+- Confirmed SQLite KB chunk result appeared in the UI.
+- Confirmed DB file exists at `C:\Users\justi\AppData\Roaming\com.codename.harness\knowledge-base.sqlite3`.
+- Confirmed DB file size was `118,784` bytes.
+- `cargo test --all-features --locked` passed in Codex.
+- `npm run lint` passed in Codex.
+- Elevated `npm test` passed in Codex after known sandbox `Error: spawn EPERM`.
 
 What works now:
 
@@ -200,10 +149,12 @@ What still does not work:
 
 - This is not full GraphRAG.
 - Real embeddings are not implemented.
-- Entity and relationship extraction are schema-ready but not populated by this slice.
+- Entity extraction is not implemented yet.
+- Relationship extraction is not implemented yet.
+- Ingested graph nodes can still appear disconnected until Phase 2B adds graph linking.
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
