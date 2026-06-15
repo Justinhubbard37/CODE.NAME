@@ -21,6 +21,93 @@ interface SavedConfig {
   gates?: SecurityGates;
 }
 
+function normalizeEndpoint(e: Endpoint): Endpoint {
+  const model = e.model.toLowerCase();
+  const ollamaCloudModel =
+    e.kind === 'ollama' && (model.includes('-cloud') || model.includes(':cloud'));
+  const providerKind =
+    e.providerKind ??
+    (e.kind === 'openai'
+      ? 'openai-compatible'
+      : e.kind === 'custom' && e.networkClass === 'local-only'
+        ? 'openai-compatible'
+        : e.kind);
+
+  if (e.kind === 'gemini') {
+    return {
+      ...e,
+      providerKind: 'gemini',
+      isLocal: false,
+      networkClass: 'cloud',
+      runsLocalOnly: false,
+      cloudCapable: true,
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+    };
+  }
+
+  if (e.kind === 'a2a') {
+    return {
+      ...e,
+      providerKind: 'a2a',
+      isLocal: true,
+      networkClass: 'local-only',
+      runsLocalOnly: true,
+      cloudCapable: false,
+      requiresNetwork: false,
+      secretRequirement: 'none',
+    };
+  }
+
+  if (e.kind === 'ollama' && (e.usesCloud || ollamaCloudModel || e.networkClass === 'cloud')) {
+    return {
+      ...e,
+      providerKind: 'ollama',
+      isLocal: false,
+      networkClass: e.networkClass === 'cloud' ? 'cloud' : 'cloud-capable',
+      runsLocalOnly: false,
+      cloudCapable: true,
+      requiresNetwork: true,
+      requiresSecret: !!e.apiKeyEnv || e.secretRequirement === 'keychain',
+      secretRequirement: e.apiKeyEnv || e.secretRequirement === 'keychain' ? 'keychain' : 'optional',
+      usesCloud: true,
+    };
+  }
+
+  const localOnly =
+    e.networkClass === 'local-only' ||
+    e.runsLocalOnly === true ||
+    (e.kind !== 'custom' && e.kind !== 'openai' && e.isLocal === true);
+
+  if (localOnly) {
+    return {
+      ...e,
+      providerKind,
+      isLocal: true,
+      networkClass: 'local-only',
+      runsLocalOnly: true,
+      cloudCapable: false,
+      requiresNetwork: false,
+      requiresSecret: false,
+      secretRequirement: 'none',
+      usesCloud: false,
+    };
+  }
+
+  return {
+    ...e,
+    providerKind,
+    isLocal: false,
+    networkClass: e.networkClass === 'cloud' ? 'cloud' : 'cloud-capable',
+    runsLocalOnly: false,
+    cloudCapable: true,
+    requiresNetwork: true,
+    requiresSecret: !!e.apiKeyEnv || e.secretRequirement === 'keychain',
+    secretRequirement: e.apiKeyEnv || e.secretRequirement === 'keychain' ? 'keychain' : 'optional',
+  };
+}
+
 function read(): SavedConfig {
   try {
     if (typeof localStorage === 'undefined') return {};
@@ -50,7 +137,12 @@ export function loadEndpoints(): Endpoint[] {
   for (const s of saved) {
     if (!defaultEndpoints.some((d) => d.id === s.id)) merged.push(s);
   }
-  return merged.map((e) => ({ ...e, status: 'offline', detail: undefined, models: undefined }));
+  return merged.map((e) => ({
+    ...normalizeEndpoint(e),
+    status: 'offline',
+    detail: undefined,
+    models: undefined,
+  }));
 }
 
 export function loadProfiles(): ConfigProfile[] {

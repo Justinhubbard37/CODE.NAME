@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../state/AppState';
 import { setSecret } from '../../lib/secrets';
+import { reachesNetwork } from '../../lib/llm';
 import { runSelfCheck, type CheckResult } from '../../lib/selfcheck';
 import { useFocusTrap } from '../../lib/a11y';
 
@@ -169,7 +170,9 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                   className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600"
                 >
                   {endpoints.map((e) => (
-                    <option key={e.id} value={e.id}>{e.label} {e.isLocal ? '· local' : '· cloud'}</option>
+                    <option key={e.id} value={e.id}>
+                      {e.label} {reachesNetwork(e) ? '· cloud-capable' : '· local'}
+                    </option>
                   ))}
                 </select>
               </label>

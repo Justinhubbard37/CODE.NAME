@@ -20,6 +20,7 @@ import { useLang, useT } from '../../i18n';
 import { SecretsPanel } from '../config/SecretsPanel';
 import { SecurityGates } from '../config/SecurityGates';
 import { ModelTuningControls } from '../config/ModelTuningControls';
+import { reachesNetwork } from '../../lib/llm';
 
 const APP_VERSION = '0.0.0';
 
@@ -125,7 +126,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             >
               {endpoints.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.label} {e.isLocal ? '· local' : '· cloud'}
+                  {e.label} {reachesNetwork(e) ? '· cloud-capable' : '· local'}
                 </option>
               ))}
             </select>

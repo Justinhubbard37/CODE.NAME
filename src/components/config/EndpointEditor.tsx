@@ -3,7 +3,8 @@ import { X } from 'lucide-react';
 import { useFocusTrap } from '../../lib/a11y';
 import { LOCKED_ENDPOINT_IDS } from '../../config/defaults';
 import { secretPresent, setSecret } from '../../lib/secrets';
-import type { Endpoint, EndpointKind } from '../../types';
+import { classifyEndpoint } from '../../lib/llm';
+import type { Endpoint, EndpointKind, EndpointNetworkClass } from '../../types';
 
 const KINDS: EndpointKind[] = ['ollama', 'lmstudio', 'openai', 'custom', 'gemini', 'a2a'];
 const inputCls =
@@ -57,12 +58,27 @@ export function EndpointEditor({
   const [kind, setKind] = useState<EndpointKind>(endpoint.kind);
   const [baseUrl, setBaseUrl] = useState(endpoint.baseUrl);
   const [model, setModel] = useState(endpoint.model);
-  const [isLocal, setIsLocal] = useState(endpoint.isLocal);
+  const initialNetworkClass: EndpointNetworkClass =
+    endpoint.networkClass ??
+    (endpoint.runsLocalOnly || (endpoint.isLocal && endpoint.kind !== 'custom' && endpoint.kind !== 'openai')
+      ? 'local-only'
+      : 'cloud-capable');
+  const [networkClass, setNetworkClass] = useState<EndpointNetworkClass>(initialNetworkClass);
   const [apiKey, setApiKey] = useState('');
   const [keySet, setKeySet] = useState(false);
 
-  const secretName = secretNameFor(endpoint);
-  const needsKey = !isLocal || kind === 'gemini' || !!endpoint.apiKeyEnv || !!endpoint.usesCloud;
+  const draftEndpoint: Endpoint = {
+    ...endpoint,
+    kind,
+    baseUrl,
+    model,
+    networkClass: kind === 'gemini' ? 'cloud' : networkClass,
+    runsLocalOnly: networkClass === 'local-only' && kind !== 'gemini',
+    isLocal: networkClass === 'local-only' && kind !== 'gemini',
+  };
+  const classification = classifyEndpoint(draftEndpoint);
+  const secretName = secretNameFor(draftEndpoint);
+  const needsKey = classification.secretRequirement !== 'none';
 
   useEffect(() => {
     (async () => setKeySet(await secretPresent(secretName)))();
@@ -80,8 +96,15 @@ export function EndpointEditor({
         kind,
         baseUrl: normalizeBaseUrl(baseUrl),
         model: model.trim(),
-        isLocal,
+        isLocal: classification.runsLocalOnly,
+        networkClass: classification.networkClass,
+        runsLocalOnly: classification.runsLocalOnly,
+        cloudCapable: classification.cloudCapable,
+        requiresNetwork: classification.requiresNetwork,
+        requiresSecret: classification.requiresSecret,
+        secretRequirement: classification.secretRequirement,
         apiKeyEnv: needsKey ? secretName : undefined,
+        usesCloud: classification.networkClass !== 'local-only' ? true : undefined,
       });
     }
     onClose();
@@ -174,9 +197,21 @@ export function EndpointEditor({
 
           {!locked && (
             <label className="flex items-center gap-2 text-[10px] font-mono text-neutral-400">
-              <input type="checkbox" checked={isLocal} onChange={(e) => setIsLocal(e.target.checked)} />
-              Local (not blocked by the Network gate)
+              <input
+                type="checkbox"
+                checked={classification.runsLocalOnly}
+                disabled={kind === 'gemini'}
+                onChange={(e) => setNetworkClass(e.target.checked ? 'local-only' : 'cloud-capable')}
+              />
+              Runs local-only (Network gate may stay closed)
             </label>
+          )}
+
+          {!locked && classification.cloudCapable && (
+            <div className="text-[8px] font-mono text-amber-400/80 leading-relaxed border border-amber-500/20 bg-amber-500/5 p-1.5">
+              Custom and proxy endpoints are treated as cloud-capable unless explicitly marked
+              local-only.
+            </div>
           )}
 
           {needsKey && (

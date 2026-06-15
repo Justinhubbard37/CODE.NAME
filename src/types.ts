@@ -45,15 +45,32 @@ export type { Edge };
 /* ------------------------------------------------------------------ */
 
 export type EndpointKind = 'ollama' | 'openai' | 'lmstudio' | 'gemini' | 'custom' | 'a2a';
+export type ProviderKind =
+  | 'ollama'
+  | 'lmstudio'
+  | 'openai-compatible'
+  | 'gemini'
+  | 'custom'
+  | 'synthetic'
+  | 'a2a';
+export type EndpointNetworkClass = 'local-only' | 'cloud' | 'cloud-capable' | 'unknown';
+export type SecretRequirement = 'none' | 'optional' | 'keychain';
 export type EndpointStatus = 'offline' | 'configuring' | 'ready' | 'error';
 
 export interface Endpoint {
   id: string;
   label: string;
   kind: EndpointKind;
+  providerKind?: ProviderKind;
   baseUrl: string;
   model: string;
   isLocal: boolean;
+  networkClass?: EndpointNetworkClass;
+  runsLocalOnly?: boolean;
+  cloudCapable?: boolean;
+  requiresNetwork?: boolean;
+  requiresSecret?: boolean;
+  secretRequirement?: SecretRequirement;
   /** true if this endpoint reaches the internet even when isLocal — e.g. an
    *  Ollama "-cloud" model offloaded through the local daemon. Network-gated. */
   usesCloud?: boolean;

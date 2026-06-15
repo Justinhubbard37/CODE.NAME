@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import { Send, Square } from 'lucide-react';
 import { useApp } from '../../state/AppState';
+import { reachesNetwork } from '../../lib/llm';
 
 export function ChatInput() {
   const { sendMessage, sending, abort, activeEndpoint, activeProfile } = useApp();
@@ -56,7 +57,7 @@ export function ChatInput() {
         <span>
           PROFILE {activeProfile.name} · T{activeProfile.temperature} · CTX{activeProfile.contextWindow}
         </span>
-        <span>{activeEndpoint.isLocal ? 'LOCAL-FIRST' : 'CLOUD'}</span>
+        <span>{reachesNetwork(activeEndpoint) ? 'CLOUD-CAPABLE' : 'LOCAL-FIRST'}</span>
       </div>
     </div>
   );

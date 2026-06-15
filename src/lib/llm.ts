@@ -5,12 +5,18 @@
  *   - ollama            -> POST /api/chat        (NDJSON stream)
  *   - openai / lmstudio -> POST /v1/chat/completions (SSE stream)
  *   - custom            -> OpenAI-compatible by default
- *   - gemini (cloud)    -> deferred until Rust-owned provider routing
+ *   - gemini (cloud)    -> explicitly deferred until Rust TLS/provider routing
  *
  * If an endpoint is unreachable (offline, gate closed, no key, deferred cloud)
  * receives a synthetic local stream so the canvas always responds.
  */
-import type { Endpoint, ConfigProfile } from '../types';
+import type {
+  ConfigProfile,
+  Endpoint,
+  EndpointNetworkClass,
+  ProviderKind,
+  SecretRequirement,
+} from '../types';
 import { secretPresent } from './secrets';
 
 export interface ChatTurn {
@@ -55,7 +61,7 @@ export async function pingEndpoint(ep: Endpoint): Promise<{ ok: boolean; detail:
     }
     if (ep.kind === 'gemini') {
       clearTimeout(t);
-      return { ok: false, detail: 'Gemini cloud routing deferred to Slice 1.4' };
+      return { ok: false, detail: 'Gemini cloud routing remains deferred to Rust provider implementation' };
     }
     // Cloud endpoints aren't probed from the webview (CORS would block it). A
     // present key marks them ready; their model list is fetched via the shell.
@@ -82,18 +88,82 @@ export async function pingEndpoint(ep: Endpoint): Promise<{ ok: boolean; detail:
   }
 }
 
-/**
- * True if talking to this endpoint reaches the internet — either it is a cloud
- * endpoint (not local, or flagged usesCloud), or it is a local Ollama daemon
- * running a "-cloud" model (which Ollama offloads to its cloud service). The
- * Network gate uses this so a cloud model on a localhost address is still
- * treated as network use.
- */
+export interface ProviderClassification {
+  providerKind: ProviderKind;
+  networkClass: EndpointNetworkClass;
+  runsLocalOnly: boolean;
+  requiresNetwork: boolean;
+  cloudCapable: boolean;
+  secretRequirement: SecretRequirement;
+  requiresSecret: boolean;
+}
+
+function kindToProviderKind(ep: Endpoint): ProviderKind {
+  if (ep.providerKind) return ep.providerKind;
+  if (ep.kind === 'openai') return 'openai-compatible';
+  if (ep.kind === 'custom' && ep.networkClass === 'local-only') return 'openai-compatible';
+  return ep.kind;
+}
+
+function isOllamaCloudModel(ep: Endpoint): boolean {
+  const model = ep.model.toLowerCase();
+  return ep.kind === 'ollama' && (model.includes('-cloud') || model.includes(':cloud'));
+}
+
+function secretRequirementFor(ep: Endpoint, networkClass: EndpointNetworkClass): SecretRequirement {
+  if (ep.secretRequirement) return ep.secretRequirement;
+  if (networkClass === 'local-only') return 'none';
+  if (ep.apiKeyEnv || ep.kind === 'gemini') return 'keychain';
+  return 'optional';
+}
+
+export function classifyEndpoint(ep: Endpoint): ProviderClassification {
+  const providerKind = kindToProviderKind(ep);
+
+  if (providerKind === 'synthetic' || ep.kind === 'a2a') {
+    return {
+      providerKind,
+      networkClass: 'local-only',
+      runsLocalOnly: true,
+      requiresNetwork: false,
+      cloudCapable: false,
+      secretRequirement: 'none',
+      requiresSecret: false,
+    };
+  }
+
+  let networkClass: EndpointNetworkClass;
+  if (ep.kind === 'gemini') {
+    networkClass = 'cloud';
+  } else if (ep.usesCloud || isOllamaCloudModel(ep)) {
+    networkClass = ep.networkClass === 'cloud' ? 'cloud' : 'cloud-capable';
+  } else if (ep.networkClass) {
+    networkClass = ep.networkClass;
+  } else if (ep.kind === 'ollama' || ep.kind === 'lmstudio') {
+    networkClass = 'local-only';
+  } else if (ep.runsLocalOnly === true) {
+    networkClass = 'local-only';
+  } else {
+    networkClass = 'cloud-capable';
+  }
+
+  const runsLocalOnly = networkClass === 'local-only';
+  const secretRequirement = secretRequirementFor(ep, networkClass);
+  return {
+    providerKind,
+    networkClass,
+    runsLocalOnly,
+    requiresNetwork: !runsLocalOnly,
+    cloudCapable: !runsLocalOnly,
+    secretRequirement,
+    requiresSecret: secretRequirement === 'keychain',
+  };
+}
+
+/** True if the route is cloud, cloud-capable, or unknown and therefore governed
+ * by the Network gate. Localhost/private addresses are not trusted by URL. */
 export function reachesNetwork(ep: Endpoint): boolean {
-  if (!ep.isLocal) return true;
-  if (ep.usesCloud) return true;
-  if (ep.kind === 'ollama' && ep.model.toLowerCase().includes('-cloud')) return true;
-  return false;
+  return classifyEndpoint(ep).requiresNetwork;
 }
 
 /**
@@ -104,7 +174,7 @@ export function reachesNetwork(ep: Endpoint): boolean {
  */
 function keyNameFor(ep: Endpoint): string | undefined {
   if (ep.apiKeyEnv) return ep.apiKeyEnv;
-  if (!reachesNetwork(ep)) return undefined;
+  if (classifyEndpoint(ep).secretRequirement === 'none') return undefined;
   if (ep.kind === 'ollama') return 'OLLAMA_API_KEY';
   if (ep.kind === 'gemini') return 'GEMINI_API_KEY';
   return undefined;
@@ -122,8 +192,9 @@ function keyNameFor(ep: Endpoint): string | undefined {
  */
 export async function listModels(ep: Endpoint): Promise<string[]> {
   if (ep.kind === 'gemini' || ep.kind === 'a2a') return [];
+  const classification = classifyEndpoint(ep);
   // Cloud endpoints: list via the Rust shell (bypasses browser CORS).
-  if (reachesNetwork(ep) && isTauri()) {
+  if (classification.requiresNetwork && isTauri()) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const keyName = keyNameFor(ep);
@@ -131,6 +202,10 @@ export async function listModels(ep: Endpoint): Promise<string[]> {
         kind: ep.kind,
         baseUrl: ep.baseUrl,
         keyName,
+        model: ep.model,
+        networkClass: classification.networkClass,
+        runsLocalOnly: classification.runsLocalOnly,
+        usesCloud: ep.usesCloud === true,
       });
     } catch {
       return [];
@@ -201,16 +276,19 @@ async function streamModelViaShell(
     cb.onToken(tok);
   };
   const keyName = keyNameFor(ep);
+  const classification = classifyEndpoint(ep);
   const served = await invoke<string>('model_stream', {
     req: {
       kind: ep.kind,
       baseUrl: ep.baseUrl,
       model: ep.model,
       keyName,
+      networkClass: classification.networkClass,
+      runsLocalOnly: classification.runsLocalOnly,
+      usesCloud: ep.usesCloud === true,
       temperature: profile.temperature,
       numCtx: profile.contextWindow,
       messages: turns,
-      cloud: reachesNetwork(ep),
     },
     onEvent: channel,
   });
@@ -309,7 +387,7 @@ async function streamGemini(ep: Endpoint, turns: ChatTurn[], cb: StreamCallbacks
   if (!(await hasKey(keyNameFor(ep)))) throw new Error('no API key');
   cb.onModel?.(ep.model); // Gemini serves the requested model
   void turns;
-  throw new Error('Gemini cloud routing deferred to Slice 1.4');
+  throw new Error('Gemini cloud routing remains deferred to Rust provider implementation');
 }
 
 /**

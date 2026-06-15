@@ -10,6 +10,7 @@ import { SecretsPanel } from './SecretsPanel';
 import { useApp } from '../../state/AppState';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageWorkspaces, canConfigureSiem } from '../../auth/roles';
+import { reachesNetwork } from '../../lib/llm';
 import {
   loadWorkspaces, getActiveWorkspace, createWorkspace, switchWorkspace, deleteWorkspace,
   type Workspace,
@@ -226,7 +227,7 @@ export function StealthDrawer() {
             >
               {endpoints.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.label} {e.isLocal ? '· local' : '· cloud'}
+                  {e.label} {reachesNetwork(e) ? '· cloud-capable' : '· local'}
                 </option>
               ))}
             </select>
