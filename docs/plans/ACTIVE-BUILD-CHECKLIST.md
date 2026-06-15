@@ -6,19 +6,19 @@ Goal: make ingested SQLite documents and chunks create connected graph structure
 
 Definition of done:
 
-- [ ] SQLite documents project into graph document nodes
-- [ ] SQLite chunks project into graph chunk nodes
-- [ ] document -> chunk edges exist
-- [ ] deterministic entity extraction runs on chunk text
-- [ ] extracted entities are stored in SQLite
-- [ ] chunk -> entity edges exist
-- [ ] document -> entity edges exist
-- [ ] entity -> entity co-occurrence edges exist when entities appear in the same chunk
-- [ ] graph UI shows connected document/chunk/entity structure
-- [ ] clicking or searching shows why nodes are connected
-- [ ] tests prove graph projection/linking works
-- [ ] manual verification steps are documented
-- [ ] commit created
+- [x] SQLite documents project into graph document nodes
+- [x] SQLite chunks project into graph chunk nodes
+- [x] document -> chunk edges exist
+- [x] deterministic entity extraction runs on chunk text
+- [x] extracted entities are stored in SQLite
+- [x] chunk -> entity edges exist
+- [x] document -> entity edges exist
+- [x] entity -> entity co-occurrence edges exist when entities appear in the same chunk
+- [x] graph UI shows connected document/chunk/entity structure
+- [x] clicking or searching shows why nodes are connected
+- [x] tests prove graph projection/linking works
+- [x] manual verification steps are documented
+- [x] commit created
 
 Target commit:
 
@@ -28,15 +28,15 @@ Target commit:
 
 ## Next Slice
 
-## Phase 2B - Knowledge Graph Linker MVP
+## Phase 2C - Retrieval MVP
 
-Status: READY TO EXECUTE
+Status: READY AFTER PHASE 2B OWNER REVIEW
 
 Required visible result:
 
-ingest text -> SQLite stores documents/chunks -> deterministic entities are extracted -> graph shows connected document/chunk/entity nodes
+query SQLite chunks -> rank local results -> show source snippets -> feed retrieved context into chat
 
-No more backend-only slices until graph linking is visible.
+Do not start Chat With KB until retrieval source evidence works.
 
 ---
 
@@ -52,14 +52,14 @@ No more backend-only slices until graph linking is visible.
 
 ### Milestone 2 - Knowledge Graph Linker MVP
 
-- [ ] project SQLite documents into graph nodes
-- [ ] project SQLite chunks into graph nodes
-- [ ] create document -> chunk edges
-- [ ] extract deterministic entities from chunk text
-- [ ] store entities in SQLite
-- [ ] create chunk -> entity edges
-- [ ] create entity co-occurrence edges
-- [ ] show connected graph structure in UI
+- [x] project SQLite documents into graph nodes
+- [x] project SQLite chunks into graph nodes
+- [x] create document -> chunk edges
+- [x] extract deterministic entities from chunk text
+- [x] store entities in SQLite
+- [x] create chunk -> entity edges
+- [x] create entity co-occurrence edges
+- [x] show connected graph structure in UI
 
 ### Milestone 3 - Retrieval MVP
 
@@ -156,5 +156,55 @@ What still does not work:
 Decision:
 
 - [x] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+### Slice: Phase 2B - Knowledge Graph Linker MVP
+
+Date: 2026-06-15
+
+Commit: `feat: link sqlite knowledge into graph` (exact hash reported in final response)
+
+What changed in the app:
+
+- Added deterministic offline entity extraction during SQLite text ingestion.
+- Stored extracted entities in SQLite `entities`.
+- Stored chunk/entity links in SQLite `chunk_entities`.
+- Stored entity/entity co-occurrence links in SQLite `relationships`.
+- Added a SQLite graph projection command that returns document, chunk, entity, and edge records.
+- Wired successful file ingestion to project SQLite documents/chunks/entities into the visible graph.
+- Rendered SQLite KB graph links as distinct green edges and exposed source/extract context on graph node cards.
+
+How to verify it:
+
+1. Launch the app with `npm run desktop`.
+2. Drop a text file containing repeated terms, capitalized phrases, and identifiers.
+3. Confirm SQLite KB document and chunk counts increase.
+4. Confirm entity count increases.
+5. Confirm relationship count increases.
+6. Confirm the graph shows a document node connected to chunk node(s).
+7. Confirm chunk node(s) connect to extracted entity nodes.
+8. Confirm entity nodes have co-occurrence edges when multiple entities appear in the same chunk.
+9. Search for a term from the file and confirm SQLite KB chunk results still appear.
+
+What works now:
+
+- Ingested SQLite documents no longer project only as disconnected file artifacts.
+- Documents, chunks, entities, and relationships are persisted in SQLite.
+- The existing graph store receives connected SQLite projection nodes and edges for rendering.
+- Search still reads SQLite chunks and records retrieval events.
+- IndexedDB remains as transitional graph compatibility.
+
+What still does not work:
+
+- This is not full GraphRAG.
+- Real embeddings are not implemented.
+- AI/entity extraction is not implemented.
+- Retrieval results are not yet injected into chat context.
+- Graph traversal retrieval is still a future slice.
+
+Decision:
+
+- [ ] Accepted
 - [ ] Needs fixes
 - [ ] Rejected

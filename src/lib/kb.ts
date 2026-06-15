@@ -58,6 +58,29 @@ export interface KbSearchResult {
   score: number;
 }
 
+export interface KbGraphNode {
+  id: string;
+  nodeType: 'document' | 'chunk' | 'entity';
+  label: string;
+  title?: string;
+  description?: string;
+  kind?: string;
+  ordinal?: number;
+}
+
+export interface KbGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: string;
+  label: string;
+}
+
+export interface KbGraphProjection {
+  nodes: KbGraphNode[];
+  edges: KbGraphEdge[];
+}
+
 export const emptyKbStats: KbStats = {
   initialized: false,
   schemaVersion: 0,
@@ -142,5 +165,16 @@ export async function kbGetDocument(
   return invokeTauri<KbDocument>('kb_get_document', {
     documentId,
     includeChunks,
+  });
+}
+
+export async function kbGraphProjection(input: {
+  workspaceId?: string;
+  documentId?: string;
+} = {}): Promise<KbGraphProjection> {
+  if (!isTauri()) return { nodes: [], edges: [] };
+  return invokeTauri<KbGraphProjection>('kb_graph_projection', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+    documentId: input.documentId,
   });
 }

@@ -4,6 +4,7 @@
 //! schema migration, chunk storage, simple SQLite search, and live stats. It is
 //! not GraphRAG and does not perform embeddings.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -87,6 +88,57 @@ pub struct KbSearchResult {
     pub score: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbEntity {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub kind: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbRelationship {
+    pub id: String,
+    pub workspace_id: String,
+    pub source_entity_id: String,
+    pub target_entity_id: String,
+    pub kind: String,
+    pub evidence_chunk_id: Option<String>,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbGraphNode {
+    pub id: String,
+    pub node_type: String,
+    pub label: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub kind: Option<String>,
+    pub ordinal: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbGraphEdge {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub kind: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbGraphProjection {
+    pub nodes: Vec<KbGraphNode>,
+    pub edges: Vec<KbGraphEdge>,
+}
+
 #[derive(Debug, Clone)]
 struct ChunkDraft {
     ordinal: usize,
@@ -95,6 +147,13 @@ struct ChunkDraft {
     char_end: usize,
     token_estimate: usize,
     content_hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct EntityDraft {
+    name: String,
+    kind: String,
+    confidence: f64,
 }
 
 fn now_ms() -> i64 {
@@ -141,6 +200,193 @@ fn sanitize_fragment(input: &str) -> String {
     } else {
         out
     }
+}
+
+fn normalize_entity_name(input: &str) -> String {
+    input
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(|ch: char| !ch.is_ascii_alphanumeric())
+        .to_string()
+}
+
+fn entity_id(workspace_id: &str, kind: &str, name: &str) -> String {
+    let key = format!(
+        "{}:{}:{}",
+        workspace_id.trim().to_lowercase(),
+        kind.trim().to_lowercase(),
+        normalize_entity_name(name).to_lowercase()
+    );
+    format!(
+        "ent_{}_{}",
+        sanitize_fragment(workspace_id),
+        content_hash(&key).trim_start_matches("fnv1a64:")
+    )
+}
+
+fn is_stop_word(term: &str) -> bool {
+    matches!(
+        term,
+        "about"
+            | "after"
+            | "again"
+            | "also"
+            | "and"
+            | "another"
+            | "are"
+            | "because"
+            | "been"
+            | "before"
+            | "being"
+            | "between"
+            | "but"
+            | "can"
+            | "could"
+            | "for"
+            | "from"
+            | "had"
+            | "has"
+            | "have"
+            | "into"
+            | "its"
+            | "not"
+            | "our"
+            | "over"
+            | "that"
+            | "the"
+            | "their"
+            | "then"
+            | "there"
+            | "these"
+            | "this"
+            | "those"
+            | "through"
+            | "under"
+            | "was"
+            | "were"
+            | "with"
+            | "without"
+            | "would"
+            | "you"
+            | "your"
+    )
+}
+
+fn ascii_words(text: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            current.push(ch);
+        } else if !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+fn is_capitalized_token(token: &str) -> bool {
+    let mut chars = token.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_uppercase()
+        && token
+            .chars()
+            .any(|ch| ch.is_ascii_alphabetic() || ch.is_ascii_digit())
+}
+
+fn is_phrase_continuation(token: &str) -> bool {
+    token.chars().all(|ch| ch.is_ascii_digit()) || is_capitalized_token(token)
+}
+
+fn is_code_like(token: &str) -> bool {
+    if token.len() < 4 || is_stop_word(&token.to_lowercase()) {
+        return false;
+    }
+    let has_upper = token.chars().any(|ch| ch.is_ascii_uppercase());
+    let has_lower = token.chars().any(|ch| ch.is_ascii_lowercase());
+    let has_digit = token.chars().any(|ch| ch.is_ascii_digit());
+    token.contains('_')
+        || token.contains('-')
+        || (has_upper && has_lower)
+        || (has_digit && (has_upper || has_lower))
+}
+
+fn push_entity(
+    entities: &mut Vec<EntityDraft>,
+    seen: &mut BTreeSet<(String, String)>,
+    name: &str,
+    kind: &str,
+    confidence: f64,
+) {
+    let normalized = normalize_entity_name(name);
+    if normalized.len() < 3 {
+        return;
+    }
+    let key = (kind.to_string(), normalized.to_lowercase());
+    if seen.insert(key) {
+        entities.push(EntityDraft {
+            name: normalized,
+            kind: kind.to_string(),
+            confidence,
+        });
+    }
+}
+
+fn extract_entities(title: &str, text: &str) -> Vec<EntityDraft> {
+    let mut entities = Vec::new();
+    let mut seen = BTreeSet::new();
+    push_entity(&mut entities, &mut seen, title, "document_title", 1.0);
+
+    let words = ascii_words(text);
+    let mut idx = 0usize;
+    while idx < words.len() {
+        if !is_capitalized_token(&words[idx]) {
+            idx += 1;
+            continue;
+        }
+        let mut phrase = vec![words[idx].clone()];
+        let mut j = idx + 1;
+        while j < words.len() && phrase.len() < 4 && is_phrase_continuation(&words[j]) {
+            phrase.push(words[j].clone());
+            j += 1;
+        }
+        let joined = phrase.join(" ");
+        if joined.len() >= 4 && !is_stop_word(&joined.to_lowercase()) {
+            push_entity(&mut entities, &mut seen, &joined, "phrase", 0.82);
+        }
+        idx = j.max(idx + 1);
+    }
+
+    for token in &words {
+        if is_code_like(token) {
+            push_entity(&mut entities, &mut seen, token, "identifier", 0.88);
+        }
+    }
+
+    let mut counts = BTreeMap::<String, usize>::new();
+    for word in &words {
+        let term = word.to_lowercase();
+        if term.len() >= 4 && !is_stop_word(&term) && term.chars().any(|ch| ch.is_ascii_alphabetic()) {
+            *counts.entry(term).or_default() += 1;
+        }
+    }
+    let mut repeated = counts
+        .into_iter()
+        .filter(|(_, count)| *count >= 2)
+        .collect::<Vec<_>>();
+    repeated.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    for (term, _) in repeated.into_iter().take(8) {
+        push_entity(&mut entities, &mut seen, &term, "keyword", 0.68);
+    }
+
+    entities.truncate(16);
+    entities
 }
 
 fn estimate_tokens(text: &str) -> usize {
@@ -517,8 +763,31 @@ fn ingest_text_conn(
             .map_err(|e| e.to_string())?;
         }
     }
+    for chunk_id in &old_chunk_ids {
+        tx.execute(
+            "DELETE FROM relationships WHERE evidence_chunk_id = ?1",
+            params![chunk_id],
+        )
+        .map_err(|e| e.to_string())?;
+        tx.execute(
+            "DELETE FROM chunk_entities WHERE chunk_id = ?1",
+            params![chunk_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
     tx.execute("DELETE FROM chunks WHERE document_id = ?1", params![doc_id])
         .map_err(|e| e.to_string())?;
+    tx.execute(
+        "
+        DELETE FROM entities
+        WHERE workspace_id = ?1
+          AND NOT EXISTS (
+            SELECT 1 FROM chunk_entities ce WHERE ce.entity_id = entities.id
+          )
+        ",
+        params![workspace_id],
+    )
+    .map_err(|e| e.to_string())?;
 
     for chunk in &chunks {
         let chunk_id = format!("chunk_{}_{}", doc_id, chunk.ordinal);
@@ -550,6 +819,67 @@ fn ingest_text_conn(
                 params![chunk_id, workspace_id, chunk.text],
             )
             .map_err(|e| e.to_string())?;
+        }
+
+        let extracted = extract_entities(title, &chunk.text);
+        let mut chunk_entity_ids = BTreeSet::new();
+        for entity in extracted {
+            let entity_id = entity_id(workspace_id, &entity.kind, &entity.name);
+            tx.execute(
+                "
+                INSERT INTO entities(id, workspace_id, name, kind, confidence, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    kind = excluded.kind,
+                    confidence = MAX(entities.confidence, excluded.confidence),
+                    updated_at = excluded.updated_at
+                ",
+                params![
+                    entity_id,
+                    workspace_id,
+                    entity.name,
+                    entity.kind,
+                    entity.confidence,
+                    now,
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            tx.execute(
+                "INSERT OR IGNORE INTO chunk_entities(chunk_id, entity_id, role) VALUES (?1, ?2, ?3)",
+                params![
+                    chunk_id,
+                    entity_id,
+                    if entity.kind == "document_title" { "document_title" } else { "mentions" },
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+            chunk_entity_ids.insert(entity_id);
+        }
+
+        let entity_ids = chunk_entity_ids.into_iter().collect::<Vec<_>>();
+        for i in 0..entity_ids.len() {
+            for j in (i + 1)..entity_ids.len() {
+                let source = &entity_ids[i];
+                let target = &entity_ids[j];
+                let rel_key = format!("{workspace_id}:{chunk_id}:{source}:{target}:co_occurrence");
+                let rel_id = format!(
+                    "rel_{}_{}",
+                    sanitize_fragment(workspace_id),
+                    content_hash(&rel_key).trim_start_matches("fnv1a64:")
+                );
+                tx.execute(
+                    "
+                    INSERT OR IGNORE INTO relationships(
+                        id, workspace_id, source_entity_id, target_entity_id,
+                        kind, evidence_chunk_id, confidence, created_at
+                    )
+                    VALUES (?1, ?2, ?3, ?4, 'co_occurrence', ?5, 0.72, ?6)
+                    ",
+                    params![rel_id, workspace_id, source, target, chunk_id, now],
+                )
+                .map_err(|e| e.to_string())?;
+            }
         }
     }
     tx.commit().map_err(|e| e.to_string())?;
@@ -759,6 +1089,221 @@ fn get_document_conn(
     Ok(doc)
 }
 
+fn projection_documents(
+    conn: &Connection,
+    workspace_id: &str,
+    document_id: Option<&str>,
+) -> rusqlite::Result<Vec<KbDocument>> {
+    let mut docs = Vec::new();
+    if let Some(document_id) = document_id {
+        docs.push(get_document_conn(conn, document_id, false).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?);
+        return Ok(docs);
+    }
+
+    let mut stmt = conn.prepare(
+        "
+        SELECT id, workspace_id, title, source_uri, source_kind, mime_type,
+               content_hash, byte_length, created_at, updated_at
+        FROM documents
+        WHERE workspace_id = ?1
+        ORDER BY updated_at DESC, title ASC
+        LIMIT 25
+        ",
+    )?;
+    let rows = stmt
+        .query_map(params![workspace_id], |row| {
+            Ok(KbDocument {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                title: row.get(2)?,
+                source_uri: row.get(3)?,
+                source_kind: row.get(4)?,
+                mime_type: row.get(5)?,
+                content_hash: row.get(6)?,
+                byte_length: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                chunk_count: 0,
+                chunks: None,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    for mut doc in rows {
+        doc.chunk_count = chunk_count_for_document(conn, &doc.id)?;
+        docs.push(doc);
+    }
+    Ok(docs)
+}
+
+fn graph_projection_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    document_id: Option<&str>,
+) -> Result<KbGraphProjection, String> {
+    let workspace_id = workspace_id.trim();
+    if workspace_id.is_empty() {
+        return Err("workspace_id is required".to_string());
+    }
+    init_schema(conn).map_err(|e| e.to_string())?;
+
+    let docs = projection_documents(conn, workspace_id, document_id).map_err(|e| e.to_string())?;
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    let mut entity_ids = BTreeSet::<String>::new();
+    let mut chunk_ids = BTreeSet::<String>::new();
+    let mut document_entity_edges = BTreeSet::<(String, String)>::new();
+
+    for doc in &docs {
+        nodes.push(KbGraphNode {
+            id: doc.id.clone(),
+            node_type: "document".to_string(),
+            label: format!("KB_DOC_{}", sanitize_fragment(&doc.title).to_uppercase()),
+            title: Some(doc.title.clone()),
+            description: doc.source_uri.clone(),
+            kind: Some(doc.source_kind.clone()),
+            ordinal: None,
+        });
+
+        let chunks = chunks_for_document(conn, &doc.id).map_err(|e| e.to_string())?;
+        for chunk in chunks {
+            chunk_ids.insert(chunk.id.clone());
+            nodes.push(KbGraphNode {
+                id: chunk.id.clone(),
+                node_type: "chunk".to_string(),
+                label: format!("KB_CHUNK_{}", chunk.ordinal + 1),
+                title: Some(format!("{} chunk {}", doc.title, chunk.ordinal + 1)),
+                description: Some(chunk.text.chars().take(220).collect()),
+                kind: Some("chunk".to_string()),
+                ordinal: Some(chunk.ordinal),
+            });
+            edges.push(KbGraphEdge {
+                id: format!("kb_edge_doc_chunk_{}_{}", doc.id, chunk.id),
+                source: doc.id.clone(),
+                target: chunk.id.clone(),
+                kind: "document_chunk".to_string(),
+                label: "document -> chunk".to_string(),
+            });
+
+            let mut stmt = conn
+                .prepare(
+                    "
+                    SELECT e.id
+                    FROM chunk_entities ce
+                    JOIN entities e ON e.id = ce.entity_id
+                    WHERE ce.chunk_id = ?1
+                    ORDER BY e.kind ASC, e.name ASC
+                    ",
+                )
+                .map_err(|e| e.to_string())?;
+            let linked = stmt
+                .query_map(params![chunk.id], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            for entity_id in linked {
+                entity_ids.insert(entity_id.clone());
+                document_entity_edges.insert((doc.id.clone(), entity_id.clone()));
+                edges.push(KbGraphEdge {
+                    id: format!("kb_edge_chunk_entity_{}_{}", chunk.id, entity_id),
+                    source: chunk.id.clone(),
+                    target: entity_id,
+                    kind: "chunk_entity".to_string(),
+                    label: "chunk -> entity".to_string(),
+                });
+            }
+        }
+    }
+
+    for entity_id in &entity_ids {
+        let entity = conn
+            .query_row(
+                "
+                SELECT id, workspace_id, name, kind, confidence
+                FROM entities
+                WHERE id = ?1
+                ",
+                params![entity_id],
+                |row| {
+                    Ok(KbEntity {
+                        id: row.get(0)?,
+                        workspace_id: row.get(1)?,
+                        name: row.get(2)?,
+                        kind: row.get(3)?,
+                        confidence: row.get(4)?,
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())?;
+        nodes.push(KbGraphNode {
+            id: entity.id,
+            node_type: "entity".to_string(),
+            label: format!("KB_ENT_{}", sanitize_fragment(&entity.name).to_uppercase()),
+            title: Some(entity.name),
+            description: Some(format!("{} · confidence {:.2}", entity.kind, entity.confidence)),
+            kind: Some(entity.kind),
+            ordinal: None,
+        });
+    }
+
+    for (doc_id, entity_id) in document_entity_edges {
+        edges.push(KbGraphEdge {
+            id: format!("kb_edge_doc_entity_{}_{}", doc_id, entity_id),
+            source: doc_id,
+            target: entity_id,
+            kind: "document_entity".to_string(),
+            label: "document -> entity".to_string(),
+        });
+    }
+
+    let mut relationship_stmt = conn
+        .prepare(
+            "
+            SELECT id, workspace_id, source_entity_id, target_entity_id,
+                   kind, evidence_chunk_id, confidence
+            FROM relationships
+            WHERE workspace_id = ?1
+            ORDER BY created_at ASC, id ASC
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    let relationships = relationship_stmt
+        .query_map(params![workspace_id], |row| {
+            Ok(KbRelationship {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                source_entity_id: row.get(2)?,
+                target_entity_id: row.get(3)?,
+                kind: row.get(4)?,
+                evidence_chunk_id: row.get(5)?,
+                confidence: row.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for relationship in relationships {
+        if !entity_ids.contains(&relationship.source_entity_id)
+            || !entity_ids.contains(&relationship.target_entity_id)
+        {
+            continue;
+        }
+        if let Some(evidence_chunk_id) = &relationship.evidence_chunk_id {
+            if !chunk_ids.contains(evidence_chunk_id) {
+                continue;
+            }
+        }
+        edges.push(KbGraphEdge {
+            id: relationship.id,
+            source: relationship.source_entity_id,
+            target: relationship.target_entity_id,
+            kind: relationship.kind.clone(),
+            label: relationship.kind,
+        });
+    }
+
+    Ok(KbGraphProjection { nodes, edges })
+}
+
 #[tauri::command]
 pub fn kb_init(app: AppHandle) -> Result<KbInitResult, String> {
     let path = db_path(&app)?;
@@ -820,6 +1365,16 @@ pub fn kb_get_document(
     get_document_conn(&conn, &document_id, include_chunks.unwrap_or(false))
 }
 
+#[tauri::command]
+pub fn kb_graph_projection(
+    app: AppHandle,
+    workspace_id: String,
+    document_id: Option<String>,
+) -> Result<KbGraphProjection, String> {
+    let conn = open_app_db(&app)?;
+    graph_projection_conn(&conn, &workspace_id, document_id.as_deref())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -866,6 +1421,32 @@ mod tests {
     }
 
     #[test]
+    fn entity_extraction_is_deterministic() {
+        let text = "CODE NAME 2 tracks Project Atlas and Project Atlas with UniqueSearchTerm7391.";
+        let first = extract_entities("kb-smoke-test.txt", text);
+        let second = extract_entities("kb-smoke-test.txt", text);
+        assert_eq!(first, second);
+        assert!(first.iter().any(|e| e.name == "CODE NAME 2"));
+        assert!(first.iter().any(|e| e.name == "UniqueSearchTerm7391"));
+    }
+
+    #[test]
+    fn entity_extraction_ignores_stop_words() {
+        let entities = extract_entities("Note", "the the and with that that stable stable");
+        assert!(!entities
+            .iter()
+            .any(|e| matches!(e.name.as_str(), "the" | "and" | "with" | "that")));
+        assert!(entities.iter().any(|e| e.name == "stable"));
+    }
+
+    #[test]
+    fn document_title_becomes_entity() {
+        let entities = extract_entities("kb-smoke-test.txt", "plain body");
+        assert!(entities.iter().any(|e| e.name == "kb-smoke-test.txt"
+            && e.kind == "document_title"));
+    }
+
+    #[test]
     fn ingest_creates_document_and_chunks() {
         let mut conn = memory_db();
         let result = ingest_text_conn(
@@ -882,6 +1463,7 @@ mod tests {
         let stats = stats_conn(&conn).expect("stats");
         assert_eq!(stats.document_count, 1);
         assert_eq!(stats.chunk_count, 1);
+        assert!(stats.entity_count >= 1);
     }
 
     #[test]
@@ -931,6 +1513,64 @@ mod tests {
     }
 
     #[test]
+    fn ingest_stores_entities_chunk_links_and_relationships() {
+        let mut conn = memory_db();
+        ingest_text_conn(
+            &mut conn,
+            "default",
+            "Project Atlas Notes",
+            "CODE NAME 2 connects Project Atlas to UniqueSearchTerm7391. Project Atlas repeats.",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        let stats = stats_conn(&conn).expect("stats");
+        assert!(stats.entity_count >= 3);
+        assert!(stats.relationship_count >= 1);
+        assert!(count_table(&conn, "chunk_entities").expect("chunk_entities") >= 3);
+    }
+
+    #[test]
+    fn graph_projection_returns_connected_nodes_and_edges() {
+        let mut conn = memory_db();
+        let result = ingest_text_conn(
+            &mut conn,
+            "default",
+            "Project Atlas Notes",
+            "CODE NAME 2 connects Project Atlas to UniqueSearchTerm7391. Project Atlas repeats.",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        let projection =
+            graph_projection_conn(&conn, "default", Some(&result.document_id)).expect("projection");
+        assert!(projection
+            .nodes
+            .iter()
+            .any(|node| node.node_type == "document"));
+        assert!(projection.nodes.iter().any(|node| node.node_type == "chunk"));
+        assert!(projection.nodes.iter().any(|node| node.node_type == "entity"));
+        assert!(projection
+            .edges
+            .iter()
+            .any(|edge| edge.label == "document -> chunk"));
+        assert!(projection
+            .edges
+            .iter()
+            .any(|edge| edge.label == "chunk -> entity"));
+        assert!(projection
+            .edges
+            .iter()
+            .any(|edge| edge.label == "document -> entity"));
+        assert!(projection
+            .edges
+            .iter()
+            .any(|edge| edge.kind == "co_occurrence"));
+    }
+
+    #[test]
     fn stats_reflect_ingested_content() {
         let mut conn = memory_db();
         ingest_text_conn(
@@ -946,8 +1586,7 @@ mod tests {
         let stats = stats_conn(&conn).expect("stats");
         assert_eq!(stats.document_count, 1);
         assert!(stats.chunk_count >= 1);
-        assert_eq!(stats.entity_count, 0);
-        assert_eq!(stats.relationship_count, 0);
+        assert!(stats.entity_count >= 1);
     }
 
     #[test]
@@ -977,6 +1616,22 @@ mod tests {
         assert_eq!(first.content_hash, second.content_hash);
         let stats = stats_conn(&conn).expect("stats");
         assert_eq!(stats.document_count, 1);
+        assert_eq!(stats.chunk_count, first.chunk_count as i64);
+        let entity_count = stats.entity_count;
+        let relationship_count = stats.relationship_count;
+        ingest_text_conn(
+            &mut conn,
+            "default",
+            "Third",
+            "same content",
+            None,
+            None,
+            None,
+        )
+        .expect("third ingest");
+        let after = stats_conn(&conn).expect("stats after duplicate");
+        assert_eq!(after.entity_count, entity_count);
+        assert_eq!(after.relationship_count, relationship_count);
     }
 
     #[test]

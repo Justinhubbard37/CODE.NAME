@@ -56,12 +56,14 @@ import {
   emptyKbStats,
   kbInit,
   kbIngestText,
+  kbGraphProjection,
   kbSearch,
   kbStats as loadKbStats,
   type KbSearchResult,
   type KbStats,
 } from '../lib/kb';
 import { kgStore } from '../kg/store';
+import { hasConnectedKbProjection, kbProjectionToGraph } from '../kg/kbProjection';
 import { stubEmbed } from '../kg/vector';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
 import { retriever } from '../kg/retrieve';
@@ -683,6 +685,58 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [commit, activeTaskId],
   );
 
+  const mergeKbGraphProjection = useCallback(
+    async (documentId: string): Promise<{ nodes: number; edges: number; connected: boolean }> => {
+      if (!canWrite(currentUser?.role)) {
+        pushActivity(activeTaskId, 'system', 'KB graph projection denied - viewer role');
+        return { nodes: 0, edges: 0, connected: false };
+      }
+      const projection = await kbGraphProjection({
+        workspaceId: activeKbWorkspaceId(),
+        documentId,
+      });
+      const connected = hasConnectedKbProjection(projection);
+      const graph = kbProjectionToGraph(projection);
+      if (!graph.nodes.length) return { nodes: 0, edges: 0, connected };
+
+      const decision = evaluateKgWrite(gatesRef.current);
+      await kgStore.appendAudit(
+        makeAudit({
+          actor: { kind: 'system', id: 'sqlite-kb', taskId: activeTaskId },
+          action: 'create',
+          target: { kind: 'node', id: documentId },
+          decision,
+          diff: `project SQLite KB document ${documentId} into graph`,
+          provenance: { source: 'SQLite KB', ingestionId: documentId },
+        }),
+      );
+      if (!decision.allowed) {
+        pushActivity(activeTaskId, 'system', `KB graph projection denied - ${decision.reason}`);
+        return { nodes: 0, edges: 0, connected: false };
+      }
+
+      setNodes((current) => {
+        const incoming = new Map(graph.nodes.map((node) => [node.id, node]));
+        const merged = current.map((node) => incoming.get(node.id) ?? node);
+        for (const node of graph.nodes) {
+          if (!current.some((existing) => existing.id === node.id)) merged.push(node);
+        }
+        return merged;
+      });
+      setEdges((current) => {
+        const incoming = new Map(graph.edges.map((edge) => [edge.id, edge]));
+        const merged = current.map((edge) => incoming.get(edge.id) ?? edge);
+        for (const edge of graph.edges) {
+          if (!current.some((existing) => existing.id === edge.id)) merged.push(edge);
+        }
+        return merged;
+      });
+      await Promise.all([kgStore.putNodes(graph.nodes), kgStore.putEdges(graph.edges)]);
+      return { nodes: graph.nodes.length, edges: graph.edges.length, connected };
+    },
+    [activeTaskId, currentUser?.role, pushActivity],
+  );
+
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -1220,8 +1274,29 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             sourceKind: 'file',
             mimeType: file.type || 'text/plain',
           });
+          const projection = await mergeKbGraphProjection(kbResult.documentId);
           await refreshKbStats();
           pushActivity(activeTaskId, 'system', `sqlite kb: ${kbResult.chunkCount} chunk(s) stored`);
+          pushActivity(
+            activeTaskId,
+            'system',
+            projection.connected
+              ? `sqlite graph: ${projection.nodes} node(s), ${projection.edges} edge(s) linked`
+              : 'sqlite graph: projection produced no visible links',
+          );
+          setQuarantine((q) =>
+            q.map((it) =>
+              it.id === itemId
+                ? {
+                    ...it,
+                    hash,
+                    status: 'indexed',
+                    note: `${kbResult.documentId} - ${projection.nodes} graph nodes`,
+                  }
+                : it,
+            ),
+          );
+          continue;
         } catch (err) {
           const reason = err instanceof Error ? err.message : 'unavailable';
           pushActivity(activeTaskId, 'system', `sqlite kb unavailable: ${reason}`);
@@ -1272,7 +1347,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         pushActivity(activeTaskId, 'system', `communities: ${communities.length} detected`);
       })();
     },
-    [activeTaskId, createDocNode, pushActivity, refreshKbStats, updateNodeData],
+    [activeTaskId, createDocNode, mergeKbGraphProjection, pushActivity, refreshKbStats, updateNodeData],
   );
 
   const resolveConflict = useCallback(

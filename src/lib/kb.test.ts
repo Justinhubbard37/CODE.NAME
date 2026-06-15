@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { kbIngestText, kbSearch, kbStats } from './kb';
+import { kbGraphProjection, kbIngestText, kbSearch, kbStats } from './kb';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -86,5 +86,28 @@ describe('SQLite KB wrapper', () => {
       limit: 3,
     });
     expect(results[0].chunk.text).toBe('sqlite result');
+  });
+
+  it('calls kb_graph_projection for the active workspace and document', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue({
+      nodes: [
+        {
+          id: 'doc-1',
+          nodeType: 'document',
+          label: 'KB_DOC_NOTE',
+          title: 'Note',
+        },
+      ],
+      edges: [],
+    });
+
+    const projection = await kbGraphProjection({ documentId: 'doc-1' });
+
+    expect(mockedInvoke).toHaveBeenCalledWith('kb_graph_projection', {
+      workspaceId: 'default',
+      documentId: 'doc-1',
+    });
+    expect(projection.nodes[0].nodeType).toBe('document');
   });
 });

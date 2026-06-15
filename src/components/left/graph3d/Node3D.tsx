@@ -81,7 +81,9 @@ export function Node3D({
               <Row k="TITLE" v={d.title} />
               <Row k="NAME" v={d.name} />
               <Row k="ALIAS" v={d.alias} />
+              <Row k="SRC" v={d.src} />
               <Row k="CLASS" v={d.class} />
+              <Row k="WHY" v={d.description ? d.description.slice(0, 48) : undefined} />
             </div>
           </div>
         </Html>

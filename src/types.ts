@@ -36,7 +36,10 @@ export type NodeData = {
   communitySummary?: string;
 };
 
-export type AppNode = Node<NodeData, 'doc' | 'subject' | 'org' | 'audio' | 'cluster'>;
+export type AppNode = Node<
+  NodeData,
+  'doc' | 'subject' | 'org' | 'audio' | 'cluster' | 'chunk' | 'entity'
+>;
 
 export type { Edge };
 

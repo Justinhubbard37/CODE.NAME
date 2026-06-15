@@ -511,6 +511,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "kb_graph_projection",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Reads local SQLite documents, chunks, entities, and relationships as graph-ready projection data.",
+        priority: PolicyPriority::Normal,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "secret_get",
         required_gates: NO_GATES,
         risk: risk(RiskLevel::Critical, RiskLevel::None, RiskLevel::None, RiskLevel::None),
