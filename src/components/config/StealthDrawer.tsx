@@ -4,7 +4,7 @@ import {
   exportWorkspace, importWorkspace, applyWorkspace,
   exportGraphJSON, exportGraphCSV, exportAuditJSON, exportAuditCSV,
 } from '../../lib/backup';
-import { SlidersStub } from './SlidersStub';
+import { ModelTuningControls } from './ModelTuningControls';
 import { SecurityGates } from './SecurityGates';
 import { SecretsPanel } from './SecretsPanel';
 import { useApp } from '../../state/AppState';
@@ -19,7 +19,7 @@ import {
  * CONFIGURATION & CAPABILITY GOVERNANCE.
  * A low-profile tab in the bottom-left corner. It slides open a parameter tray:
  * named presets (add / rename / delete), the routed endpoint, a model picker,
- * temperature & context sliders, and the hard capability gates. Clicking outside
+ * temperature & context sliders, and the capability gates. Clicking outside
  * the tray (or pressing Escape) closes it.
  */
 export function StealthDrawer() {
@@ -263,7 +263,7 @@ export function StealthDrawer() {
           <SecretsPanel />
 
           {/* Hardware sliders (temperature + context window) */}
-          <SlidersStub />
+          <ModelTuningControls />
 
           {/* Workspaces (Phase 8.3) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
@@ -589,5 +589,5 @@ This will OVERWRITE all current data. ` +
   );
 }
 
-// Re-export to keep a single import surface (sliders live in their own file).
-export { SlidersStub };
+// Re-export to keep a single import surface (tuning controls live in their own file).
+export { ModelTuningControls };

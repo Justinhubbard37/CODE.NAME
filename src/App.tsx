@@ -2,9 +2,9 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * CODE NAME: |  —  Agent harness shell.
+ * CODE NAME: Agent harness shell.
  * Two-pane governed workspace over a local-first knowledge ecosystem
- * (Knowledge Graph · GraphRAG · Vector store) with a model-agnostic
+ * (knowledge graph, graph search, and retrieval scaffolds) with a model-agnostic
  * execution canvas. Built to the OnTheLLow blueprint.
  */
 import { useEffect, useState } from 'react';

@@ -18,12 +18,12 @@ const ARCHIVE: TreeNode = {
       ],
     },
     {
-      label: 'VECTOR_STORE',
-      children: [{ label: 'EMBEDDINGS' }, { label: 'CHUNKS' }],
+      label: 'VECTOR_SCAFFOLD',
+      children: [{ label: 'STUB_EMBEDDINGS' }, { label: 'CHUNKS' }],
     },
     {
-      label: 'GRAPHRAG_INDEX',
-      children: [{ label: 'COMMUNITIES' }, { label: 'SUMMARIES' }],
+      label: 'GRAPH_SEARCH_INDEX',
+      children: [{ label: 'COMMUNITIES_SCAFFOLD' }, { label: 'SUMMARIES_PLANNED' }],
     },
     { label: 'INGEST_LOG' },
   ],

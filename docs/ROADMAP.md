@@ -46,7 +46,7 @@ sidecar-handshake contract typed and documented; config object in place.
 
 - Persistent local KG store (survives restarts) replacing in-memory node/edge
   state.
-- Vector store + embeddings over ingested content.
+- Vector-search store + embeddings over ingested content.
 - GraphRAG index build, **including its community hierarchy** (reused later for
   the 3D cluster tier — no separate clustering algorithm).
 - Replace the client-side query filter with **real GraphRAG/vector retrieval**

@@ -2,7 +2,7 @@ import { useApp } from '../../state/AppState';
 
 const CTX_STEPS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
 
-export function SlidersStub() {
+export function ModelTuningControls() {
   const { activeProfile, updateProfile } = useApp();
 
   const ctxIndex = Math.max(

@@ -198,7 +198,7 @@ Supports a full centered layout and a `compact` inline row for thin bars.
 
 | Surface | State added |
 |---|---|
-| **Graph** (`graph3d/Graph3D.tsx`) | Empty overlay when the graph has no nodes; "no nodes match your query" overlay when an active GraphRAG query hides every node. Overlays are `pointer-events-none`, so orbit controls are never blocked. |
+| **Graph** (`graph3d/Graph3D.tsx`) | Empty overlay when the graph has no nodes; "no nodes match your query" overlay when an active graph-search query hides every node. Overlays are `pointer-events-none`, so orbit controls are never blocked. |
 | **Graph loading** (`left/MissionControl.tsx`) | The lazy-chunk `Suspense` fallback now renders a `StateBlock` loading state instead of bare text. |
 | **Chat** (`right/ChatThread.tsx`) | Empty state migrated to a `StateBlock`; a new "working" indicator (animated dots, `aria-live`) fills the gap between send and the first streamed token. Existing send/sidecar errors already surface as system/assistant bubbles. |
 | **Tools** (`right/AgentToolsBar.tsx`) | The bar no longer returns `null` when empty — it stays present with a "no tools registered" note so the row never silently disappears. |
@@ -225,7 +225,7 @@ focus moved to the close button on open, backdrop click-out) organizing:
 | Models & routing | preset / endpoint / model selectors via `useApp` |
 | Secrets | reuses `config/SecretsPanel` |
 | Capability gates | reuses `config/SecurityGates` |
-| Tuning | reuses `config/SlidersStub` |
+| Tuning | reuses `config/ModelTuningControls` |
 | Language | the 10.3 switch (`useLang`) |
 | Logs | `open_log_dir` (desktop only; graceful message in browser) |
 | About | app name, version, description |

@@ -1,29 +1,43 @@
-# Contract — Sidecar bind + auth (P0.2, LOCKED)
+# Contract - Sidecar Bind And Auth
 
-**Goal:** only the Tauri shell can reach the Python agent sidecar.
+**Goal:** the Tauri shell supervises access to the Python agent sidecar.
 
-## Bind
-- Sidecar binds **`127.0.0.1`** only (never `0.0.0.0`).
-- Port is **OS-assigned ephemeral** (`port 0`). No fixed port (avoids collisions
-  and squatting).
+## Current Bind
 
-## Handshake
-1. Rust supervisor spawns the sidecar.
-2. Sidecar mints a **per-launch random token** and binds its port.
-3. Sidecar prints a single JSON line on **stdout** matching `SidecarHandshake`
-   (`src/types.ts`): `{ ready, host, port, token, protocol:'a2a', specVersion, pid }`.
-4. Rust reads that line to learn the port + token; nothing is hard-coded.
+- The sidecar binds to `127.0.0.1` only.
+- The port is OS-assigned and ephemeral.
+- No fixed port is hard-coded.
 
-## Auth
-- Every A2A call from the TS client carries `Authorization: Bearer <token>`.
-- Inject via the A2A JS SDK `CallInterceptor` / `createAuthenticatingFetchWithRetry`.
-- Sidecar rejects any request without the exact token (401).
+## Current Handshake
 
-## Defense in depth
-- Loopback-only bind **plus** per-session token: other local processes and
-  webview tabs cannot drive the sidecar even though the port is local.
-- Token lives only in shell memory for the process lifetime; new token per launch.
+1. The Rust supervisor spawns the sidecar.
+2. The sidecar mints a per-launch random token and binds its port.
+3. The sidecar prints a single JSON line on stdout matching the handshake shape
+   used by the Rust sidecar supervisor.
+4. Rust reads that line, stores the host/port/token in shell state, and does not
+   intentionally expose the bearer token to frontend state.
 
-## Gate coupling
-- Closing the **network** or **tools** gate severs/limits the sidecar bridge at
-  the Rust supervisor, not just the UI (Phase 3).
+## Current Auth Boundary
+
+- Rust forwards loopback sidecar calls with `Authorization: Bearer <token>`.
+- The sidecar rejects requests without the exact token.
+- Frontend code should call the Rust commands rather than carrying the sidecar
+  bearer token itself.
+
+This updates older notes that said every TypeScript A2A call carries the token.
+That is stale for the current app path.
+
+## Known Phase 0 Limitation
+
+Token containment is only one part of the trust boundary. The master audit still
+identifies missing backend gate coverage on some sidecar/browser/pool commands.
+Full command-policy enforcement and Rust tests are deferred to later security
+hardening work.
+
+## Defense In Depth Target
+
+- Loopback-only bind.
+- Per-launch token.
+- Token retained by Rust.
+- Frontend receives capability and status information, not raw sidecar secrets.
+- Network and Tools gates enforced by Rust for every privileged sidecar path.

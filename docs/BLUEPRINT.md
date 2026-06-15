@@ -2,6 +2,13 @@
 
 _Last updated: 2026-06-07. This is the single plan we follow to take CODE NAME from what it is today to enterprise-grade software._
 
+> Phase 0 stabilization note (2026-06-14): this document is partly historical.
+> The current repo has real graph persistence, hybrid retrieval scaffolding,
+> automated TypeScript/Vitest tests, and Rust-held sidecar token forwarding.
+> Production GraphRAG, real semantic embeddings, complete backend gate
+> enforcement, production secret isolation, and release/compliance readiness are
+> still planned work unless a later audit says otherwise.
+
 ---
 
 ## How to read this blueprint
@@ -40,7 +47,7 @@ Read this once. It explains the words used all through the plan.
 - **Sidecar** — a small Python program (`sidecar/agent_sidecar.py`) that runs the AI "agent." The shell starts it and watches it.
 - **Frontend** — the part you see, written in React (the `src` folder).
 - **Knowledge Graph (KG)** — a web of "cards" (documents, people, groups) joined by links. This is the app's memory.
-- **Vector store** — a database of "embeddings" (see below) used to find things by meaning, not just by exact words.
+- **Planned vector search** — a future production database of embeddings used to find things by meaning, not just by exact words. The current repo uses retrieval scaffolding and stub vectors.
 - **Embedding** — a list of numbers that captures the meaning of a piece of text, so we can compare meanings.
 - **GraphRAG** — a way to answer questions by walking the knowledge graph and grouping related cards into "communities."
 - **Retrieval** — the act of finding the most useful cards for a question.
@@ -74,11 +81,17 @@ CODE NAME already has a lot built and working:
 
 But several big pieces are only "pretend" for now, and the plan below turns them real:
 
-- The agent only **echoes** your words. There is no real "brain" yet.
-- There is **no real vector store** and **no real GraphRAG**. Search is keyword-only.
-- The **gates only block things in the web layer.** The Rust shell does not truly cut the wire, and the secret token is handed to the web page. This is the biggest security gap.
-- The browser tool does not really open a browser.
-- There are **no automated tests**, no installer, and a few small clean-ups needed (web fonts load from the internet, stale names, dead 2D code).
+- The agent and sidecar paths are partially wired, with synthetic fallback behavior
+  when no real provider is available.
+- The vector and GraphRAG surfaces are **not production-real yet**. Current
+  retrieval uses local graph/search scaffolding and stub-vector behavior.
+- Capability gates exist and are partially mirrored into Rust, but backend
+  enforcement is incomplete. The sidecar token is now held by Rust in the current
+  app path, but command-policy coverage still needs hardening.
+- Browser harness work exists as scaffolding and notes; it still needs backend URL
+  policy and safety hardening before production use.
+- Automated tests exist, but installer/release hardening and several cleanup
+  items remain.
 
 The phases below fix all of this and then push far past it.
 
@@ -366,7 +379,7 @@ A quick note on order. Phase 0 and Phase 1 come first because they make everythi
 
 # PHASE 4 — The Real Knowledge Ecosystem
 
-**Goal:** Make the "GraphRAG · Vector store" promise true. Add embeddings, real meaning-based search, and real communities. Move storage to something that scales.
+**Goal:** Make the planned GraphRAG and vector-search promise true. Add real embeddings, real meaning-based search, and real communities. Move storage to something that scales.
 
 ### Slice 4.1 — Add an embeddings step at intake
 - **Goal:** Turn ingested text into embeddings.

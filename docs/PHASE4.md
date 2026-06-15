@@ -1,6 +1,6 @@
 # Phase 4 — The Real Knowledge Ecosystem
 
-**Status:** ✅ Complete (Slices 4.1–4.5). Slice 4.6 (SQLite) deferred.
+**Status:** Implemented as local retrieval/community scaffolding. Stub embeddings and fallback community summaries are not production GraphRAG.
 
 ---
 
@@ -9,9 +9,9 @@
 | Slice | Title | Status |
 |-------|-------|--------|
 | 4.1 | Embedding step at intake | ✅ |
-| 4.2 | Vector store + VectorRetriever | ✅ |
+| 4.2 | Vector scaffold + VectorRetriever | ✅ |
 | 4.3 | Hybrid retriever (BM25 + vector RRF) | ✅ |
-| 4.4 | Real GraphRAG communities | ✅ |
+| 4.4 | Graph community scaffold | ✅ |
 | 4.5 | 4th LOD cluster tier in 3D view | ✅ |
 | 4.6 | SQLite storage backend | ⏸ Deferred |
 
@@ -31,7 +31,7 @@
 
 ---
 
-## Slice 4.2 — Vector store + VectorRetriever
+## Slice 4.2 — Vector scaffold + VectorRetriever
 
 **What changed:**
 - `src/kg/store.ts` — `DB_VERSION` bumped 1 → 2. `onupgradeneeded` creates `chunks` (with `nodeId` index) and `vectors` object stores. Added `VectorRecord`, `ChunkRecord` types and `getVector()`, `getAllVectors()`, `putVectors()`, `putChunks()` methods.
@@ -51,7 +51,7 @@
 
 ---
 
-## Slice 4.4 — Real GraphRAG communities
+## Slice 4.4 — Graph community scaffold
 
 **What changed:**
 - `src/types.ts` — Added `communityId?: string` and `communitySummary?: string` to `NodeData`.

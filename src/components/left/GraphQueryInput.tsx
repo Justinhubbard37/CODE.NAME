@@ -44,7 +44,7 @@ export function GraphQueryInput() {
   return (
     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-[min(80%,30rem)] pointer-events-auto text-[10px] font-mono">
       <div className="flex justify-between items-end mb-1">
-        <span className="text-neutral-500 uppercase tracking-wider">GraphRAG Query</span>
+        <span className="text-neutral-500 uppercase tracking-wider">Graph Search</span>
         <label className="cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-neutral-200 px-2 py-0.5 flex items-center gap-1 tracking-wider">
           <ScanLine className="w-3 h-3" aria-hidden="true" /> OCR
           <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
@@ -58,7 +58,7 @@ export function GraphQueryInput() {
         <input
           value={graphQuery}
           onChange={(e) => setGraphQuery(e.target.value)}
-          aria-label="GraphRAG query"
+          aria-label="Graph search"
           placeholder="Graph query active... (enter to retrieve)"
           className="flex-1 bg-transparent outline-none text-neutral-200 placeholder-neutral-600"
         />

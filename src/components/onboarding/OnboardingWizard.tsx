@@ -266,7 +266,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'gates' && (
             <div className="space-y-3">
               <p className="text-neutral-500">
-                Gates are hard capability switches. They start open for a smooth first run; close any you don’t want.
+                Gates are capability switches. They start open for a smooth first run; close any you don’t want.
               </p>
               {GATE_COPY.map((g) => (
                 <div key={g.key} className="flex items-start justify-between gap-3 border border-neutral-800 px-3 py-2">

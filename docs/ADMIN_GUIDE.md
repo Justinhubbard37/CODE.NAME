@@ -1,180 +1,144 @@
-# CODE NAME — Administrator Guide
+# CODE NAME 2 Administrator Guide
 
-This guide covers running CODE NAME for a team or in a controlled environment:
-accounts and roles, the policy ceiling, identity/SSO, secrets, audit integrity,
+This guide covers the current administrative surface for CODE NAME 2: local
+accounts and roles, workspaces, capability gates, secrets, audit visibility,
 SIEM forwarding, logging, and the agent sidecar.
 
-> Security model in one line: **the OS is the trust boundary.** CODE NAME is a
-> local‑first desktop app — each install runs under an operating‑system user
-> account. The in‑app roles and gates govern what the app *does*; they are not a
-> substitute for OS‑level access control on the machine itself.
+> Current-state note: CODE NAME 2 is an early-alpha local desktop app. Some
+> controls are implemented, but several backend enforcement and secret-isolation
+> boundaries are still planned hardening work.
 
----
+## 1. Accounts And Roles
 
-## 1. Accounts & roles (RBAC)
+CODE NAME 2 supports multiple local accounts. In single-user mode a default
+admin account is created automatically. Add accounts from the sign-in screen;
+each can have an optional PIN.
 
-CODE NAME supports multiple local accounts. In single‑user mode a default **admin**
-account is created automatically, so a fresh install opens straight into the
-workspace with no sign‑in screen. Add accounts from the sign‑in screen ("+ Add
-account"); each can have an optional PIN.
-
-There are three roles:
-
-| Role   | Write KG | Use tools | Toggle gates | Set policy | Configure SIEM | Manage workspaces |
-|--------|:--------:|:---------:|:------------:|:----------:|:--------------:|:-----------------:|
-| admin  | ✔        | ✔         | ✔            | ✔          | ✔              | ✔                 |
-| editor | ✔        | ✔         | ✖            | ✖          | ✖              | ✔                 |
-| viewer | ✖        | ✖         | ✖            | ✖          | ✖              | ✖                 |
+| Role | Write KG | Use tools | Toggle gates | Set policy | Configure SIEM | Manage workspaces |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: |
+| admin | yes | yes | yes | yes | yes | yes |
+| editor | yes | yes | no | no | no | yes |
+| viewer | no | no | no | no | no | no |
 
 Notes:
-- A **viewer** is strictly read‑only: ingestion, tool calls, and graph writes are
-  denied (and the denial is audited).
-- When no role is configured (single‑user offline), guards default to **admin** so a
-  solo user is never locked out.
-- The PIN check is a convenience gate, not cryptographic protection — the real
-  boundary is the OS user account.
 
----
+- A viewer is intended to be read-only.
+- When no role is configured in single-user offline mode, guards default to admin
+  so a solo user is not locked out.
+- The PIN check is a convenience gate, not cryptographic protection. The real
+  local boundary is the OS user account and machine controls.
 
 ## 2. Workspaces
 
-Each workspace has its own isolated knowledge‑graph store (separate IndexedDB
-database). Switching workspaces swaps the entire graph, vectors, and audit ledger.
-Use separate workspaces to keep unrelated bodies of knowledge — or different
-sensitivity levels — fully partitioned. Creating/switching/deleting workspaces
-requires a non‑viewer role.
+Each workspace has its own local IndexedDB-backed graph/search state. Switching
+workspaces swaps the active graph, retrieval scaffolds, and audit ledger.
+Workspace operations require a non-viewer role.
 
----
+Workspace persistence is useful for local isolation, but it is not a production
+database or encrypted multi-user storage layer.
 
-## 3. Security gates
+## 3. Capability Gates
 
-Three hard capability switches apply to the whole app:
+Three capability switches apply to the app:
 
-- **Filesystem** — local persistence + gated ingestion + graph writes.
-- **Network** — outbound network access (cloud models, SIEM forwarding).
-- **Tools** — WebMCP tool execution + agent‑sidecar bridge.
+- **Filesystem:** local persistence and ingestion.
+- **Network:** outbound network access.
+- **Tools:** local tool execution and the sidecar bridge.
 
-Gates are enforced in two places: in the UI **and**, in the desktop build, mirrored
-into the Rust shell so they're applied at the process level — not just cosmetically.
+Current reality: gates are implemented in the UI and partially mirrored into the
+Rust shell, but backend-owned enforcement is not complete for every command. Do
+not treat the current gates as a finished hard security boundary until the later
+hardening work adds full Rust-side policy coverage and tests.
 
-**Per‑tab capabilities** can only *tighten*, never widen, the global gates. A task tab
-may revoke a capability it doesn't need; it can never grant one the global gate denies.
+Per-tab capabilities can only tighten the visible effective permissions; they
+must not be treated as a complete backend authorization model yet.
 
----
+## 4. Admin Policy Ceiling
 
-## 4. The admin policy ceiling (gate locks)
+An admin can force a gate closed for a workspace. The intended resolution order is:
 
-An admin can force a gate **closed for every user** in the workspace. This is a
-ceiling, resolved as:
-
-```
-policy ceiling  →  user‑set global gate  →  per‑tab cap  →  effective gate
+```text
+policy ceiling -> user-set global gate -> per-tab cap -> effective gate
 ```
 
-- Setting a policy gate to **locked/false** forces it off regardless of user setting;
-  the toggle is disabled with a lock indicator for everyone.
-- Leaving it unlocked means users control that gate themselves.
+Use this to express local policy intent, such as keeping Network closed or
+forbidding tool execution. Full backend enforcement of every path remains a
+hardening requirement.
 
-Use this to, e.g., guarantee the app stays fully offline (lock **Network**) or to
-forbid tool execution fleet‑wide (lock **Tools**). Policy is set by an admin in the
-gates UI and persists locally per workspace.
+## 5. Identity And SSO
 
----
+Current state: authentication is local accounts with optional PINs, scoped to the
+machine. CODE NAME 2 does not currently implement SSO, SAML, OIDC, or a hosted
+identity server.
 
-## 5. Identity & SSO
+Organizations that need centralized identity today should rely on managed OS
+accounts, MDM, disk encryption, and local policy controls. SSO is roadmap work,
+not a current feature.
 
-**Current state.** Authentication is **local accounts** (admin/editor/viewer, optional
-PIN), scoped to the machine. Because CODE NAME is a desktop, local‑first application,
-identity is anchored to the OS user who launched it; there is no app‑hosted login
-server.
+## 6. Secrets
 
-**Single sign‑on (SSO / SAML / OIDC) is not yet implemented** and is on the roadmap.
-For organizations that need centralized identity today, the recommended pattern is to
-rely on the platform you already control:
-- Provision machines via your MDM/identity provider so the **OS user** is the
-  authenticated principal.
-- Use **per‑user OS accounts** (and OS disk encryption) as the access boundary.
-- Use the **admin policy ceiling** to enforce org‑wide capability limits, and **SIEM
-  forwarding** (below) to centralize the audit trail.
+Cloud endpoint keys use the OS keychain path through the Rust shell. Keys are not
+intended to live in config files or logs.
 
-When SSO lands it is expected to slot in behind the existing `AuthContext`/roles
-surface so the role table above continues to apply.
+Important current limitation: the source currently exposes a frontend-accessible
+`secret_get` command path. That means docs must not claim that secrets never reach
+the frontend. Production-grade secret isolation requires a later redesign where
+the frontend can set/delete/check key presence, while provider calls that need
+secret values execute in a trusted backend boundary.
 
----
+## 7. Audit Ledger And Tamper Evidence
 
-## 6. Secrets (API keys)
+Knowledge-graph writes are recorded in a local audit ledger, and the UI exposes
+hash-chain verification. This is useful for local review.
 
-Cloud endpoints read their keys from the **OS keychain** via the Rust shell — Windows
-Credential Manager, macOS Keychain, or Linux Secret Service. Keys are never written to
-config files or logs. Manage them under **Settings → Secrets**, or during the first‑run
-wizard. Each cloud endpoint declares the key name it uses (e.g. `OLLAMA_API_KEY`,
-`GEMINI_API_KEY`).
+Current limitation: the master audit identified audit-integrity and denial
+coverage gaps that must be fixed before production use. Treat the current ledger
+as a prototype audit trail, not a compliance-grade evidence system.
 
----
+## 8. SIEM Forwarding
 
-## 7. Audit ledger & tamper evidence
+CODE NAME 2 can forward audit records to an external HTTP(S) endpoint when
+configured.
 
-Every knowledge‑graph write — allowed or denied — produces an append‑only audit
-record (actor, action, target, decision, optional diff/provenance, timestamp).
-Records are linked into a **tamper‑evident hash chain**: each record stores the
-SHA‑256 of the previous one.
+- Off by default.
+- Requires an admin role to configure.
+- Intended to respect the Network gate.
+- Best effort: failures are logged locally and should not block the app.
 
-- **Verify chain** (Audit Ledger → Verify) recomputes the chain and reports the first
-  broken link, if any. An intact chain means no record was altered or removed.
-- Denied writes are recorded too, so attempts are visible, not just successes.
+Because Network gate enforcement is still being hardened, SIEM behavior should be
+verified again after the backend gate matrix is complete.
 
----
+## 9. Logging And Crash Reports
 
-## 8. SIEM forwarding
+Structured logs are written to the platform app-log directory. The Python sidecar
+uses the same log directory when launched by the shell. Crash reporting is local
+and consent-gated.
 
-CODE NAME can forward each audit record to an external HTTP(S) endpoint for central
-collection.
+Logs should avoid secrets and sensitive prompt bodies. This should be verified
+again during the later security hardening phase.
 
-- **Off by default.** Configure it (URL + enable) under settings; an admin role is
-  required.
-- Records are POSTed as JSON with header `X-Codename-Source: audit`.
-- Forwarding **respects the Network gate**: if Network is closed (by the user or by
-  policy), nothing is sent.
-- Delivery is fire‑and‑forget and best‑effort — failures are logged locally and never
-  block the app.
+## 10. Agent Sidecar
 
-Point the URL at your SIEM's HTTP collector (Splunk HEC, Elastic, a log shipper, etc.)
-and you get a centralized, real‑time copy of the audit trail. Pair with the local
-hash‑chain verification for end‑to‑end integrity.
+The optional Python sidecar is supervised by the Rust shell:
 
----
+- It binds to loopback.
+- It uses a per-launch token read and retained by Rust.
+- Rust forwards sidecar calls with the bearer token.
+- It exposes A2A-shaped routes and local fallback behavior.
 
-## 9. Logging & crash reports
+Current sidecar capabilities include useful scaffolding for model calls,
+embeddings, community detection, browser-harness work, and pools. These are not
+all production-complete. Embeddings currently have stub/fallback behavior, durable
+GraphRAG is not complete, and browser automation still needs policy hardening.
 
-- **Structured logs** are written to the platform app‑log directory. Open it from
-  **Settings → Logs**, or programmatically via the shell's log commands. The Python
-  sidecar logs to the same directory (`CODENAME_LOG_DIR`).
-- **Crash reporting** is **consent‑gated**: JS errors and crashes are only recorded
-  after the user opts in. Reports stay local unless you choose to share them.
+## 11. Hardening Checklist
 
----
-
-## 10. The agent sidecar
-
-The optional Python agent sidecar is supervised by the Rust shell:
-- Started on launch, with an **exponential‑backoff auto‑restart** if it exits.
-- Spoken to over **loopback A2A** (token‑authenticated; the token never leaves Rust).
-- Health‑checked periodically; three failed probes trigger a restart.
-- Provides embeddings, GraphRAG community detection, a CDP browser harness, and
-  isolated context pools.
-
-It is bundled as an application resource. Running it requires **Python on the host**.
-If the sidecar is unavailable the app degrades gracefully — local retrieval, the
-synthetic model fallback, and the in‑memory paths keep working offline.
-
----
-
-## 11. Hardening checklist
-
-- [ ] Decide the offline posture: lock **Network** via policy if cloud must be off.
-- [ ] Restrict **Tools** by role (viewers) or policy where tool execution isn't needed.
-- [ ] Put each sensitivity level in its own **workspace**.
-- [ ] Configure **SIEM forwarding** to a collector you control.
-- [ ] Schedule periodic **Verify chain** checks of the audit ledger.
-- [ ] Rely on **OS accounts + disk encryption** as the machine boundary.
-- [ ] Keep the app updated (signed installers / auto‑update once enabled).
+- [ ] Restore and maintain a clean Git baseline.
+- [ ] Keep generated artifacts out of source control.
+- [ ] Lock Network where offline posture is required.
+- [ ] Restrict Tools by role and policy where tool execution is not needed.
+- [ ] Remove frontend raw-secret return paths.
+- [ ] Add Rust-side gate enforcement for every privileged command.
+- [ ] Add Rust tests for denied sidecar/browser/secret paths.
+- [ ] Verify audit hash-chain and denial coverage.
+- [ ] Recheck docs before making production, compliance, or release claims.

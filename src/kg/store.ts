@@ -47,7 +47,7 @@ function openDB(): Promise<IDBDatabase> {
       for (const s of ['nodes', 'edges', 'audit'] as const) {
         if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
       }
-      // Vector stores (DB_VERSION 2)
+      // Retrieval vector scaffolds (DB_VERSION 2)
       if (!db.objectStoreNames.contains('chunks')) {
         const cs = db.createObjectStore('chunks', { keyPath: 'id' });
         cs.createIndex('nodeId', 'nodeId', { unique: false });

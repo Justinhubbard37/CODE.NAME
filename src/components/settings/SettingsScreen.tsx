@@ -19,7 +19,7 @@ import { useFocusTrap } from '../../lib/a11y';
 import { useLang, useT } from '../../i18n';
 import { SecretsPanel } from '../config/SecretsPanel';
 import { SecurityGates } from '../config/SecurityGates';
-import { SlidersStub } from '../config/SlidersStub';
+import { ModelTuningControls } from '../config/ModelTuningControls';
 
 const APP_VERSION = '0.0.0';
 
@@ -163,7 +163,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
 
         {/* Tuning */}
         <Section icon={SlidersHorizontal} title={t('settings.section.tuning')}>
-          <SlidersStub />
+          <ModelTuningControls />
         </Section>
 
         {/* Language */}

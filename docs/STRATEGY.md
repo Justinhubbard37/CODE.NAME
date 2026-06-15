@@ -1,5 +1,7 @@
 # CODE NAME: | — Strategic Understanding
 
+> Phase 0 stabilization note: this is a strategic intent document. Current backend gate enforcement, production GraphRAG, and real semantic vector embeddings are not complete yet.
+
 _Compiled from the collaborative brainstorming session · 2026-06-06_
 
 This document records the shared decisions reached so far. It is a living
@@ -11,14 +13,13 @@ open the current repos and confirm the real API before wiring anything.**
 ## 0. What CODE NAME is
 
 A Tauri v2 **local-first, model-agnostic agent harness** built around a
-**self-growing knowledge ecosystem** (Knowledge Graph + GraphRAG + Vector
-store) — conceived as a single, growing, self-improving entity rather than a
+**self-growing knowledge ecosystem** (Knowledge Graph + GraphRAG + vector-search roadmap) — conceived as a single, growing, self-improving entity rather than a
 collection of one-off chats.
 
 Shell: Tauri v2 (Rust). Frontend: React 19 + TypeScript + Vite + Tailwind v4.
 Layout: two-pane governed workspace — **Mission Control** (left, knowledge +
 context) and **Execution Canvas** (right, live model work) — with a stealth
-config drawer, hard capability gates, and a gated drag-drop ingestion pipeline.
+config drawer, capability gates, and a gated drag-drop ingestion pipeline.
 
 ---
 
@@ -73,7 +74,7 @@ a **managed Python sidecar**.
   loopback service; the Tauri/Rust app talks to it over localhost.
 - **Supervision: Rust/Tauri owns the lifecycle.** The main app starts, watches,
   restarts, and cleanly shuts down the sidecar.
-- **Gates have teeth at the process level.** The hard capability gates
+- **Gates have teeth at the process level.** The capability gates
   (fs / network / tools) enforce against the sidecar process and its loopback
   port — not just the UI.
 
