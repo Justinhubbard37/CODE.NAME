@@ -1,4 +1,5 @@
 mod model;
+mod kb;
 mod policy;
 mod secrets;
 mod sidecar;
@@ -32,6 +33,11 @@ pub fn run() {
             secrets::secret_delete,
             model::model_list,
             model::model_stream,
+            kb::kb_init,
+            kb::kb_stats,
+            kb::kb_ingest_text,
+            kb::kb_search,
+            kb::kb_get_document,
             sidecar::sidecar_health,
             logging::get_log_dir,
             logging::open_log_dir,

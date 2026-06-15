@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronRight, Folder, FolderOpen, Database, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useApp } from '../../state/AppState';
 
 interface TreeNode {
   label: string;
@@ -72,9 +73,10 @@ function Branch({ node, depth }: { node: TreeNode; depth: number }) {
 
 export function ArchiveIndex() {
   const [collapsed, setCollapsed] = useState(false);
+  const { kbStats, kbSearchResults } = useApp();
 
   return (
-    <div className="absolute top-2 left-2 z-20 w-44 pointer-events-auto text-[10px] font-mono">
+    <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto text-[10px] font-mono">
       <div className="flex items-center justify-between mb-1 text-neutral-500 font-bold uppercase tracking-wider">
         <span>Archive Index</span>
         <button
@@ -89,6 +91,39 @@ export function ArchiveIndex() {
       </div>
       {!collapsed && (
         <div className="bg-neutral-950/80 border border-neutral-800 backdrop-blur-sm p-2 max-h-[40vh] overflow-y-auto">
+          <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider">
+              <span className="text-neutral-500">SQLite KB</span>
+              <span className={kbStats.initialized ? 'text-emerald-400' : 'text-amber-400'}>
+                {kbStats.initialized ? `v${kbStats.schemaVersion}` : 'offline'}
+              </span>
+            </div>
+            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-neutral-500">
+              <span>Documents</span><span className="text-neutral-300 text-right">{kbStats.documentCount}</span>
+              <span>Chunks</span><span className="text-neutral-300 text-right">{kbStats.chunkCount}</span>
+              <span>Entities</span><span className="text-neutral-300 text-right">{kbStats.entityCount}</span>
+              <span>Relationships</span><span className="text-neutral-300 text-right">{kbStats.relationshipCount}</span>
+              <span>Retrievals</span><span className="text-neutral-300 text-right">{kbStats.retrievalEventCount}</span>
+            </div>
+            <div className="mt-1 text-[8px] text-neutral-600">
+              {kbStats.ftsAvailable ? 'FTS5 chunk search' : 'LIKE chunk search fallback'}
+            </div>
+          </div>
+          {kbSearchResults.length > 0 && (
+            <div className="mb-2 border border-emerald-500/20 bg-emerald-500/5 p-1.5">
+              <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 mb-1">
+                KB Search Results
+              </div>
+              <div className="space-y-1">
+                {kbSearchResults.slice(0, 3).map((r) => (
+                  <div key={r.chunk.id} className="text-[8px] text-neutral-400 leading-snug">
+                    <div className="truncate text-neutral-200">{r.documentTitle}</div>
+                    <div className="line-clamp-2">{r.chunk.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <Branch node={ARCHIVE} depth={0} />
         </div>
       )}

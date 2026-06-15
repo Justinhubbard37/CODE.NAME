@@ -51,6 +51,16 @@ import {
 } from '../config/persist';
 import { hashFile } from '../lib/hash';
 import { pingEndpoint, streamChat, listModels, reachesNetwork, type ChatTurn } from '../lib/llm';
+import {
+  activeKbWorkspaceId,
+  emptyKbStats,
+  kbInit,
+  kbIngestText,
+  kbSearch,
+  kbStats as loadKbStats,
+  type KbSearchResult,
+  type KbStats,
+} from '../lib/kb';
 import { kgStore } from '../kg/store';
 import { stubEmbed } from '../kg/vector';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
@@ -93,6 +103,9 @@ interface AppStateValue {
   graphQuery: string;
   setGraphQuery: (q: string) => void;
   runGraphQuery: (q: string) => void;
+  kbStats: KbStats;
+  kbSearchResults: KbSearchResult[];
+  refreshKbStats: () => Promise<void>;
 
   /* tasks */
   tasks: WorkTask[];
@@ -237,6 +250,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   edgesRef.current = edges;
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [graphQuery, setGraphQuery] = useState('');
+  const [kbStatsState, setKbStatsState] = useState<KbStats>(emptyKbStats);
+  const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
 
   const onNodesChange = useCallback(
     (c: NodeChange<AppNode>[]) => setNodes((nds) => applyNodeChanges(c, nds)),
@@ -266,15 +281,46 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const refreshKbStats = useCallback(async () => {
+    setKbStatsState(await loadKbStats());
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        await kbInit();
+        const stats = await loadKbStats();
+        if (alive) setKbStatsState(stats);
+      } catch {
+        if (alive) setKbStatsState(emptyKbStats);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const runGraphQuery = useCallback((q: string) => {
     const query = q.trim();
     setNodes((nds) => {
-      if (!query) return nds.map((n) => ({ ...n, hidden: false }));
+      if (!query) {
+        setKbSearchResults([]);
+        return nds.map((n) => ({ ...n, hidden: false }));
+      }
       retriever.index(nds);
       const hits = new Set(retriever.retrieve(query).map((r) => r.id));
       return nds.map((n) => ({ ...n, hidden: !hits.has(n.id) }));
     });
-  }, []);
+    if (query) {
+      void kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit: 6 })
+        .then((results) => {
+          setKbSearchResults(results);
+          return refreshKbStats();
+        })
+        .catch(() => setKbSearchResults([]));
+    }
+  }, [refreshKbStats]);
 
   // Hydrate the knowledge graph from the local store on boot (Phase 1).
   const hydrated = useRef(false);
@@ -1165,6 +1211,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           text = '[unreadable]';
         }
 
+        try {
+          const kbResult = await kbIngestText({
+            workspaceId: activeKbWorkspaceId(),
+            title: file.name,
+            text,
+            sourceUri: file.name,
+            sourceKind: 'file',
+            mimeType: file.type || 'text/plain',
+          });
+          await refreshKbStats();
+          pushActivity(activeTaskId, 'system', `sqlite kb: ${kbResult.chunkCount} chunk(s) stored`);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : 'unavailable';
+          pushActivity(activeTaskId, 'system', `sqlite kb unavailable: ${reason}`);
+        }
+
         const conflict = nodesRef.current.find(
           (n) => n.data.hash === hash || n.data.title === file.name,
         );
@@ -1210,7 +1272,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         pushActivity(activeTaskId, 'system', `communities: ${communities.length} detected`);
       })();
     },
-    [activeTaskId, createDocNode, pushActivity, updateNodeData],
+    [activeTaskId, createDocNode, pushActivity, refreshKbStats, updateNodeData],
   );
 
   const resolveConflict = useCallback(
@@ -1283,6 +1345,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     graphQuery,
     setGraphQuery,
     runGraphQuery,
+    kbStats: kbStatsState,
+    kbSearchResults,
+    refreshKbStats,
     /* tasks */
     tasks,
     activeTaskId,

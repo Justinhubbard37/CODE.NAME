@@ -48,28 +48,28 @@ Goal: make CODE NAME 2 store, search, and display real local knowledge from SQLi
 
 Definition of done:
 
-- [ ] Rust-owned SQLite database exists
-- [ ] database lives in app-local data directory
-- [ ] schema migrations exist
-- [ ] `documents` table exists
-- [ ] `chunks` table exists
-- [ ] `entities` table exists
-- [ ] `relationships` table exists
-- [ ] `chunk_entities` table exists
-- [ ] `retrieval_events` table exists
-- [ ] text ingestion writes to SQLite
-- [ ] deterministic chunking works
-- [ ] SQLite search returns matching chunks
-- [ ] UI shows live document count
-- [ ] UI shows live chunk count
-- [ ] UI shows live entity count
-- [ ] UI shows live relationship count
-- [ ] UI has visible KB search or search-result path
-- [ ] manual verification steps are documented
-- [ ] `cargo test --all-features --locked` passes
-- [ ] `npm run lint` passes
-- [ ] `npm test` passes or known sandbox `spawn EPERM` is elevated-rerun verified
-- [ ] commit created
+- [x] Rust-owned SQLite database exists
+- [x] database lives in app-local data directory
+- [x] schema migrations exist
+- [x] `documents` table exists
+- [x] `chunks` table exists
+- [x] `entities` table exists
+- [x] `relationships` table exists
+- [x] `chunk_entities` table exists
+- [x] `retrieval_events` table exists
+- [x] text ingestion writes to SQLite
+- [x] deterministic chunking works
+- [x] SQLite search returns matching chunks
+- [x] UI shows live document count
+- [x] UI shows live chunk count
+- [x] UI shows live entity count
+- [x] UI shows live relationship count
+- [x] UI has visible KB search or search-result path
+- [x] manual verification steps are documented
+- [x] `cargo test --all-features --locked` passes
+- [x] `npm run lint` passes
+- [x] `npm test` passes or known sandbox `spawn EPERM` is elevated-rerun verified
+- [x] commit created
 
 Target commit:
 
@@ -81,7 +81,7 @@ Target commit:
 
 ## Phase 2A - SQLite Knowledge Base Foundation
 
-Status: READY TO EXECUTE
+Status: COMPLETED
 
 Required visible result:
 
@@ -95,11 +95,11 @@ No more security-only slices until this is complete.
 
 ### Milestone 1 - SQLite Knowledge Base MVP
 
-- [ ] Durable SQLite KB
-- [ ] text ingestion
-- [ ] chunk storage
-- [ ] search
-- [ ] live stats UI
+- [x] Durable SQLite KB
+- [x] text ingestion
+- [x] chunk storage
+- [x] search
+- [x] live stats UI
 
 ### Milestone 2 - Retrieval MVP
 
@@ -159,19 +159,48 @@ No more security-only slices until this is complete.
 
 Use this section after every completed slice.
 
-### Slice:
+### Slice: Phase 2A - SQLite Knowledge Base Foundation
 
-Date:
+Date: 2026-06-15
 
-Commit:
+Commit: `feat: add sqlite knowledge base foundation` (exact hash recorded in final owner-review response)
 
 What changed in the app:
 
+- Added Rust-owned SQLite storage in the app-local data directory.
+- Added versioned schema migration for documents, chunks, entities, relationships, chunk_entities, retrieval_events, and optional FTS5 chunk search.
+- Dual-wired existing file/OCR text ingestion into SQLite while preserving IndexedDB graph compatibility.
+- Added live SQLite KB stats and SQLite chunk search results to the left-side UI.
+
 How I verified it:
+
+- `cargo test --all-features --locked`
+- `npm run lint`
+- `npm test` hit known sandbox `Error: spawn EPERM`
+- Elevated `npm test`
+- Required SQLite/IndexedDB and GraphRAG/embedding search checks
+
+Manual verification steps:
+
+1. Run the desktop app.
+2. Drop a `.txt` or `.md` file onto the left pane.
+3. Confirm the Archive Index `SQLite KB` panel shows initialized `v1`.
+4. Confirm document and chunk counts increase.
+5. Type a word from the ingested file into the Graph Search field and press Enter.
+6. Confirm `SQLite KB chunks` results appear under the search field and in the Archive Index result area.
 
 What works now:
 
+- Text ingestion writes documents and deterministic chunks to Rust-owned SQLite.
+- Search reads matching chunks from SQLite and records retrieval events.
+- The UI shows live document, chunk, entity, relationship, and retrieval counts.
+- IndexedDB graph storage remains available as transitional compatibility.
+
 What still does not work:
+
+- This is not full GraphRAG.
+- Real embeddings are not implemented.
+- Entity and relationship extraction are schema-ready but not populated by this slice.
 
 Decision:
 

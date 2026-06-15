@@ -4,7 +4,7 @@ import Tesseract from 'tesseract.js';
 import { useApp } from '../../state/AppState';
 
 export function GraphQueryInput() {
-  const { graphQuery, setGraphQuery, runGraphQuery, ingestFiles, gates } = useApp();
+  const { graphQuery, setGraphQuery, runGraphQuery, ingestFiles, gates, kbSearchResults } = useApp();
   const [ocr, setOcr] = useState('');
 
   const submit = (e: FormEvent) => {
@@ -64,6 +64,22 @@ export function GraphQueryInput() {
         />
         {ocr && <span className="ml-2 text-[8px] text-emerald-400 animate-pulse whitespace-nowrap">{ocr}</span>}
       </form>
+      {kbSearchResults.length > 0 && (
+        <div className="mt-1 bg-neutral-950/90 border border-emerald-500/20 backdrop-blur-sm p-2 max-h-28 overflow-y-auto">
+          <div className="text-[8px] text-emerald-400/80 uppercase tracking-wider mb-1">
+            SQLite KB chunks
+          </div>
+          <div className="space-y-1">
+            {kbSearchResults.slice(0, 4).map((result) => (
+              <div key={result.chunk.id} className="text-[9px] text-neutral-400 leading-snug">
+                <span className="text-neutral-200">{result.documentTitle}</span>
+                <span className="text-neutral-600"> · chunk {result.chunk.ordinal + 1}</span>
+                <div className="truncate">{result.chunk.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

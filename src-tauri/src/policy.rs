@@ -331,6 +331,10 @@ const MODEL_NETWORK_CONDITIONAL: &[GateRequirement] = &[GateRequirement::Conditi
     gate: Gate::Network,
     reason: "provider endpoint may be cloud, internet, or a localhost proxy to cloud",
 }];
+const KB_LOCAL_FILESYSTEM: &[GateRequirement] = &[GateRequirement::Conditional {
+    gate: Gate::Filesystem,
+    reason: "SQLite knowledge-base commands read and write the app-local database",
+}];
 const LOG_DIR_REVIEW: &[GateRequirement] = &[GateRequirement::ReviewRequired {
     gate: Gate::Filesystem,
     reason: "path disclosure is status-like but still exposes a filesystem location",
@@ -464,6 +468,46 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),
         rationale: "Streams chat through provider endpoint and may use secrets against cloud or cloud-proxy endpoints.",
         priority: PolicyPriority::Critical,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_init",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::None, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Initializes the app-local SQLite knowledge base.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_stats",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::None, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Reads aggregate counts from the app-local SQLite knowledge base.",
+        priority: PolicyPriority::Normal,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_ingest_text",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Medium, RiskLevel::None),
+        rationale: "Stores user-provided text and deterministic chunks in the app-local SQLite knowledge base.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_search",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Searches local SQLite chunks and records a local retrieval event.",
+        priority: PolicyPriority::Normal,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_get_document",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Reads document metadata and optional chunks from the app-local SQLite knowledge base.",
+        priority: PolicyPriority::Normal,
         replacement: None,
     },
     CommandPolicy {
