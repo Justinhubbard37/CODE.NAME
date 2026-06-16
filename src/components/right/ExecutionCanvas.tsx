@@ -6,6 +6,7 @@ import { ActivityFeed } from './ActivityFeed';
 import { IngestionLedger } from './IngestionLedger';
 import { ChatThread } from './ChatThread';
 import { ChatInput } from './ChatInput';
+import { RetrievedContextPanel } from './RetrievedContextPanel';
 
 /**
  * RIGHT PANE — Execution Canvas.
@@ -22,6 +23,7 @@ export function ExecutionCanvas() {
       <AgentUIPanel />
       <AuditLedger />
       <ChatThread />
+      <RetrievedContextPanel />
       <ChatInput />
     </div>
   );

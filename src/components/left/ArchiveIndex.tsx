@@ -9,6 +9,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState';
+import { retrievalSnippet, retrievalSource, retrievalScoreLabel } from '../../lib/retrievalContext';
 
 interface TreeNode {
   label: string;
@@ -82,7 +83,7 @@ function Branch({ node, depth }: { node: TreeNode; depth: number }) {
 export function ArchiveIndex() {
   const [collapsed, setCollapsed] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const { kbStats, kbDocuments, kbSearchResults, deleteKbDocument } = useApp();
+  const { kbStats, kbDocuments, retrievalResults, deleteKbDocument } = useApp();
 
   const removeDocument = async (id: string, title: string) => {
     if (!window.confirm(`Remove "${title}" from the SQLite KB?`)) return;
@@ -160,16 +161,21 @@ export function ArchiveIndex() {
               </div>
             </div>
           )}
-          {kbSearchResults.length > 0 && (
+          {retrievalResults.length > 0 && (
             <div className="mb-2 border border-emerald-500/20 bg-emerald-500/5 p-1.5">
               <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 mb-1">
-                KB Search Results
+                KB Retrieval Results
               </div>
               <div className="space-y-1">
-                {kbSearchResults.slice(0, 3).map((r) => (
+                {retrievalResults.slice(0, 3).map((r, index) => (
                   <div key={r.chunk.id} className="text-[8px] text-neutral-400 leading-snug">
-                    <div className="truncate text-neutral-200">{r.documentTitle}</div>
-                    <div className="line-clamp-2">{r.chunk.text}</div>
+                    <div className="truncate text-neutral-200">
+                      #{index + 1} {r.documentTitle} - chunk {r.chunk.ordinal + 1}
+                    </div>
+                    <div className="truncate text-neutral-600">
+                      score {retrievalScoreLabel(r.score)} - {retrievalSource(r)}
+                    </div>
+                    <div className="line-clamp-2">{retrievalSnippet(r)}</div>
                   </div>
                 ))}
               </div>

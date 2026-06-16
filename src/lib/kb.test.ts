@@ -96,6 +96,11 @@ describe('SQLite KB wrapper', () => {
     expect(results[0].chunk.text).toBe('sqlite result');
   });
 
+  it('returns empty search results in browser mode without invoking desktop', async () => {
+    await expect(kbSearch({ query: 'sqlite', limit: 3 })).resolves.toEqual([]);
+    expect(mockedInvoke).not.toHaveBeenCalled();
+  });
+
   it('calls kb_graph_projection for the active workspace and document', async () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
     mockedInvoke.mockResolvedValue({

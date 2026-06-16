@@ -2,9 +2,10 @@ import { useState, type FormEvent, type ChangeEvent } from 'react';
 import { ScanLine } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { useApp } from '../../state/AppState';
+import { retrievalSnippet, retrievalSource, retrievalScoreLabel } from '../../lib/retrievalContext';
 
 export function GraphQueryInput() {
-  const { graphQuery, setGraphQuery, runGraphQuery, ingestFiles, gates, kbSearchResults } = useApp();
+  const { graphQuery, setGraphQuery, runGraphQuery, ingestFiles, gates, retrievalResults } = useApp();
   const [ocr, setOcr] = useState('');
 
   const submit = (e: FormEvent) => {
@@ -44,7 +45,7 @@ export function GraphQueryInput() {
   return (
     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-[min(80%,30rem)] pointer-events-auto text-[10px] font-mono">
       <div className="flex justify-between items-end mb-1">
-        <span className="text-neutral-500 uppercase tracking-wider">Graph Search</span>
+        <span className="text-neutral-500 uppercase tracking-wider">Graph / KB Search</span>
         <label className="cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-neutral-200 px-2 py-0.5 flex items-center gap-1 tracking-wider">
           <ScanLine className="w-3 h-3" aria-hidden="true" /> OCR
           <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
@@ -58,23 +59,26 @@ export function GraphQueryInput() {
         <input
           value={graphQuery}
           onChange={(e) => setGraphQuery(e.target.value)}
-          aria-label="Graph search"
-          placeholder="Graph query active... (enter to retrieve)"
+          aria-label="Graph and SQLite KB search"
+          placeholder="Query graph + retrieve SQLite KB chunks..."
           className="flex-1 bg-transparent outline-none text-neutral-200 placeholder-neutral-600"
         />
         {ocr && <span className="ml-2 text-[8px] text-emerald-400 animate-pulse whitespace-nowrap">{ocr}</span>}
       </form>
-      {kbSearchResults.length > 0 && (
+      {retrievalResults.length > 0 && (
         <div className="mt-1 bg-neutral-950/90 border border-emerald-500/20 backdrop-blur-sm p-2 max-h-28 overflow-y-auto">
           <div className="text-[8px] text-emerald-400/80 uppercase tracking-wider mb-1">
-            SQLite KB chunks
+            SQLite KB retrieval
           </div>
           <div className="space-y-1">
-            {kbSearchResults.slice(0, 4).map((result) => (
+            {retrievalResults.slice(0, 4).map((result, index) => (
               <div key={result.chunk.id} className="text-[9px] text-neutral-400 leading-snug">
+                <span className="text-emerald-300">#{index + 1}</span>{' '}
                 <span className="text-neutral-200">{result.documentTitle}</span>
                 <span className="text-neutral-600"> · chunk {result.chunk.ordinal + 1}</span>
-                <div className="truncate">{result.chunk.text}</div>
+                <span className="text-neutral-700"> - score {retrievalScoreLabel(result.score)}</span>
+                <div className="truncate text-neutral-600">source: {retrievalSource(result)}</div>
+                <div className="truncate">{retrievalSnippet(result)}</div>
               </div>
             ))}
           </div>

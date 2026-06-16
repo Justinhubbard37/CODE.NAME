@@ -52,6 +52,14 @@ import {
 import { hashFile } from '../lib/hash';
 import { pingEndpoint, streamChat, listModels, reachesNetwork, type ChatTurn } from '../lib/llm';
 import {
+  RETRIEVAL_CHAT_RESULT_LIMIT,
+  RETRIEVAL_RESULT_LIMIT,
+  buildOptionalChatPromptWithRetrievedContext,
+  clearRetrievedContextState,
+  retrievedContextAfterDocumentDelete,
+  retrievedContextAfterSearch,
+} from '../lib/retrievalContext';
+import {
   activeKbWorkspaceId,
   emptyKbStats,
   kbInit,
@@ -115,6 +123,12 @@ interface AppStateValue {
   kbStats: KbStats;
   kbDocuments: KbDocument[];
   kbSearchResults: KbSearchResult[];
+  retrievalQuery: string;
+  retrievalResults: KbSearchResult[];
+  retrievalEnabledForChat: boolean;
+  setRetrievalEnabledForChat: (enabled: boolean) => void;
+  runKbRetrieval: (query: string, limit?: number) => Promise<KbSearchResult[]>;
+  clearKbRetrieval: () => void;
   refreshKbStats: () => Promise<void>;
   refreshKbDocuments: () => Promise<void>;
   deleteKbDocument: (documentId: string) => Promise<void>;
@@ -266,6 +280,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [kbStatsState, setKbStatsState] = useState<KbStats>(emptyKbStats);
   const [kbDocuments, setKbDocuments] = useState<KbDocument[]>([]);
   const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
+  const [retrievalQuery, setRetrievalQuery] = useState('');
+  const [retrievalEnabledForChat, setRetrievalEnabledForChatState] = useState(false);
 
   const onNodesChange = useCallback(
     (c: NodeChange<AppNode>[]) => setNodes((nds) => applyNodeChanges(c, nds)),
@@ -303,6 +319,43 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setKbDocuments(await kbListDocuments({ workspaceId: activeKbWorkspaceId() }));
   }, []);
 
+  const setRetrievalEnabledForChat = useCallback((enabled: boolean) => {
+    setRetrievalEnabledForChatState(enabled);
+  }, []);
+
+  const clearKbRetrieval = useCallback(() => {
+    const cleared = clearRetrievedContextState();
+    setKbSearchResults(cleared.results);
+    setRetrievalQuery(cleared.query);
+    setRetrievalEnabledForChatState(cleared.attachEnabled);
+  }, []);
+
+  const runKbRetrieval = useCallback(
+    async (queryInput: string, limit = RETRIEVAL_RESULT_LIMIT): Promise<KbSearchResult[]> => {
+      const query = queryInput.trim();
+      if (!query) {
+        clearKbRetrieval();
+        return [];
+      }
+      try {
+        const results = await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+        const next = retrievedContextAfterSearch(query, results);
+        setKbSearchResults(next.results);
+        setRetrievalQuery(next.query);
+        setRetrievalEnabledForChatState(next.attachEnabled);
+        await refreshKbStats();
+        return results;
+      } catch {
+        const next = retrievedContextAfterSearch(query, []);
+        setKbSearchResults(next.results);
+        setRetrievalQuery(next.query);
+        setRetrievalEnabledForChatState(next.attachEnabled);
+        return [];
+      }
+    },
+    [clearKbRetrieval, refreshKbStats],
+  );
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -330,9 +383,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const runGraphQuery = useCallback((q: string) => {
     const query = q.trim();
+    if (!query) clearKbRetrieval();
     setNodes((nds) => {
       if (!query) {
-        setKbSearchResults([]);
         return nds.map((n) => ({ ...n, hidden: false }));
       }
       retriever.index(nds);
@@ -340,14 +393,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return nds.map((n) => ({ ...n, hidden: !hits.has(n.id) }));
     });
     if (query) {
-      void kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit: 6 })
-        .then((results) => {
-          setKbSearchResults(results);
-          return refreshKbStats();
-        })
-        .catch(() => setKbSearchResults([]));
+      void runKbRetrieval(query, RETRIEVAL_RESULT_LIMIT);
     }
-  }, [refreshKbStats]);
+  }, [clearKbRetrieval, runKbRetrieval]);
 
   // Hydrate the knowledge graph from the local store on boot (Phase 1).
   const hydrated = useRef(false);
@@ -785,16 +833,30 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }),
       );
       await Promise.all([refreshKbStats(), refreshKbDocuments()]);
-      setKbSearchResults((results) =>
-        results.filter((result) => result.chunk.documentId !== documentId),
+      const nextRetrieval = retrievedContextAfterDocumentDelete(
+        { query: retrievalQuery, results: kbSearchResults, attachEnabled: retrievalEnabledForChat },
+        documentId,
       );
+      setKbSearchResults(nextRetrieval.results);
+      setRetrievalQuery(nextRetrieval.query);
+      setRetrievalEnabledForChatState(nextRetrieval.attachEnabled);
       pushActivity(
         activeTaskId,
         'system',
         `sqlite kb: soft-deleted ${deletion.documentId}; removed ${reconciled.removedNodeIds.length} graph node(s)`,
       );
     },
-    [activeTaskId, currentUser?.id, currentUser?.role, pushActivity, refreshKbDocuments, refreshKbStats],
+    [
+      activeTaskId,
+      currentUser?.id,
+      currentUser?.role,
+      kbSearchResults,
+      pushActivity,
+      refreshKbDocuments,
+      refreshKbStats,
+      retrievalEnabledForChat,
+      retrievalQuery,
+    ],
   );
 
   const stabilizeGraphLayout = useCallback(async () => {
@@ -843,21 +905,42 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setSending(true);
       pushActivity(taskId, 'query', `routing to ${ep.label} (${ep.kind})`);
 
+      const retrievalForMessage = retrievalEnabledForChat
+        ? kbSearchResults.slice(0, RETRIEVAL_CHAT_RESULT_LIMIT)
+        : [];
+      const hasAttachedRetrieval = retrievalEnabledForChat && retrievalForMessage.length > 0;
+      const promptText = buildOptionalChatPromptWithRetrievedContext(
+        trimmed,
+        retrievalForMessage,
+        hasAttachedRetrieval,
+      );
+      if (hasAttachedRetrieval) {
+        pushActivity(taskId, 'query', `retrieval: ${retrievalForMessage.length} local KB chunk(s) attached`);
+      }
+
       const baseTask = tasks.find((t) => t.id === taskId);
       const turns: ChatTurn[] = (baseTask?.messages ?? [])
         .filter((m) => m.role !== 'system' && m.role !== 'tool')
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-      turns.push({ role: 'user', content: trimmed });
+      turns.push({ role: 'user', content: promptText });
       // Tell the model its TRUE identity — the exact model we route to, which the
       // app also verifies the server actually ran. Accurate self-knowledge, not a
       // hardcoded guess. (Some local models otherwise parrot Qwen/NVIDIA/etc.)
-      turns.unshift({
+      const systemTurns: ChatTurn[] = [{
         role: 'system',
         content:
           `You are "${ep.model}", a large language model running locally through the ` +
           `CODE NAME desktop app. If asked what model or AI you are, identify yourself as ` +
           `"${ep.model}". Do not claim to be a different model, company, or product.`,
-      });
+      }];
+      if (hasAttachedRetrieval) {
+        systemTurns.push({
+          role: 'system',
+          content:
+            'Use the Local SQLite KB context when it is relevant. If the provided chunks are insufficient, say so plainly. Source labels like [KB1] identify the retrieved local chunks.',
+        });
+      }
+      turns.unshift(...systemTurns);
 
       const ctl = new AbortController();
       abortRef.current = ctl;
@@ -908,7 +991,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           if (!info || info.status !== 'ready') throw new Error('sidecar not ready');
           pushActivity(taskId, 'network', `A2A → ${info.host}:${info.port} (token held in shell)`);
           await streamFromSidecar(
-            trimmed,
+            promptText,
             async (tok) => {
               // Tool call event from sidecar (Slice 3.4): execute via WebMCP guard + audit,
               // then post the result back so the ADK tool proxy can unblock.
@@ -1037,7 +1120,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }));
       }
     },
-    [sending, activeTaskId, activeEndpoint, activeProfile, gates.network, gates.tools, patchTask, pushActivity, tasks],
+    [
+      sending,
+      activeTaskId,
+      activeEndpoint,
+      activeProfile,
+      gates.network,
+      gates.tools,
+      kbSearchResults,
+      retrievalEnabledForChat,
+      patchTask,
+      pushActivity,
+      tasks,
+    ],
   );
 
   const abort = useCallback(() => {
@@ -1511,6 +1606,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     kbStats: kbStatsState,
     kbDocuments,
     kbSearchResults,
+    retrievalQuery,
+    retrievalResults: kbSearchResults,
+    retrievalEnabledForChat,
+    setRetrievalEnabledForChat,
+    runKbRetrieval,
+    clearKbRetrieval,
     refreshKbStats,
     refreshKbDocuments,
     deleteKbDocument,

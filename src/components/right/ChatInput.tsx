@@ -4,7 +4,16 @@ import { useApp } from '../../state/AppState';
 import { reachesNetwork } from '../../lib/llm';
 
 export function ChatInput() {
-  const { sendMessage, sending, abort, activeEndpoint, activeProfile } = useApp();
+  const {
+    sendMessage,
+    sending,
+    abort,
+    activeEndpoint,
+    activeProfile,
+    retrievalResults,
+    retrievalEnabledForChat,
+    setRetrievalEnabledForChat,
+  } = useApp();
   const [text, setText] = useState('');
 
   const fire = () => {
@@ -57,7 +66,19 @@ export function ChatInput() {
         <span>
           PROFILE {activeProfile.name} · T{activeProfile.temperature} · CTX{activeProfile.contextWindow}
         </span>
-        <span>{reachesNetwork(activeEndpoint) ? 'CLOUD-CAPABLE' : 'LOCAL-FIRST'}</span>
+        <div className="flex items-center gap-2">
+          {retrievalResults.length > 0 && (
+            <button
+              onClick={() => setRetrievalEnabledForChat(!retrievalEnabledForChat)}
+              className={retrievalEnabledForChat ? 'text-emerald-400 hover:text-emerald-300' : 'text-neutral-600 hover:text-neutral-400'}
+              title="Attach or detach local KB chunks for the next chat request"
+              aria-label="Toggle local KB context"
+            >
+              KB context {retrievalEnabledForChat ? 'ON' : 'OFF'} ({retrievalResults.length})
+            </button>
+          )}
+          <span>{reachesNetwork(activeEndpoint) ? 'CLOUD-CAPABLE' : 'LOCAL-FIRST'}</span>
+        </div>
       </div>
     </div>
   );

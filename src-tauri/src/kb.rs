@@ -1749,6 +1749,28 @@ mod tests {
     }
 
     #[test]
+    fn search_respects_top_k_limit() {
+        let mut conn = memory_db();
+        for index in 0..4 {
+            ingest_text_conn(
+                &mut conn,
+                "default",
+                &format!("Needle Doc {index}"),
+                &format!("needle retrieval limit document {index}"),
+                None,
+                None,
+                None,
+            )
+            .expect("ingest");
+        }
+
+        let results = search_conn(&conn, "default", "needle", 2).expect("search");
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|result| result.chunk.text.contains("needle")));
+    }
+
+    #[test]
     fn ingest_stores_entities_chunk_links_and_relationships() {
         let mut conn = memory_db();
         ingest_text_conn(

@@ -1,43 +1,43 @@
 ## Active Product Milestone
 
-# Milestone 4 - Stable Graph Layout and Orphan Cleanup
+# Milestone 5 - Retrieval MVP
 
-Goal: keep the graph readable and clustered after KB ingestion and deletion.
+Goal: query SQLite chunks, show source snippets, and optionally attach retrieved local context to chat.
 
-Status: ACCEPTED - READY FOR RETRIEVAL MVP
+Status: IMPLEMENTED - OWNER MANUAL VERIFICATION REQUIRED
 
 Definition of done:
 
-- [x] graph layout remains stable after deleting a KB document
-- [x] graph does not collapse into a long line
-- [x] connected KB clusters render as readable node clusters
-- [x] document/chunk/entity nodes remain visually distinguishable
-- [x] deleted KB document nodes/edges disappear
-- [x] unrelated graph nodes remain
-- [x] legacy/stale KB-projected orphan nodes are cleaned during projection reconciliation
-- [x] user has a clear way to refresh/stabilize the graph
-- [x] tests cover graph projection cleanup/layout inputs
+- [x] query SQLite chunks
+- [x] rank local KB search results
+- [x] show source snippets and chunk labels
+- [x] show active retrieved context near chat
+- [x] allow clearing retrieved context
+- [x] optionally attach retrieved chunks to chat context
+- [x] preserve deleted-document exclusion
+- [x] keep retrieval local-first without embeddings or GraphRAG
+- [x] tests cover retrieval helpers/wrappers and local search limit
 - [x] manual verification steps are documented
 - [x] commit created
-- [x] owner manual verification accepted after correction
+- [ ] owner manual verification accepted
 
 Target commit:
 
-`50efab6 fix: preserve graph layout during kb updates`
+`feat: add retrieval mvp context panel` (exact hash reported in final response)
 
 ---
 
 ## Next Slice
 
-## Phase 2E - Retrieval MVP
+## Phase 2F - Chat With Knowledge Base
 
-Status: NEXT IMPLEMENTATION SLICE
+Status: READY AFTER PHASE 2E OWNER REVIEW
 
 Required visible result:
 
-query SQLite chunks -> rank local results -> show source snippets -> feed retrieved context into chat
+user asks a question -> app retrieves relevant chunks -> model receives retrieved context -> answer shows source snippets
 
-Do not start Chat With KB until retrieval source evidence works.
+Do not start full Chat With KB polish until Retrieval MVP owner verification passes.
 
 ---
 
@@ -87,10 +87,10 @@ Status: ACCEPTED AFTER CORRECTION
 
 ### Milestone 5 - Retrieval MVP
 
-- [ ] query SQLite chunks
-- [ ] rank search results
-- [ ] show source snippets
-- [ ] connect retrieval results to chat context
+- [x] query SQLite chunks
+- [x] rank search results
+- [x] show source snippets
+- [x] explicitly attach retrieval results to chat context
 
 ### Milestone 6 - Chat With Knowledge Base
 
@@ -404,3 +404,79 @@ Decision:
 Status:
 
 - Accepted by owner manual verification.
+
+### Slice: Phase 2E - Retrieval MVP
+
+Date: 2026-06-16
+
+Commit: `feat: add retrieval mvp context panel` (exact hash reported in final response)
+
+What changed in the app:
+
+- Made SQLite KB retrieval explicit in the graph/KB query surface.
+- Added source-labelled retrieved chunk previews with rank, chunk number, score, and snippet.
+- Added a right-pane Local KB context panel near chat.
+- Added a visible clear action and explicit Attach KB context ON/OFF control.
+- Kept retrieved context detached by default after search.
+- Attached only the currently visible retrieved chunks to chat requests when explicitly enabled.
+- Prevented hidden auto-retrieval or silent KB context injection on chat send.
+- Kept retrieval local-first through existing `kb_search`.
+
+How to verify it:
+
+1. Create `%USERPROFILE%\Desktop\phase-2e-retrieval-mvp-smoke.txt` with this exact content:
+
+```text
+Phase 2E retrieval smoke test.
+
+RetrievalMvpUniqueTerm4821 appears in this document so SQLite KB retrieval can find it.
+The CODE NAME 2 local-first knowledge base should return this chunk as grounded context.
+The answer should identify this file as the source and should not require embeddings, GraphRAG, or cloud services.
+KeepAliveRetrievalTerm7359 remains available until the document is removed from the KB.
+```
+
+2. Launch the app with `npm run desktop`.
+3. Drop `phase-2e-retrieval-mvp-smoke.txt` into the app.
+4. Confirm the KB document count increases and the document appears in `KB Documents`.
+5. Search/query `RetrievalMvpUniqueTerm4821`.
+6. Confirm retrieved results show `phase-2e-retrieval-mvp-smoke.txt`, chunk number, snippet, and source label.
+7. Confirm the right-pane Local KB context panel shows the same result.
+8. Confirm KB context is not silently attached unless the user explicitly enables it.
+9. Enable/attach KB context.
+10. Ask in chat: `What document mentions RetrievalMvpUniqueTerm4821?`
+11. Confirm the UI clearly indicates KB context is attached.
+12. Confirm the answer can use the retrieved chunk.
+13. Disable/detach KB context.
+14. Ask another message and confirm no KB context is attached.
+15. Delete `phase-2e-retrieval-mvp-smoke.txt` from the KB Documents list.
+16. Search/query `RetrievalMvpUniqueTerm4821` again and confirm no SQLite KB result appears.
+17. Search/query `KeepAliveRetrievalTerm7359` again and confirm no result appears after deletion.
+18. Cleanup Desktop file with `Remove-Item -LiteralPath "$env:USERPROFILE\Desktop\phase-2e-retrieval-mvp-smoke.txt" -ErrorAction SilentlyContinue`.
+19. Confirm the app-side KB test document was removed.
+
+What works now:
+
+- SQLite KB retrieval returns local chunks with visible sources.
+- Retrieved context can be cleared or explicitly attached to chat.
+- Attached chat context is capped and source-labelled.
+- Chat does not auto-retrieve hidden KB context on send.
+- Deleted documents remain excluded by local SQLite search and frontend context cleanup.
+- Retrieval events continue to be recorded through existing `kb_search`.
+
+What still does not work:
+
+- This is not full Chat With KB polish.
+- This is not full GraphRAG.
+- Real embeddings are not implemented.
+- Graph traversal retrieval is not implemented.
+- Formal answer citation rendering is deferred.
+
+Decision:
+
+- [ ] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+Status:
+
+- Ready for owner review.
