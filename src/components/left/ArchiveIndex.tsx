@@ -6,6 +6,7 @@ import {
   Database,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState';
@@ -28,8 +29,8 @@ const ARCHIVE: TreeNode = {
       ],
     },
     {
-      label: 'VECTOR_SCAFFOLD',
-      children: [{ label: 'STUB_EMBEDDINGS' }, { label: 'CHUNKS' }],
+      label: 'LEGACY_GRAPH_HASH_INDEX',
+      children: [{ label: 'NON_SEMANTIC_HASH_VECTORS' }, { label: 'GRAPH_NODE_COMPAT' }],
     },
     {
       label: 'GRAPH_SEARCH_INDEX',
@@ -83,7 +84,18 @@ function Branch({ node, depth }: { node: TreeNode; depth: number }) {
 export function ArchiveIndex() {
   const [collapsed, setCollapsed] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const { kbStats, kbDocuments, retrievalResults, deleteKbDocument } = useApp();
+  const {
+    kbStats,
+    kbDocuments,
+    retrievalResults,
+    retrievalMode,
+    semanticStatus,
+    semanticIndexing,
+    semanticError,
+    buildSemanticIndex,
+    refreshSemanticStatus,
+    deleteKbDocument,
+  } = useApp();
 
   const removeDocument = async (id: string, title: string) => {
     if (!window.confirm(`Remove "${title}" from the SQLite KB?`)) return;
@@ -130,6 +142,47 @@ export function ArchiveIndex() {
               {kbStats.ftsAvailable ? 'FTS5 chunk search' : 'LIKE chunk search fallback'}
             </div>
           </div>
+          <div className="mb-2 border border-cyan-500/20 bg-cyan-500/5 p-1.5">
+            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider">
+              <span className="text-cyan-300/80">Semantic Index</span>
+              <span className={semanticStatus.ready ? 'text-cyan-300' : 'text-amber-300'}>
+                {semanticStatus.ready ? 'ready' : semanticStatus.state}
+              </span>
+            </div>
+            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-neutral-500">
+              <span>Provider</span><span className="text-neutral-300 text-right">{semanticStatus.provider}</span>
+              <span>Model</span><span className="text-neutral-300 text-right truncate">{semanticStatus.model}</span>
+              <span>Active chunks</span><span className="text-neutral-300 text-right">{semanticStatus.activeChunkCount}</span>
+              <span>Embedded</span><span className="text-neutral-300 text-right">{semanticStatus.embeddedActiveChunkCount}</span>
+              <span>Missing</span><span className="text-neutral-300 text-right">{semanticStatus.missingActiveChunkCount}</span>
+              <span>Dimension</span><span className="text-neutral-300 text-right">{semanticStatus.dimension ?? 'n/a'}</span>
+            </div>
+            {semanticError && (
+              <div className="mt-1 text-[8px] text-amber-300 leading-snug">{semanticError}</div>
+            )}
+            <div className="mt-1 flex gap-1">
+              <button
+                type="button"
+                onClick={buildSemanticIndex}
+                disabled={semanticIndexing || semanticStatus.activeChunkCount === 0}
+                className="flex-1 border border-cyan-500/30 bg-cyan-500/10 px-1 py-0.5 text-[8px] uppercase tracking-wider text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {semanticIndexing ? 'Indexing...' : 'Build / Refresh'}
+              </button>
+              <button
+                type="button"
+                onClick={refreshSemanticStatus}
+                className="border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-neutral-400 hover:text-neutral-200"
+                title="Refresh semantic index status"
+                aria-label="Refresh semantic index status"
+              >
+                <RefreshCw className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </div>
+            <div className="mt-1 text-[8px] text-neutral-600">
+              Local Ollama only; models are not auto-pulled.
+            </div>
+          </div>
           {kbDocuments.length > 0 && (
             <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
               <div className="text-[9px] uppercase tracking-wider text-neutral-500 mb-1">
@@ -162,9 +215,15 @@ export function ArchiveIndex() {
             </div>
           )}
           {retrievalResults.length > 0 && (
-            <div className="mb-2 border border-emerald-500/20 bg-emerald-500/5 p-1.5">
-              <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 mb-1">
-                KB Retrieval Results
+            <div className={`mb-2 border p-1.5 ${
+              retrievalMode === 'semantic'
+                ? 'border-cyan-500/20 bg-cyan-500/5'
+                : 'border-emerald-500/20 bg-emerald-500/5'
+            }`}>
+              <div className={`text-[9px] uppercase tracking-wider mb-1 ${
+                retrievalMode === 'semantic' ? 'text-cyan-300/80' : 'text-emerald-400/80'
+              }`}>
+                {retrievalMode === 'semantic' ? 'Semantic KB Results' : 'Lexical KB Results'}
               </div>
               <div className="space-y-1">
                 {retrievalResults.slice(0, 3).map((r, index) => (

@@ -1,43 +1,46 @@
 ## Active Product Milestone
 
-# Milestone 5 - Retrieval MVP
+# Milestone 6 - Real Local Embeddings + Vector Retrieval Foundation
 
-Goal: query SQLite chunks, show source snippets, and optionally attach retrieved local context to chat.
+Goal: generate real local Ollama embeddings for SQLite KB chunks, persist them locally, and run semantic vector retrieval without cloud embeddings.
 
-Status: ACCEPTED
+Status: READY FOR OWNER REVIEW
 
 Definition of done:
 
-- [x] query SQLite chunks
-- [x] rank local KB search results
-- [x] show source snippets and chunk labels
-- [x] show active retrieved context near chat
-- [x] allow clearing retrieved context
-- [x] optionally attach retrieved chunks to chat context
-- [x] preserve deleted-document exclusion
-- [x] keep retrieval local-first without embeddings or GraphRAG
-- [x] tests cover retrieval helpers/wrappers and local search limit
+- [x] add additive SQLite storage for chunk embeddings
+- [x] generate real local embeddings through loopback-only Ollama
+- [x] default to `nomic-embed-text` without auto-pulling or downloading models
+- [x] validate vectors and reject empty, NaN/Inf, all-zero, or inconsistent dimensions
+- [x] build/refresh a semantic index from active SQLite KB chunks
+- [x] run semantic search by embedding the query locally and cosine-ranking stored chunk embeddings
+- [x] exclude soft-deleted documents from semantic retrieval
+- [x] preserve lexical SQLite retrieval
+- [x] expose explicit Lexical/Semantic retrieval mode in the UI
+- [x] show semantic index status and unavailable/not-ready errors
+- [x] reuse explicit attach/detach chat context behavior
+- [x] relabel legacy hash-vector scaffolds as non-semantic
+- [x] tests cover embedding storage, validation, ranking, stale hashes, deleted docs, wrappers, and attach formatting
 - [x] manual verification steps are documented
-- [x] commit created
-- [x] owner manual verification accepted
+- [ ] owner manual verification accepted
 
 Target commit:
 
-`0b7c9e340f08f3be7b05ee225c056b37f354340b feat: add retrieval mvp context panel`
+`feat: add local semantic kb retrieval` (exact hash reported in final response)
 
 ---
 
 ## Next Slice
 
-## Phase 2F - Chat With Knowledge Base
+## Phase 2G - Chat With Knowledge Base
 
-Status: READY
+Status: READY AFTER OWNER ACCEPTS PHASE 2F
 
 Required visible result:
 
 user asks a question -> app retrieves relevant chunks -> model receives retrieved context -> answer shows source snippets
 
-Do not start full Chat With KB polish until Retrieval MVP owner verification passes.
+Do not start full Chat With KB polish until Phase 2F semantic retrieval owner verification passes.
 
 ---
 
@@ -92,7 +95,20 @@ Status: ACCEPTED AFTER CORRECTION
 - [x] show source snippets
 - [x] explicitly attach retrieval results to chat context
 
-### Milestone 6 - Chat With Knowledge Base
+### Milestone 6 - Real Local Embeddings + Vector Retrieval Foundation
+
+- [x] store chunk embeddings in Rust-owned SQLite
+- [x] use local loopback Ollama embeddings
+- [x] reject non-loopback embedding URLs
+- [x] validate embedding vectors
+- [x] build or refresh semantic index manually
+- [x] run semantic KB retrieval
+- [x] show semantic index status in UI
+- [x] keep lexical retrieval available
+- [x] preserve explicit attach/detach behavior
+- [x] exclude deleted documents from semantic retrieval
+
+### Milestone 7 - Chat With Knowledge Base
 
 - [ ] user asks a question
 - [ ] app retrieves relevant chunks
@@ -100,7 +116,7 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] answer shows source snippets
 - [ ] works with local model route or synthetic fallback
 
-### Milestone 7 - Real GraphRAG
+### Milestone 8 - Real GraphRAG
 
 - [ ] combine text retrieval with graph traversal
 - [ ] retrieve chunks by document relevance
@@ -108,7 +124,7 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] generate grounded answers from both
 - [ ] show source evidence
 
-### Milestone 8 - Product Polish
+### Milestone 9 - Product Polish
 
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
@@ -126,7 +142,9 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] Browser harness lockdown
 - [ ] Audit hash canonicalization
 - [ ] Full GraphRAG
-- [ ] Real embeddings
+- [ ] Graph traversal retrieval
+- [ ] External vector DB integration
+- [x] Real local SQLite KB embeddings
 - [ ] SSO
 - [ ] Compliance packaging
 - [ ] Release hardening
@@ -500,3 +518,115 @@ Decision:
 Status:
 
 - Accepted by owner manual verification.
+
+### Slice: Phase 2F - Real Local Embeddings + Vector Retrieval Foundation
+
+Date: 2026-06-16
+
+Commit: `feat: add local semantic kb retrieval` (exact hash reported in final response)
+
+What changed in the app:
+
+- Added real local Ollama embedding support for SQLite KB chunks.
+- Added additive SQLite `chunk_embeddings` storage tied to chunk id, workspace id, provider, model, dimension, embedding blob, and content hash.
+- Added semantic index status, build/refresh, and semantic search commands in Rust.
+- Added loopback-only Ollama base URL validation and vector validation.
+- Added explicit Lexical/Semantic retrieval mode in the UI.
+- Added semantic index status and manual build/refresh controls in the Archive panel.
+- Reused Phase 2E explicit attach/detach context behavior for semantic results.
+- Relabeled legacy graph hash-vector scaffolds as non-semantic compatibility paths.
+- Preserved lexical retrieval, document deletion, graph layout stability, and local-first behavior.
+
+How to verify it:
+
+1. Confirm Ollama is running locally.
+2. Confirm `nomic-embed-text` is available locally.
+3. Do not auto-pull the model from inside the app.
+4. Create `%USERPROFILE%\Desktop\phase-2f-orchard.txt` with this exact content:
+
+```text
+Phase 2F semantic orchard test.
+
+The orchard team studied apple harvest logistics, cider fermentation, fruit storage temperatures, refrigerated crates, and seasonal produce handling.
+This file is about fruit, orchards, cider, apples, storage, and harvest workflows.
+ExactFruitLexicalMarker4821 is included to verify lexical retrieval still works.
+```
+
+5. Create `%USERPROFILE%\Desktop\phase-2f-aerospace.txt` with this exact content:
+
+```text
+Phase 2F semantic aerospace test.
+
+The aerospace team studied orbital docking procedures, spacecraft rendezvous, satellite attitude control, vacuum-rated fasteners, and thruster alignment.
+This file is about spacecraft, orbital operations, docking, satellites, and vacuum hardware.
+ExactAerospaceLexicalMarker9137 is included to verify lexical retrieval still works.
+```
+
+6. Create `%USERPROFILE%\Desktop\phase-2f-finance.txt` with this exact content:
+
+```text
+Phase 2F semantic finance test.
+
+The finance team studied quarterly invoicing, revenue recognition, payment reconciliation, purchase orders, and account settlement workflows.
+This file is about invoices, revenue, payments, accounting, reconciliation, and finance operations.
+ExactFinanceLexicalMarker6254 is included to verify lexical retrieval still works.
+```
+
+7. Launch the app with `npm run desktop`.
+8. Drop all three files into the app.
+9. Confirm all three appear in KB Documents.
+10. Confirm lexical query `ExactFruitLexicalMarker4821` returns `phase-2f-orchard.txt`.
+11. Confirm lexical query `ExactAerospaceLexicalMarker9137` returns `phase-2f-aerospace.txt`.
+12. Confirm lexical query `ExactFinanceLexicalMarker6254` returns `phase-2f-finance.txt`.
+13. Build or refresh the semantic index using the app UI.
+14. Confirm semantic index status shows active chunks and embedded chunks.
+15. Switch to Semantic retrieval.
+16. Query `spacecraft connection in orbit`.
+17. Confirm `phase-2f-aerospace.txt` ranks above orchard and finance.
+18. Query `apple cider storage`.
+19. Confirm `phase-2f-orchard.txt` ranks above aerospace and finance.
+20. Query `invoice payment reconciliation`.
+21. Confirm `phase-2f-finance.txt` ranks above orchard and aerospace.
+22. Attach semantic context.
+23. Ask chat: `Which file discusses orbital docking?`
+24. Confirm the answer uses semantic KB context and identifies `phase-2f-aerospace.txt`.
+25. Detach semantic context.
+26. Send a detached message and confirm no semantic context is injected.
+27. Delete all three test documents from KB Documents.
+28. Query `spacecraft connection in orbit` in Semantic mode.
+29. Confirm deleted documents return no semantic results.
+30. Query `ExactFruitLexicalMarker4821` in Lexical mode.
+31. Confirm deleted documents return no lexical results.
+32. Cleanup Desktop files with:
+
+```powershell
+Remove-Item -LiteralPath "$env:USERPROFILE\Desktop\phase-2f-orchard.txt","$env:USERPROFILE\Desktop\phase-2f-aerospace.txt","$env:USERPROFILE\Desktop\phase-2f-finance.txt" -ErrorAction SilentlyContinue
+```
+
+What works now:
+
+- Semantic KB retrieval uses real local Ollama embeddings, not hash vectors or stubs.
+- Chunk embeddings are persisted in Rust-owned SQLite and tied to content hashes.
+- Query embeddings are generated locally and cosine-ranked against active chunk embeddings.
+- Deleted documents are excluded from semantic and lexical retrieval.
+- Semantic context can be explicitly attached to chat only when the user turns attachment on.
+- If Ollama or `nomic-embed-text` is unavailable, semantic indexing/search reports unavailable instead of faking results.
+
+What still does not work:
+
+- This is not full GraphRAG.
+- Graph traversal retrieval is not implemented.
+- External vector DB integration is not implemented.
+- Cloud embeddings are not implemented.
+- Ollama models are not auto-pulled or downloaded by the app.
+- Owner manual verification is still required before acceptance.
+
+Decision:
+
+- [ ] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+Status:
+
+- Ready for owner review.

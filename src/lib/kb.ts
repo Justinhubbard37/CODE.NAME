@@ -19,6 +19,31 @@ export interface KbStats {
   ftsAvailable: boolean;
 }
 
+export type KbRetrievalKind = 'lexical' | 'semantic';
+export type KbRetrievalMode = KbRetrievalKind;
+
+export interface KbEmbeddingStatus {
+  provider: string;
+  model: string;
+  activeChunkCount: number;
+  embeddedActiveChunkCount: number;
+  missingActiveChunkCount: number;
+  dimension?: number;
+  ready: boolean;
+  state: 'empty' | 'not-ready' | 'ready' | 'unavailable' | string;
+  lastError?: string;
+}
+
+export interface KbEmbedMissingResult {
+  provider: string;
+  model: string;
+  embeddedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  dimension?: number;
+  error?: string;
+}
+
 export interface KbIngestResult {
   documentId: string;
   chunkCount: number;
@@ -64,6 +89,7 @@ export interface KbSearchResult {
   documentTitle: string;
   sourceUri?: string;
   score: number;
+  retrievalKind?: KbRetrievalKind;
 }
 
 export interface KbGraphNode {
@@ -99,6 +125,21 @@ export const emptyKbStats: KbStats = {
   relationshipCount: 0,
   retrievalEventCount: 0,
   ftsAvailable: false,
+};
+
+export const defaultEmbeddingProvider = 'ollama';
+export const defaultEmbeddingModel = 'nomic-embed-text';
+export const defaultEmbeddingBaseUrl = 'http://127.0.0.1:11434';
+
+export const emptyKbEmbeddingStatus: KbEmbeddingStatus = {
+  provider: defaultEmbeddingProvider,
+  model: defaultEmbeddingModel,
+  activeChunkCount: 0,
+  embeddedActiveChunkCount: 0,
+  missingActiveChunkCount: 0,
+  ready: false,
+  state: 'unavailable',
+  lastError: 'desktop-app-only',
 };
 
 function isTauri(): boolean {
@@ -164,6 +205,71 @@ export async function kbSearch(input: {
     workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
     query: input.query,
     limit: input.limit ?? 8,
+  });
+}
+
+export async function kbEmbeddingStatus(input: {
+  workspaceId?: string;
+  provider?: string;
+  model?: string;
+} = {}): Promise<KbEmbeddingStatus> {
+  if (!isTauri()) return emptyKbEmbeddingStatus;
+  try {
+    return await invokeTauri<KbEmbeddingStatus>('kb_embedding_status', {
+      workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+      provider: input.provider ?? defaultEmbeddingProvider,
+      model: input.model ?? defaultEmbeddingModel,
+    });
+  } catch (err) {
+    return {
+      ...emptyKbEmbeddingStatus,
+      provider: input.provider ?? defaultEmbeddingProvider,
+      model: input.model ?? defaultEmbeddingModel,
+      lastError: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+export async function kbEmbedMissing(input: {
+  workspaceId?: string;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+} = {}): Promise<KbEmbedMissingResult> {
+  if (!isTauri()) {
+    return {
+      provider: input.provider ?? defaultEmbeddingProvider,
+      model: input.model ?? defaultEmbeddingModel,
+      embeddedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      error: 'desktop-app-only',
+    };
+  }
+  return invokeTauri<KbEmbedMissingResult>('kb_embed_missing', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+    provider: input.provider ?? defaultEmbeddingProvider,
+    model: input.model ?? defaultEmbeddingModel,
+    baseUrl: input.baseUrl ?? defaultEmbeddingBaseUrl,
+  });
+}
+
+export async function kbSemanticSearch(input: {
+  workspaceId?: string;
+  query: string;
+  limit?: number;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+}): Promise<KbSearchResult[]> {
+  if (!isTauri()) return [];
+  return invokeTauri<KbSearchResult[]>('kb_semantic_search', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+    query: input.query,
+    limit: input.limit ?? 8,
+    provider: input.provider ?? defaultEmbeddingProvider,
+    model: input.model ?? defaultEmbeddingModel,
+    baseUrl: input.baseUrl ?? defaultEmbeddingBaseUrl,
   });
 }
 

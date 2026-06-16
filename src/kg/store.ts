@@ -5,7 +5,7 @@
  * backend later behind this same interface.
  *
  * DB_VERSION 2 (Phase 4, Slice 4.2): adds `chunks` and `vectors` stores for
- * per-node embedding vectors and text chunks used by VectorRetriever.
+ * legacy per-node hash vectors and text chunks used by VectorRetriever.
  */
 import type { AppNode, Edge, AuditRecord } from '../types';
 import { hashAuditRecord } from './commit';
@@ -222,7 +222,7 @@ export class KnowledgeStore {
     return done(tx);
   }
 
-  // ---------- Phase 4 vector / chunk helpers ----------
+  // ---------- Phase 4 legacy hash-vector / chunk helpers ----------
 
   getAllVectors() { return getAll<VectorRecord>('vectors'); }
   getAllChunks() { return getAll<ChunkRecord>('chunks'); }

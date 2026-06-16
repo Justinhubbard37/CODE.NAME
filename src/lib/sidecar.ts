@@ -103,9 +103,11 @@ export async function sidecarToolResult(callId: string, result: string): Promise
 }
 
 /**
- * Embed one or more texts via the sidecar's stub-bigram endpoint (Phase 4, Slice 4.1).
- * Returns a 128-dim unit vector per text. Falls back to an empty array if
- * the sidecar is not ready (callers should handle gracefully).
+ * Legacy non-semantic graph hash-vector endpoint.
+ *
+ * This does not produce real embeddings and must not be used for Phase 2F
+ * SQLite KB semantic retrieval. That path uses Rust-owned local Ollama
+ * embeddings persisted in SQLite.
  */
 export async function sidecarEmbed(texts: string[]): Promise<number[][]> {
   if (!isTauri()) return [];
@@ -118,9 +120,8 @@ export async function sidecarEmbed(texts: string[]): Promise<number[][]> {
 }
 
 /**
- * Run GraphRAG label-propagation + LLM community summarisation on the current
- * graph (Phase 4, Slice 4.4). Nodes and edges are passed as plain objects so
- * the sidecar can run the algorithm without touching IndexedDB.
+ * Run local graph community detection and optional sidecar summarisation on the
+ * current graph. This is not full GraphRAG retrieval.
  */
 export async function sidecarCommunities(
   nodes: { id: string; text: string }[],

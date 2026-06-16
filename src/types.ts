@@ -30,7 +30,7 @@ export type NodeData = {
   hash?: string;
   history?: NodeVersion[];
   currentVersion?: number;
-  /** GraphRAG community identifier (Phase 4, Slice 4.4). */
+  /** Local graph community identifier. This is not full GraphRAG retrieval. */
   communityId?: string;
   /** LLM-generated summary of the node's community (Phase 4, Slice 4.4). */
   communitySummary?: string;
@@ -263,7 +263,7 @@ export interface AuditRecord {
 export interface LodConfig {
   fullCardMinPx: number; // >= -> full readable card
   labelMinPx: number; // [labelMinPx, fullCardMinPx) -> small label; below -> dot
-  clusterWhenCommunityGt: number; // GraphRAG community size that collapses to a cluster node
+  clusterWhenCommunityGt: number; // community size that collapses to a cluster node
 }
 
 export interface PoolConfig {

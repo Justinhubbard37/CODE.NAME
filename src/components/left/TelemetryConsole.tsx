@@ -1,7 +1,7 @@
 /**
  * TelemetryConsole — real-time metrics panel (Phase 9, Slice 9.4).
  *
- * Shows true counts from the KG store (nodes, edges, chunks, vectors/embeddings)
+ * Shows true counts from the KG store (nodes, edges, chunks, legacy hash vectors)
  * and derived counts from the active task log (tool calls, estimated tokens).
  * Polls the store every 15 s so the numbers reflect reality without flooding IDB.
  *
@@ -91,7 +91,7 @@ export function TelemetryConsole() {
     ['KG NODES', fmtK(counts.nodes)],
     ['KG EDGES', fmtK(counts.edges)],
     ['CHUNKS',   fmtK(counts.chunks)],
-    ['VECTORS',  fmtK(counts.vectors)],
+    ['HASH VECS',  fmtK(counts.vectors)],
     ['TOOLS',    fmtK(toolCalls)],
     ['~TOKENS',  fmtK(tokenEst)],
     ['DB LOOPS', `${ready}/${endpoints.length}`],

@@ -45,14 +45,14 @@ export const en = {
   'settings.logs.desktopOnly': 'Logs are available in the desktop app.',
 
   'settings.about.version': 'Version',
-  'settings.about.desc': 'A local-first, two-pane governed workspace over a knowledge graph, GraphRAG, and a vector store, with a model-agnostic execution canvas.',
+  'settings.about.desc': 'A local-first, two-pane governed workspace over a knowledge graph and local SQLite KB retrieval, with a model-agnostic execution canvas.',
 
   // Empty / loading / error states (Slice 10.4)
   'graph.loading': 'Loading knowledge graph…',
   'graph.empty.title': 'Knowledge graph is empty',
   'graph.empty.hint': 'Drop a codebase or document onto this pane to ingest and index it.',
   'graph.noMatch.title': 'No nodes match your query',
-  'graph.noMatch.hint': 'Clear the GraphRAG query to show the full graph again.',
+  'graph.noMatch.hint': 'Clear the graph query to show the full graph again.',
 
   'chat.empty.title': 'Isolated context',
   'chat.empty.hint': 'Awaiting input — send a message to begin.',

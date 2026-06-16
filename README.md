@@ -2,13 +2,15 @@
 
 CODE NAME 2 is a local-first, model-agnostic desktop agent harness. The current
 implementation includes a governed two-pane workspace, local knowledge-graph
-persistence, hybrid graph search, a supervised Python sidecar, settings for model
+persistence, SQLite knowledge-base ingestion/retrieval, real local Ollama
+semantic chunk retrieval, a supervised Python sidecar, settings for model
 routing, capability gates, and a gated ingestion path.
 
-Current reality: GraphRAG and production semantic vector search are roadmap
-capabilities. The repo currently has graph/search and retrieval scaffolding, with
-stub vector embeddings used as a local fallback. Capability gates exist in the UI
-and are partially mirrored into Rust, but backend enforcement is not complete yet.
+Current reality: full GraphRAG is still a roadmap capability. SQLite lexical KB
+retrieval is implemented, and semantic KB retrieval uses locally generated
+Ollama embeddings persisted in SQLite. Legacy graph-node hash vectors remain as
+non-semantic compatibility scaffolding. Capability gates exist in the UI and are
+partially mirrored into Rust, but backend enforcement is not complete yet.
 
 Stack: Tauri v2 (Rust shell) + React 19 + TypeScript + Vite + Tailwind v4 +
 React Three Fiber / Three.js, with some legacy React Flow code retained under
@@ -66,9 +68,10 @@ fallback is not proof that a real model/provider is ready.
 ## Current Stabilization Notes
 
 - Graph search is implemented as local hybrid retrieval over the current graph
-  and stub-vector scaffolding, not production GraphRAG.
-- Vector storage exists structurally, but current embeddings are deterministic
-  stub vectors unless a real sidecar/provider path is added later.
+  and legacy non-semantic hash-vector scaffolding, not production GraphRAG.
+- Semantic KB retrieval uses local loopback Ollama embeddings for SQLite chunks;
+  it does not use OpenAI, Gemini, cloud embeddings, random vectors, or hash-vector
+  fallback.
 - Capability gates are real controls, but not every backend command is fully
   enforced by Rust yet.
 - API keys are stored through the OS keychain path, but current frontend APIs can

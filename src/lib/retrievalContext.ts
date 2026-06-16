@@ -1,4 +1,4 @@
-import type { KbSearchResult } from './kb';
+import type { KbRetrievalMode, KbSearchResult } from './kb';
 
 export const RETRIEVAL_RESULT_LIMIT = 6;
 export const RETRIEVAL_CHAT_RESULT_LIMIT = 4;
@@ -9,6 +9,7 @@ export type RetrievedContextState = {
   query: string;
   results: KbSearchResult[];
   attachEnabled: boolean;
+  mode: KbRetrievalMode;
 };
 
 function clipText(text: string, maxChars: number): string {
@@ -42,6 +43,10 @@ export function retrievalScoreLabel(score: number): string {
   return score.toFixed(2);
 }
 
+export function retrievalModeLabel(mode: KbRetrievalMode): string {
+  return mode === 'semantic' ? 'semantic' : 'lexical';
+}
+
 export function filterRetrievalResultsForDeletedDocument(
   results: KbSearchResult[],
   documentId: string,
@@ -49,15 +54,16 @@ export function filterRetrievalResultsForDeletedDocument(
   return results.filter((result) => result.chunk.documentId !== documentId);
 }
 
-export function clearRetrievedContextState(): RetrievedContextState {
-  return { query: '', results: [], attachEnabled: false };
+export function clearRetrievedContextState(mode: KbRetrievalMode = 'lexical'): RetrievedContextState {
+  return { query: '', results: [], attachEnabled: false, mode };
 }
 
 export function retrievedContextAfterSearch(
   query: string,
   results: KbSearchResult[],
+  mode: KbRetrievalMode = 'lexical',
 ): RetrievedContextState {
-  return { query, results, attachEnabled: false };
+  return { query, results, attachEnabled: false, mode };
 }
 
 export function retrievedContextAfterDocumentDelete(
@@ -65,7 +71,7 @@ export function retrievedContextAfterDocumentDelete(
   documentId: string,
 ): RetrievedContextState {
   const results = filterRetrievalResultsForDeletedDocument(state.results, documentId);
-  if (results.length === 0) return clearRetrievedContextState();
+  if (results.length === 0) return clearRetrievedContextState(state.mode);
   return { ...state, results };
 }
 
@@ -107,17 +113,19 @@ export function formatRetrievedContextBlock(
 export function buildChatPromptWithRetrievedContext(
   userQuestion: string,
   results: KbSearchResult[],
+  mode: KbRetrievalMode = 'lexical',
 ): string {
   const context = formatRetrievedContextBlock(results);
   if (!context) return userQuestion;
-  return `Local SQLite KB context:\n${context}\n\nUser question:\n${userQuestion}`;
+  return `Local SQLite KB context - ${retrievalModeLabel(mode)}:\n${context}\n\nUser question:\n${userQuestion}`;
 }
 
 export function buildOptionalChatPromptWithRetrievedContext(
   userQuestion: string,
   results: KbSearchResult[],
   attachEnabled: boolean,
+  mode: KbRetrievalMode = 'lexical',
 ): string {
   if (!attachEnabled) return userQuestion;
-  return buildChatPromptWithRetrievedContext(userQuestion, results);
+  return buildChatPromptWithRetrievedContext(userQuestion, results, mode);
 }

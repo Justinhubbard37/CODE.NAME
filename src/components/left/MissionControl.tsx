@@ -21,9 +21,9 @@ function GraphLoading() {
 }
 
 /**
- * LEFT PANE — Mission Control.
- * Static context, the local knowledge-graph ecosystem (KG · GraphRAG · vectors),
- * isolated task threads, and the gated ingestion perimeter.
+ * LEFT PANE - Mission Control.
+ * Static context, the local knowledge graph, SQLite KB retrieval, isolated task
+ * threads, and the gated ingestion perimeter.
  */
 export function MissionControl() {
   return (

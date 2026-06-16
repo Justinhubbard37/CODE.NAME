@@ -8,6 +8,7 @@ import {
   retrievedContextAfterDocumentDelete,
   retrievedContextAfterSearch,
   retrievalCitationLabel,
+  retrievalModeLabel,
   retrievalSnippet,
   retrievalSource,
 } from './retrievalContext';
@@ -38,6 +39,7 @@ describe('retrieval context helpers', () => {
 
     expect(retrievalSource(item)).toBe('a.txt');
     expect(retrievalCitationLabel(item, 0)).toBe('KB1');
+    expect(retrievalModeLabel('semantic')).toBe('semantic');
   });
 
   it('clips retrieval snippets for compact UI display', () => {
@@ -76,7 +78,7 @@ describe('retrieval context helpers', () => {
       result('a', 'alpha text'),
     ]);
 
-    expect(prompt).toContain('Local SQLite KB context:');
+    expect(prompt).toContain('Local SQLite KB context - lexical:');
     expect(prompt).toContain('User question:\nWhat mentions alpha?');
     expect(prompt).toContain('[KB1]');
   });
@@ -93,15 +95,16 @@ describe('retrieval context helpers', () => {
     );
 
     expect(prompt).toBe('What mentions alpha?');
-    expect(prompt).not.toContain('Local SQLite KB context:');
+    expect(prompt).not.toContain('Local SQLite KB context');
   });
 
   it('keeps new retrieved context detached until the user explicitly attaches it', () => {
-    const state = retrievedContextAfterSearch('alpha', [result('a', 'alpha text')]);
+    const state = retrievedContextAfterSearch('alpha', [result('a', 'alpha text')], 'semantic');
 
     expect(state.query).toBe('alpha');
     expect(state.results).toHaveLength(1);
     expect(state.attachEnabled).toBe(false);
+    expect(state.mode).toBe('semantic');
   });
 
   it('clears active retrieval state', () => {
@@ -109,6 +112,7 @@ describe('retrieval context helpers', () => {
       query: '',
       results: [],
       attachEnabled: false,
+      mode: 'lexical',
     });
   });
 
@@ -119,7 +123,7 @@ describe('retrieval context helpers', () => {
       true,
     );
 
-    expect(prompt).toContain('Local SQLite KB context:');
+    expect(prompt).toContain('Local SQLite KB context - lexical:');
     expect(prompt).toContain('[KB1] Document: Doc a | chunk 1 | source: a.txt');
     expect(prompt).toContain('User question:\nWhat mentions alpha?');
   });
@@ -132,12 +136,31 @@ describe('retrieval context helpers', () => {
 
   it('removes deleted document chunks from attachable retrieval state', () => {
     const state = retrievedContextAfterDocumentDelete(
-      { query: 'alpha', results: [result('a', 'alpha')], attachEnabled: true },
+      { query: 'alpha', results: [result('a', 'alpha')], attachEnabled: true, mode: 'semantic' },
       'doc-a',
     );
 
-    expect(state).toEqual(clearRetrievedContextState());
-    expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled))
+    expect(state).toEqual(clearRetrievedContextState('semantic'));
+    expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled, state.mode))
       .toBe('question');
+  });
+
+  it('labels semantic context without attaching when explicit attach is off', () => {
+    const offPrompt = buildOptionalChatPromptWithRetrievedContext(
+      'Which file discusses orbital docking?',
+      [result('a', 'orbital docking text')],
+      false,
+      'semantic',
+    );
+    const onPrompt = buildOptionalChatPromptWithRetrievedContext(
+      'Which file discusses orbital docking?',
+      [result('a', 'orbital docking text')],
+      true,
+      'semantic',
+    );
+
+    expect(offPrompt).toBe('Which file discusses orbital docking?');
+    expect(onPrompt).toContain('Local SQLite KB context - semantic:');
+    expect(onPrompt).toContain('User question:\nWhich file discusses orbital docking?');
   });
 });

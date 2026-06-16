@@ -10,6 +10,7 @@ export function RetrievedContextPanel() {
   const {
     retrievalQuery,
     retrievalResults,
+    retrievalMode,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
     clearKbRetrieval,
@@ -18,14 +19,17 @@ export function RetrievedContextPanel() {
   if (!retrievalQuery && retrievalResults.length === 0) return null;
 
   const hasResults = retrievalResults.length > 0;
+  const accent = retrievalMode === 'semantic' ? 'cyan' : 'emerald';
 
   return (
     <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-3 py-2 font-mono">
       <div className="flex items-center gap-2">
-        <Database className="h-3.5 w-3.5 shrink-0 text-emerald-400" aria-hidden="true" />
+        <Database className={`h-3.5 w-3.5 shrink-0 ${accent === 'cyan' ? 'text-cyan-300' : 'text-emerald-400'}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider">
-            <span className="text-emerald-300">Local KB context</span>
+            <span className={accent === 'cyan' ? 'text-cyan-300' : 'text-emerald-300'}>
+              Local KB context - {retrievalMode}
+            </span>
             <span className="text-neutral-600">
               {hasResults ? `${retrievalResults.length} chunk${retrievalResults.length === 1 ? '' : 's'}` : 'no matches'}
             </span>
@@ -41,7 +45,9 @@ export function RetrievedContextPanel() {
           disabled={!hasResults}
           className={`shrink-0 border px-1.5 py-0.5 text-[8px] uppercase tracking-wider disabled:opacity-40 ${
             retrievalEnabledForChat
-              ? 'border-emerald-500/50 text-emerald-300'
+              ? accent === 'cyan'
+                ? 'border-cyan-500/50 text-cyan-300'
+                : 'border-emerald-500/50 text-emerald-300'
               : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'
           }`}
           title="Attach or detach retrieved chunks for the next chat request"
@@ -64,7 +70,7 @@ export function RetrievedContextPanel() {
           {retrievalResults.slice(0, 4).map((result, index) => (
             <div key={result.chunk.id} className="border border-neutral-800 bg-black/30 p-1.5">
               <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider">
-                <span className="text-emerald-300">KB{index + 1}</span>
+                <span className={accent === 'cyan' ? 'text-cyan-300' : 'text-emerald-300'}>KB{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate text-neutral-300">
                   {result.documentTitle}
                 </span>

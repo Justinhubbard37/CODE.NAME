@@ -62,14 +62,20 @@ import {
 import {
   activeKbWorkspaceId,
   emptyKbStats,
+  emptyKbEmbeddingStatus,
   kbInit,
   kbIngestText,
   kbGraphProjection,
   kbSearch,
+  kbSemanticSearch,
+  kbEmbeddingStatus,
+  kbEmbedMissing,
   kbStats as loadKbStats,
   kbListDocuments,
   kbDeleteDocument,
   type KbDocument,
+  type KbEmbeddingStatus,
+  type KbRetrievalMode,
   type KbSearchResult,
   type KbStats,
 } from '../lib/kb';
@@ -79,10 +85,9 @@ import {
   reconcileKbGraphProjection,
   upsertKbGraphProjection,
 } from '../kg/kbProjection';
-import { stubEmbed } from '../kg/vector';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
 import { retriever } from '../kg/retrieve';
-import { getSidecarInfo, streamFromSidecar, cancelSidecar, sidecarToolResult, sidecarEmbed, sidecarCommunities, sidecarBrowserOpen, sidecarPoolCreate, sidecarPoolRelease } from '../lib/sidecar';
+import { getSidecarInfo, streamFromSidecar, cancelSidecar, sidecarToolResult, sidecarCommunities, sidecarBrowserOpen, sidecarPoolCreate, sidecarPoolRelease } from '../lib/sidecar';
 import { installWebMcp, setToolGuard, setToolLogger, registerTool, executeTool } from '../lib/webmcp';
 import { setAgentUI } from '../components/right/a2ui/bus';
 import type { A2UIPayload } from '../components/right/a2ui/types';
@@ -125,10 +130,17 @@ interface AppStateValue {
   kbSearchResults: KbSearchResult[];
   retrievalQuery: string;
   retrievalResults: KbSearchResult[];
+  retrievalMode: KbRetrievalMode;
+  setRetrievalMode: (mode: KbRetrievalMode) => void;
   retrievalEnabledForChat: boolean;
   setRetrievalEnabledForChat: (enabled: boolean) => void;
   runKbRetrieval: (query: string, limit?: number) => Promise<KbSearchResult[]>;
   clearKbRetrieval: () => void;
+  semanticStatus: KbEmbeddingStatus;
+  semanticIndexing: boolean;
+  semanticError: string;
+  refreshSemanticStatus: () => Promise<void>;
+  buildSemanticIndex: () => Promise<void>;
   refreshKbStats: () => Promise<void>;
   refreshKbDocuments: () => Promise<void>;
   deleteKbDocument: (documentId: string) => Promise<void>;
@@ -281,7 +293,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [kbDocuments, setKbDocuments] = useState<KbDocument[]>([]);
   const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
   const [retrievalQuery, setRetrievalQuery] = useState('');
+  const [retrievalMode, setRetrievalModeState] = useState<KbRetrievalMode>('lexical');
   const [retrievalEnabledForChat, setRetrievalEnabledForChatState] = useState(false);
+  const [semanticStatus, setSemanticStatus] = useState<KbEmbeddingStatus>(emptyKbEmbeddingStatus);
+  const [semanticIndexing, setSemanticIndexing] = useState(false);
+  const [semanticError, setSemanticError] = useState('');
 
   const onNodesChange = useCallback(
     (c: NodeChange<AppNode>[]) => setNodes((nds) => applyNodeChanges(c, nds)),
@@ -319,16 +335,36 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setKbDocuments(await kbListDocuments({ workspaceId: activeKbWorkspaceId() }));
   }, []);
 
+  const refreshSemanticStatus = useCallback(async () => {
+    const status = await kbEmbeddingStatus({ workspaceId: activeKbWorkspaceId() });
+    setSemanticStatus(status);
+    setSemanticError(status.lastError ?? '');
+  }, []);
+
   const setRetrievalEnabledForChat = useCallback((enabled: boolean) => {
     setRetrievalEnabledForChatState(enabled);
   }, []);
 
+  const applyRetrievedContext = useCallback(
+    (next: ReturnType<typeof clearRetrievedContextState>) => {
+      setKbSearchResults(next.results);
+      setRetrievalQuery(next.query);
+      setRetrievalEnabledForChatState(next.attachEnabled);
+      setRetrievalModeState(next.mode);
+    },
+    [],
+  );
+
   const clearKbRetrieval = useCallback(() => {
-    const cleared = clearRetrievedContextState();
-    setKbSearchResults(cleared.results);
-    setRetrievalQuery(cleared.query);
-    setRetrievalEnabledForChatState(cleared.attachEnabled);
-  }, []);
+    applyRetrievedContext(clearRetrievedContextState(retrievalMode));
+  }, [applyRetrievedContext, retrievalMode]);
+
+  const setRetrievalMode = useCallback(
+    (mode: KbRetrievalMode) => {
+      applyRetrievedContext(clearRetrievedContextState(mode));
+    },
+    [applyRetrievedContext],
+  );
 
   const runKbRetrieval = useCallback(
     async (queryInput: string, limit = RETRIEVAL_RESULT_LIMIT): Promise<KbSearchResult[]> => {
@@ -338,22 +374,33 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return [];
       }
       try {
-        const results = await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
-        const next = retrievedContextAfterSearch(query, results);
-        setKbSearchResults(next.results);
-        setRetrievalQuery(next.query);
-        setRetrievalEnabledForChatState(next.attachEnabled);
+        const results =
+          retrievalMode === 'semantic'
+            ? await kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
+            : await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+        const next = retrievedContextAfterSearch(query, results, retrievalMode);
+        applyRetrievedContext(next);
+        if (retrievalMode === 'semantic') setSemanticError('');
         await refreshKbStats();
+        if (retrievalMode === 'semantic') await refreshSemanticStatus();
         return results;
-      } catch {
-        const next = retrievedContextAfterSearch(query, []);
-        setKbSearchResults(next.results);
-        setRetrievalQuery(next.query);
-        setRetrievalEnabledForChatState(next.attachEnabled);
+      } catch (err) {
+        const next = retrievedContextAfterSearch(query, [], retrievalMode);
+        applyRetrievedContext(next);
+        if (retrievalMode === 'semantic') {
+          const reason = err instanceof Error ? err.message : 'semantic retrieval unavailable';
+          setSemanticError(reason);
+          setSemanticStatus((current) => ({
+            ...current,
+            ready: false,
+            state: 'unavailable',
+            lastError: reason,
+          }));
+        }
         return [];
       }
     },
-    [clearKbRetrieval, refreshKbStats],
+    [applyRetrievedContext, clearKbRetrieval, refreshKbStats, refreshSemanticStatus, retrievalMode],
   );
 
   useEffect(() => {
@@ -361,18 +408,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         await kbInit();
-        const [stats, docs] = await Promise.all([
+        const [stats, docs, semantic] = await Promise.all([
           loadKbStats(),
           kbListDocuments({ workspaceId: activeKbWorkspaceId() }),
+          kbEmbeddingStatus({ workspaceId: activeKbWorkspaceId() }),
         ]);
         if (alive) {
           setKbStatsState(stats);
           setKbDocuments(docs);
+          setSemanticStatus(semantic);
+          setSemanticError(semantic.lastError ?? '');
         }
       } catch {
         if (alive) {
           setKbStatsState(emptyKbStats);
           setKbDocuments([]);
+          setSemanticStatus(emptyKbEmbeddingStatus);
+          setSemanticError('');
         }
       }
     })();
@@ -694,6 +746,59 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [patchTask],
   );
 
+  const buildSemanticIndex = useCallback(async () => {
+    if (semanticIndexing) return;
+    setSemanticIndexing(true);
+    setSemanticError('');
+    try {
+      const result = await kbEmbedMissing({ workspaceId: activeKbWorkspaceId() });
+      if (result.error) {
+        setSemanticError(result.error);
+        setSemanticStatus((current) => ({
+          ...current,
+          provider: result.provider,
+          model: result.model,
+          dimension: result.dimension ?? current.dimension,
+          ready: false,
+          state: 'unavailable',
+          lastError: result.error,
+        }));
+      }
+      await refreshSemanticStatus();
+      if (result.error) {
+        setSemanticError(result.error);
+        setSemanticStatus((current) => ({
+          ...current,
+          provider: result.provider,
+          model: result.model,
+          dimension: result.dimension ?? current.dimension,
+          ready: false,
+          state: 'unavailable',
+          lastError: result.error,
+        }));
+      }
+      pushActivity(
+        activeTaskIdRef.current,
+        'system',
+        result.error
+          ? `semantic kb unavailable: ${result.error}`
+          : `semantic kb: ${result.embeddedCount} chunk embedding(s) stored`,
+      );
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'semantic indexing unavailable';
+      setSemanticError(reason);
+      setSemanticStatus((current) => ({
+        ...current,
+        ready: false,
+        state: 'unavailable',
+        lastError: reason,
+      }));
+      pushActivity(activeTaskIdRef.current, 'system', `semantic kb unavailable: ${reason}`);
+    } finally {
+      setSemanticIndexing(false);
+    }
+  }, [refreshSemanticStatus, semanticIndexing, pushActivity]);
+
   /* ---- KG write chokepoint (gated + audited, Phase 1) ---- */
   const commit = useCallback(
     (spec: {
@@ -832,9 +937,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           provenance: { source: 'SQLite KB', ingestionId: documentId },
         }),
       );
-      await Promise.all([refreshKbStats(), refreshKbDocuments()]);
+      await Promise.all([refreshKbStats(), refreshKbDocuments(), refreshSemanticStatus()]);
       const nextRetrieval = retrievedContextAfterDocumentDelete(
-        { query: retrievalQuery, results: kbSearchResults, attachEnabled: retrievalEnabledForChat },
+        {
+          query: retrievalQuery,
+          results: kbSearchResults,
+          attachEnabled: retrievalEnabledForChat,
+          mode: retrievalMode,
+        },
         documentId,
       );
       setKbSearchResults(nextRetrieval.results);
@@ -854,7 +964,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pushActivity,
       refreshKbDocuments,
       refreshKbStats,
+      refreshSemanticStatus,
       retrievalEnabledForChat,
+      retrievalMode,
       retrievalQuery,
     ],
   );
@@ -913,9 +1025,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         trimmed,
         retrievalForMessage,
         hasAttachedRetrieval,
+        retrievalMode,
       );
       if (hasAttachedRetrieval) {
-        pushActivity(taskId, 'query', `retrieval: ${retrievalForMessage.length} local KB chunk(s) attached`);
+        pushActivity(taskId, 'query', `${retrievalMode} retrieval: ${retrievalForMessage.length} local KB chunk(s) attached`);
       }
 
       const baseTask = tasks.find((t) => t.id === taskId);
@@ -1129,6 +1242,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       gates.tools,
       kbSearchResults,
       retrievalEnabledForChat,
+      retrievalMode,
       patchTask,
       pushActivity,
       tasks,
@@ -1183,15 +1297,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         diff: `ingest ${name}`,
         provenance: { source: name, ingestionId: id },
       });
-      // Fire-and-forget: embed the document text and persist the vector (Slice 4.1).
-      void sidecarEmbed([`${name} ${text}`]).then((vecs) => {
-        if (vecs[0]?.length) {
-          void kgStore.putVectors([{ id, vec: vecs[0] }]);
-        } else {
-          // Local stub fallback when sidecar unavailable
-          void kgStore.putVectors([{ id, vec: stubEmbed(`${name} ${text}`) }]);
-        }
-      });
       return id;
     },
     [commit, activeTaskId],
@@ -1231,7 +1336,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     registerTool(
       {
         name: 'graph.search',
-        description: 'Search the knowledge graph (lexical / GraphRAG retrieval).',
+        description: 'Search the knowledge graph with local lexical and legacy hash-vector filtering.',
         inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
         execute: async (args) => {
           retriever.index(nodesRef.current);
@@ -1450,7 +1555,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             mimeType: file.type || 'text/plain',
           });
           const projection = await mergeKbGraphProjection(kbResult.documentId);
-          await Promise.all([refreshKbStats(), refreshKbDocuments()]);
+          await Promise.all([refreshKbStats(), refreshKbDocuments(), refreshSemanticStatus()]);
           pushActivity(activeTaskId, 'system', `sqlite kb: ${kbResult.chunkCount} chunk(s) stored`);
           pushActivity(
             activeTaskId,
@@ -1529,6 +1634,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pushActivity,
       refreshKbDocuments,
       refreshKbStats,
+      refreshSemanticStatus,
       updateNodeData,
     ],
   );
@@ -1608,10 +1714,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     kbSearchResults,
     retrievalQuery,
     retrievalResults: kbSearchResults,
+    retrievalMode,
+    setRetrievalMode,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
     runKbRetrieval,
     clearKbRetrieval,
+    semanticStatus,
+    semanticIndexing,
+    semanticError,
+    refreshSemanticStatus,
+    buildSemanticIndex,
     refreshKbStats,
     refreshKbDocuments,
     deleteKbDocument,

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { stubEmbed, cosineSim, VectorRetriever } from './vector';
 import type { AppNode, NodeData } from '../types';
 
-// Phase 11, Slice 11.1 — direct coverage for the vector primitives that back
-// the VectorRetriever: the local bigram embedding and cosine similarity.
+// Direct coverage for the legacy graph hash-vector primitives that back
+// VectorRetriever compatibility behavior. These are not semantic embeddings.
 
 function node(id: string, data: Partial<NodeData>): AppNode {
   return {
@@ -14,13 +14,13 @@ function node(id: string, data: Partial<NodeData>): AppNode {
   } as AppNode;
 }
 
-describe('stubEmbed (local bigram embedding)', () => {
+describe('stubEmbed (legacy local bigram hash vector)', () => {
   it('always returns a 128-dimension vector', () => {
     expect(stubEmbed('hello world')).toHaveLength(128);
     expect(stubEmbed('')).toHaveLength(128);
   });
 
-  it('produces an L2-normalised (unit) vector for real text', () => {
+  it('produces an L2-normalised unit vector for real text', () => {
     const v = stubEmbed('lattice based encryption');
     const norm = Math.sqrt(v.reduce((acc, x) => acc + x * x, 0));
     expect(norm).toBeCloseTo(1, 5);
@@ -38,12 +38,12 @@ describe('stubEmbed (local bigram embedding)', () => {
 });
 
 describe('cosineSim', () => {
-  it('returns 1 for identical embeddings', () => {
+  it('returns 1 for identical hash vectors', () => {
     const v = stubEmbed('quantum cryptography');
     expect(cosineSim(v, v)).toBeCloseTo(1, 5);
   });
 
-  it('returns 0 for embeddings that share no bigrams', () => {
+  it('returns 0 for hash vectors that share no bigrams', () => {
     expect(cosineSim(stubEmbed('aaaa'), stubEmbed('zzzz'))).toBeCloseTo(0, 6);
   });
 
@@ -54,7 +54,7 @@ describe('cosineSim', () => {
   });
 });
 
-describe('VectorRetriever (cosine top-k)', () => {
+describe('VectorRetriever (legacy hash-vector top-k)', () => {
   const corpus: AppNode[] = [
     node('n1', { label: 'lattice based encryption scheme' }),
     node('n2', { label: 'banana smoothie recipe' }),
@@ -66,7 +66,7 @@ describe('VectorRetriever (cosine top-k)', () => {
     expect(r.retrieve('lattice')).toEqual([]);
   });
 
-  it('ranks the semantically closest node first', () => {
+  it('ranks the highest hash-vector similarity first', () => {
     const r = new VectorRetriever();
     r.index(corpus);
     const hits = r.retrieve('lattice based encryption');
@@ -76,7 +76,7 @@ describe('VectorRetriever (cosine top-k)', () => {
   it('filters out near-zero similarity matches', () => {
     const r = new VectorRetriever();
     r.index([node('x', { label: 'aaaa' })]);
-    // No shared bigrams with the only document → score ~0 → filtered away.
+    // No shared bigrams with the only document -> score ~0 -> filtered away.
     expect(r.retrieve('zzzz')).toEqual([]);
   });
 

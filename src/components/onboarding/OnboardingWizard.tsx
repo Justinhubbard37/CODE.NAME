@@ -328,7 +328,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
               <div className="flex items-start gap-2">
                 <Check className="w-4 h-4 text-emerald-500/80 mt-0.5 shrink-0" aria-hidden="true" />
                 <p className="text-neutral-300">
-                  Setup complete. Drop a file into the left pane to ingest it, run a GraphRAG query, and start chatting on the right.
+                  Setup complete. Drop a file into the left pane to ingest it, run Graph / KB search, and start chatting on the right.
                 </p>
               </div>
               <div className="border-t border-neutral-900 pt-3">

@@ -307,12 +307,14 @@ def _extract_settings(params):
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Phase 4 helpers: stub embedding + community detection (Slices 4.1, 4.4)
+# Phase 4 compatibility helpers: non-semantic hash vectors + community detection.
+# Real Phase 2F SQLite KB semantic retrieval uses Rust-owned local Ollama
+# embeddings, not this legacy /a2a/embed route.
 # ---------------------------------------------------------------------------
 
 def _stub_embed(text, dim=128):
     """Character-bigram hash into a normalised dim-float vector.
-    Mirrors src/kg/vector.ts:stubEmbed — same algorithm, different language."""
+    This is deterministic graph compatibility data, not a semantic embedding."""
     v = [0.0] * dim
     s = text.lower()[:512]
     for i in range(len(s) - 1):

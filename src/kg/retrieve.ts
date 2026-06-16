@@ -1,7 +1,8 @@
 /**
- * Local retrieval (Phase 1+4). Lexical BM25-lite over node text (Phase 1) and
- * a HybridRetriever combining BM25 + vector cosine via Reciprocal Rank Fusion
- * (Phase 4, Slice 4.3). Both implement the Retriever interface.
+ * Local graph-node filtering (legacy Phase 1+4). The hybrid path combines
+ * lexical node matching with deterministic non-semantic hash-vector similarity
+ * for graph UI filtering only. Real Phase 2F KB semantic retrieval is handled
+ * by Rust-owned SQLite chunk embeddings, not this module.
  */
 import type { AppNode } from '../types';
 import { VectorRetriever } from './vector';
@@ -74,7 +75,7 @@ export class LexicalRetriever implements Retriever {
 }
 
 /**
- * Reciprocal Rank Fusion of BM25 (lexical) + cosine-similarity (vector).
+ * Reciprocal Rank Fusion of BM25 (lexical) + cosine-similarity over legacy hash vectors.
  * RRF score for document d: Σ 1/(k + rank_i(d)) across both ranking lists.
  * Standard k=60 constant suppresses outliers in top-heavy lists.
  */

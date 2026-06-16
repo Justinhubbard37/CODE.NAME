@@ -36,7 +36,7 @@
     "copyright": "Copyright © 2026 CODE NAME",
     "category": "Productivity",
     "shortDescription": "Local-first agent harness with a governed knowledge graph.",
-    "longDescription": "CODE NAME is a local-first desktop agent harness: a two-pane governed workspace over a local knowledge ecosystem (knowledge graph, GraphRAG, and vector store) with a model-agnostic execution canvas, hard capability gates, and a tamper-evident audit ledger. Runs fully offline by default; cloud models are optional and opt-in.",
+    "longDescription": "CODE NAME is a local-first desktop agent harness: a two-pane governed workspace over a local knowledge ecosystem with a knowledge graph and SQLite KB retrieval, a model-agnostic execution canvas, hard capability gates, and a tamper-evident audit ledger. Runs fully offline by default; cloud models are optional and opt-in.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

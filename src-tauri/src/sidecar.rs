@@ -478,9 +478,9 @@ pub async fn sidecar_tool_result(
     Ok(())
 }
 
-/// Embed text via the sidecar's stub-bigram endpoint (Phase 4, Slice 4.1).
-/// Returns a flat JSON array of f64 (128-dim unit vector).
-/// Called after document ingestion so vectors can be stored in IndexedDB.
+/// Legacy non-semantic graph hash-vector endpoint (Phase 4 compatibility).
+/// This is not used for Phase 2F SQLite KB semantic retrieval, which uses
+/// Rust-owned local Ollama embeddings persisted in SQLite.
 #[tauri::command]
 pub async fn sidecar_embed(
     texts: Vec<String>,

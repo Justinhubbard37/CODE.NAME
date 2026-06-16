@@ -2,7 +2,7 @@
  * Community detection (Phase 4, Slice 4.4).
  *
  * Prefers `node.data.communityId` when it has been set by the sidecar
- * `/a2a/communities` endpoint (GraphRAG label propagation + LLM summaries).
+ * `/a2a/communities` endpoint (label propagation + optional summaries).
  * Falls back to a local label-propagation algorithm when no stored IDs exist,
  * giving the 3D cluster tier meaningful depth even before the sidecar runs.
  */
@@ -91,7 +91,7 @@ function labelPropagation(nodes: AppNode[], edges: Edge[]): Map<string, number> 
  * Returns a Map<nodeId, communityIndex> for use by layout3D and LOD logic.
  *
  * Priority:
- * 1. If any node has `communityId` set (from sidecar GraphRAG), map all nodes
+ * 1. If any node has `communityId` set (from sidecar community detection), map all nodes
  *    using that field — nodes without one each get their own unique community.
  * 2. Otherwise run local label propagation.
  */

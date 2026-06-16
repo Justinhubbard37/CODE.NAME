@@ -1,19 +1,16 @@
 /**
- * Embedding utilities + VectorRetriever (Phase 4, Slice 4.2).
+ * Legacy graph hash-vector utilities.
  *
- * `stubEmbed` — character-bigram frequency hash into a 128-dim unit vector.
- * Runs locally, synchronously, with zero dependencies — used for query
- * encoding when the sidecar is unavailable.
- *
- * `VectorRetriever` — cosine-similarity top-k over in-memory embedding vectors.
- * Paired with `LexicalRetriever` in `HybridRetriever` (Slice 4.3).
+ * This module creates deterministic character-bigram hash vectors for graph UI
+ * compatibility only. It does not produce real semantic embeddings and is not
+ * used by Phase 2F SQLite KB semantic retrieval.
  */
 import type { AppNode } from '../types';
 import type { RetrievalHit, Retriever } from './retrieve';
 
 const DIM = 128;
 
-/** Character-bigram hash into a 128-dim L2-normalised vector (local, sync). */
+/** Character-bigram hash into a 128-dim L2-normalised vector (non-semantic). */
 export function stubEmbed(text: string): number[] {
   const v = new Array<number>(DIM).fill(0);
   const s = text.toLowerCase().slice(0, 512);
@@ -27,7 +24,7 @@ export function stubEmbed(text: string): number[] {
   return v.map((x) => x / norm);
 }
 
-/** Cosine similarity for two pre-normalised vectors. */
+/** Cosine similarity for two pre-normalised legacy hash vectors. */
 export function cosineSim(a: number[], b: number[]): number {
   let dot = 0;
   const n = Math.min(a.length, b.length);

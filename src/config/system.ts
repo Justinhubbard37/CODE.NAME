@@ -9,7 +9,7 @@ export const systemConfig: SystemConfig = {
   //   >= 140px        -> full readable card
   //   40px .. 140px   -> small typed label
   //   < 40px          -> dot / icon
-  //   community > 24  -> collapse to a GraphRAG cluster node
+  //   community > 24  -> collapse to a graph community cluster node
   lod: {
     fullCardMinPx: 140,
     labelMinPx: 40,

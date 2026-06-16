@@ -45,14 +45,14 @@ export const es: Partial<Messages> = {
   'settings.logs.desktopOnly': 'Los registros están disponibles en la aplicación de escritorio.',
 
   'settings.about.version': 'Versión',
-  'settings.about.desc': 'Un espacio de trabajo gobernado de dos paneles, local primero, sobre un grafo de conocimiento, GraphRAG y un almacén de vectores, con un lienzo de ejecución agnóstico al modelo.',
+  'settings.about.desc': 'Un espacio de trabajo gobernado de dos paneles, local primero, sobre un grafo de conocimiento y recuperación local SQLite KB, con un lienzo de ejecución agnóstico al modelo.',
 
   // Empty / loading / error states (Slice 10.4)
   'graph.loading': 'Cargando grafo de conocimiento…',
   'graph.empty.title': 'El grafo de conocimiento está vacío',
   'graph.empty.hint': 'Suelta una base de código o documento en este panel para ingerirlo e indexarlo.',
   'graph.noMatch.title': 'Ningún nodo coincide con tu consulta',
-  'graph.noMatch.hint': 'Borra la consulta de GraphRAG para volver a mostrar el grafo completo.',
+  'graph.noMatch.hint': 'Borra la consulta del grafo para volver a mostrar el grafo completo.',
 
   'chat.empty.title': 'Contexto aislado',
   'chat.empty.hint': 'Esperando entrada: envía un mensaje para comenzar.',
