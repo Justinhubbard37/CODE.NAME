@@ -68,7 +68,6 @@ import {
 import { kgStore } from '../kg/store';
 import {
   hasConnectedKbProjection,
-  kbProjectionToGraph,
   reconcileKbGraphProjection,
 } from '../kg/kbProjection';
 import { stubEmbed } from '../kg/vector';
@@ -118,6 +117,7 @@ interface AppStateValue {
   refreshKbStats: () => Promise<void>;
   refreshKbDocuments: () => Promise<void>;
   deleteKbDocument: (documentId: string) => Promise<void>;
+  stabilizeGraphLayout: () => Promise<void>;
 
   /* tasks */
   tasks: WorkTask[];
@@ -720,8 +720,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         documentId,
       });
       const connected = hasConnectedKbProjection(projection);
-      const graph = kbProjectionToGraph(projection);
-      if (!graph.nodes.length) return { nodes: 0, edges: 0, connected };
+      const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection, {
+        preserveExistingPositions: true,
+      });
+      const projectedNodes = reconciled.nodes.filter((node) => node.data.src === 'SQLite KB');
+      const projectedEdges = reconciled.edges.filter((edge) => edge.id.startsWith('kb_edge_') || edge.id.startsWith('rel_'));
+      if (!projectedNodes.length) return { nodes: 0, edges: 0, connected };
 
       const decision = evaluateKgWrite(gatesRef.current);
       await kgStore.appendAudit(
@@ -739,24 +743,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return { nodes: 0, edges: 0, connected: false };
       }
 
-      setNodes((current) => {
-        const incoming = new Map(graph.nodes.map((node) => [node.id, node]));
-        const merged = current.map((node) => incoming.get(node.id) ?? node);
-        for (const node of graph.nodes) {
-          if (!current.some((existing) => existing.id === node.id)) merged.push(node);
-        }
-        return merged;
-      });
-      setEdges((current) => {
-        const incoming = new Map(graph.edges.map((edge) => [edge.id, edge]));
-        const merged = current.map((edge) => incoming.get(edge.id) ?? edge);
-        for (const edge of graph.edges) {
-          if (!current.some((existing) => existing.id === edge.id)) merged.push(edge);
-        }
-        return merged;
-      });
-      await Promise.all([kgStore.putNodes(graph.nodes), kgStore.putEdges(graph.edges)]);
-      return { nodes: graph.nodes.length, edges: graph.edges.length, connected };
+      setNodes(reconciled.nodes);
+      setEdges(reconciled.edges);
+      await Promise.all([
+        ...reconciled.removedNodeIds.map((id) => kgStore.deleteNode(id)),
+        ...reconciled.removedEdgeIds.map((id) => kgStore.deleteEdge(id)),
+        kgStore.putNodes(projectedNodes),
+        kgStore.putEdges(projectedEdges),
+      ]);
+      return { nodes: projectedNodes.length, edges: projectedEdges.length, connected };
     },
     [activeTaskId, currentUser?.role, pushActivity],
   );
@@ -769,7 +764,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
       const deletion = await kbDeleteDocument({ documentId, mode: 'soft' });
       const projection = await kbGraphProjection({ workspaceId: activeKbWorkspaceId() });
-      const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection);
+      const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection, {
+        preserveExistingPositions: false,
+      });
       setNodes(reconciled.nodes);
       setEdges(reconciled.edges);
       await Promise.all([
@@ -800,6 +797,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     },
     [activeTaskId, currentUser?.id, currentUser?.role, pushActivity, refreshKbDocuments, refreshKbStats],
   );
+
+  const stabilizeGraphLayout = useCallback(async () => {
+    const projection = await kbGraphProjection({ workspaceId: activeKbWorkspaceId() });
+    const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection, {
+      preserveExistingPositions: false,
+    });
+    setNodes(reconciled.nodes);
+    setEdges(reconciled.edges);
+    await Promise.all([
+      ...reconciled.removedNodeIds.map((id) => kgStore.deleteNode(id)),
+      ...reconciled.removedEdgeIds.map((id) => kgStore.deleteEdge(id)),
+      kgStore.putNodes(reconciled.nodes.filter((node) => node.data.src === 'SQLite KB')),
+      kgStore.putEdges(reconciled.edges.filter((edge) => edge.id.startsWith('kb_edge_') || edge.id.startsWith('rel_'))),
+    ]);
+    pushActivity(
+      activeTaskId,
+      'system',
+      `graph stabilized: ${reconciled.removedNodeIds.length} stale KB node(s) cleaned`,
+    );
+  }, [activeTaskId, pushActivity]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -1498,6 +1515,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     refreshKbStats,
     refreshKbDocuments,
     deleteKbDocument,
+    stabilizeGraphLayout,
     /* tasks */
     tasks,
     activeTaskId,

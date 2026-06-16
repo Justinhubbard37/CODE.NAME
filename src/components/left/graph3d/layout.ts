@@ -22,6 +22,7 @@ export type Vec3 = [number, number, number];
 
 const SCALE = 90;
 const LAYER_GAP = 7;
+const THIN_LAYOUT_MIN_SPAN = 80;
 
 function hashId(s: string): number {
   let h = 0;
@@ -101,23 +102,42 @@ function computeLayout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
 
   let cx = 0;
   let cy = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
   for (const n of nodes) {
     cx += n.position.x;
     cy += n.position.y;
+    minX = Math.min(minX, n.position.x);
+    maxX = Math.max(maxX, n.position.x);
+    minY = Math.min(minY, n.position.y);
+    maxY = Math.max(maxY, n.position.y);
   }
   const N = nodes.length || 1;
   cx /= N;
   cy /= N;
+  const spanX = Number.isFinite(maxX - minX) ? maxX - minX : 0;
+  const spanY = Number.isFinite(maxY - minY) ? maxY - minY : 0;
+  const spreadThinX = nodes.length > 2 && spanX < THIN_LAYOUT_MIN_SPAN;
+  const spreadThinY = nodes.length > 2 && spanY < THIN_LAYOUT_MIN_SPAN;
 
   const commSet = new Set(communities.values());
   const commCount = commSet.size || 1;
   const zCenter = ((commCount - 1) * LAYER_GAP) / 2;
 
   const map = new Map<string, Vec3>();
-  for (const n of nodes) {
+  for (let i = 0; i < nodes.length; i += 1) {
+    const n = nodes[i];
     const c = communities.get(n.id) ?? 0;
-    const x = (n.position.x - cx) / SCALE;
-    const y = -(n.position.y - cy) / SCALE;
+    const ring = 140 + (hashId(n.id) % 90);
+    const angle = (Math.PI * 2 * i) / Math.max(nodes.length, 1);
+    const adjustedX = n.position.x + (spreadThinX ? Math.cos(angle) * ring : 0);
+    const adjustedY = n.position.y + (spreadThinY ? Math.sin(angle) * ring : 0);
+    const adjustedCx = cx;
+    const adjustedCy = cy;
+    const x = (adjustedX - adjustedCx) / SCALE;
+    const y = -(adjustedY - adjustedCy) / SCALE;
     const jitter = ((hashId(n.id) % 100) / 100 - 0.5) * 3;
     const z = c * LAYER_GAP - zCenter + jitter;
     map.set(n.id, [x, y, z]);

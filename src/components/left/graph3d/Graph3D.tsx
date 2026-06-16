@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import { RotateCcw } from 'lucide-react';
 import * as THREE from 'three';
 import { useApp } from '../../../state/AppState';
 import { systemConfig } from '../../../config/system';
@@ -132,7 +133,15 @@ function ProximityCuller({
  * reading as a blank void.
  */
 export function Graph3D() {
-  const { nodes, edges, selectedNodeId, setSelectedNodeId, updateNodeData, graphQuery } = useApp();
+  const {
+    nodes,
+    edges,
+    selectedNodeId,
+    setSelectedNodeId,
+    updateNodeData,
+    graphQuery,
+    stabilizeGraphLayout,
+  } = useApp();
   const t = useT();
   const { map, communities, centroids, communitySizes } = useMemo(
     () => layout3D(nodes, edges),
@@ -270,6 +279,16 @@ export function Graph3D() {
           <StateBlock kind="empty" title={t('graph.noMatch.title')} hint={t('graph.noMatch.hint')} />
         </div>
       )}
+
+      <button
+        onClick={() => void stabilizeGraphLayout()}
+        className="pointer-events-auto absolute top-2 right-2 z-20 flex items-center gap-1 border border-neutral-800 bg-neutral-950/80 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-neutral-500 backdrop-blur-sm hover:border-emerald-500/50 hover:text-emerald-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+        title="Stabilize SQLite KB graph layout"
+        aria-label="Stabilize graph layout"
+      >
+        <RotateCcw className="h-3 w-3" aria-hidden="true" />
+        Stabilize
+      </button>
 
       {selected && (
         <NodeDetailsPanel

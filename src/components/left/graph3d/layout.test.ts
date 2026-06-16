@@ -71,4 +71,21 @@ describe('layout3D cache (Slice 10.1)', () => {
     expect(r.map.size).toBe(3);
     for (const n of baseNodes) expect(r.map.has(n.id)).toBe(true);
   });
+
+  it('adds deterministic lateral spread for thin line-like layouts', () => {
+    const lineNodes: AppNode[] = [
+      node('line-a', 0, 0),
+      node('line-b', 0, 200),
+      node('line-c', 0, 400),
+      node('line-d', 0, 600),
+    ];
+    const r = layout3D(lineNodes, [
+      { id: 'line-a-b', source: 'line-a', target: 'line-b' },
+      { id: 'line-b-c', source: 'line-b', target: 'line-c' },
+      { id: 'line-c-d', source: 'line-c', target: 'line-d' },
+    ]);
+
+    const renderedXs = lineNodes.map((n) => r.map.get(n.id)?.[0] ?? 0);
+    expect(new Set(renderedXs.map((x) => x.toFixed(3))).size).toBeGreaterThan(1);
+  });
 });

@@ -17,24 +17,113 @@ const KB_EDGE_STYLE = {
   strokeWidth: 1,
 };
 
-function stableOffset(id: string, modulo: number): number {
+function stableHash(id: string): number {
   let hash = 2166136261;
   for (let i = 0; i < id.length; i += 1) {
     hash ^= id.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return Math.abs(hash) % modulo;
+  return hash >>> 0;
 }
 
-function nodePosition(node: KbGraphNode, index: number): { x: number; y: number } {
-  if (node.nodeType === 'document') {
-    return { x: 180 + stableOffset(node.id, 80), y: 220 + stableOffset(node.id, 120) };
+function stableOffset(id: string, modulo: number): number {
+  return stableHash(id) % modulo;
+}
+
+function pointOnRing(
+  center: { x: number; y: number },
+  radius: number,
+  index: number,
+  total: number,
+  phase = -Math.PI / 2,
+) {
+  const safeTotal = Math.max(total, 1);
+  const angle = phase + (Math.PI * 2 * index) / safeTotal;
+  return {
+    x: Math.round(center.x + Math.cos(angle) * radius),
+    y: Math.round(center.y + Math.sin(angle) * radius),
+  };
+}
+
+function clusterCenter(documentId: string): { x: number; y: number } {
+  const slot = stableOffset(documentId, 48);
+  const col = slot % 6;
+  const row = Math.floor(slot / 6);
+  return {
+    x: 900 + col * 520,
+    y: 180 + row * 420,
+  };
+}
+
+function buildClusterMembership(projection: KbGraphProjection): {
+  docForNode: Map<string, string>;
+  chunksByDoc: Map<string, string[]>;
+  entitiesByDoc: Map<string, string[]>;
+} {
+  const docIds = new Set(
+    projection.nodes.filter((node) => node.nodeType === 'document').map((node) => node.id),
+  );
+  const chunkIds = new Set(
+    projection.nodes.filter((node) => node.nodeType === 'chunk').map((node) => node.id),
+  );
+  const docForNode = new Map<string, string>();
+  const chunksByDoc = new Map<string, string[]>();
+  const entitiesByDoc = new Map<string, string[]>();
+
+  for (const edge of projection.edges) {
+    if (edge.kind !== 'document_chunk' || !docIds.has(edge.source) || !chunkIds.has(edge.target)) {
+      continue;
+    }
+    docForNode.set(edge.source, edge.source);
+    docForNode.set(edge.target, edge.source);
+    const chunks = chunksByDoc.get(edge.source) ?? [];
+    chunks.push(edge.target);
+    chunksByDoc.set(edge.source, chunks);
   }
+
+  for (const edge of projection.edges) {
+    if (edge.kind !== 'chunk_entity' || !chunkIds.has(edge.source)) continue;
+    const docId = docForNode.get(edge.source);
+    if (!docId) continue;
+    if (!docForNode.has(edge.target)) docForNode.set(edge.target, docId);
+    const entities = entitiesByDoc.get(docId) ?? [];
+    if (!entities.includes(edge.target)) entities.push(edge.target);
+    entitiesByDoc.set(docId, entities);
+  }
+
+  for (const edge of projection.edges) {
+    if (edge.kind !== 'document_entity' || !docIds.has(edge.source)) continue;
+    if (!docForNode.has(edge.target)) docForNode.set(edge.target, edge.source);
+    const entities = entitiesByDoc.get(edge.source) ?? [];
+    if (!entities.includes(edge.target)) entities.push(edge.target);
+    entitiesByDoc.set(edge.source, entities);
+  }
+
+  for (const chunks of chunksByDoc.values()) chunks.sort();
+  for (const entities of entitiesByDoc.values()) entities.sort();
+  return { docForNode, chunksByDoc, entitiesByDoc };
+}
+
+function projectedNodePosition(
+  node: KbGraphNode,
+  index: number,
+  membership: ReturnType<typeof buildClusterMembership>,
+): { x: number; y: number } {
+  if (node.nodeType === 'document') return clusterCenter(node.id);
+  const docId = membership.docForNode.get(node.id);
+  if (!docId) {
+    return { x: 160 + (index % 4) * 140, y: 900 + Math.floor(index / 4) * 110 };
+  }
+  const center = clusterCenter(docId);
   if (node.nodeType === 'chunk') {
-    const ordinal = node.ordinal ?? index;
-    return { x: 480 + (ordinal % 2) * 80, y: 120 + ordinal * 110 };
+    const chunks = membership.chunksByDoc.get(docId) ?? [node.id];
+    const chunkIndex = Math.max(chunks.indexOf(node.id), 0);
+    return pointOnRing(center, 150, chunkIndex, chunks.length, -Math.PI / 2);
   }
-  return { x: 820 + (index % 3) * 110, y: 110 + Math.floor(index / 3) * 82 };
+  const entities = membership.entitiesByDoc.get(docId) ?? [node.id];
+  const entityIndex = Math.max(entities.indexOf(node.id), 0);
+  const stagger = 24 + stableOffset(node.id, 42);
+  return pointOnRing(center, 280 + stagger, entityIndex, entities.length, 0);
 }
 
 function graphType(node: KbGraphNode): AppNode['type'] {
@@ -43,14 +132,22 @@ function graphType(node: KbGraphNode): AppNode['type'] {
   return 'entity';
 }
 
-export function kbProjectionToGraph(projection: KbGraphProjection): {
+export function kbProjectionToGraph(
+  projection: KbGraphProjection,
+  options: { existingNodes?: AppNode[]; preserveExistingPositions?: boolean } = {},
+): {
   nodes: AppNode[];
   edges: Edge[];
 } {
+  const existing = new Map((options.existingNodes ?? []).map((node) => [node.id, node]));
+  const membership = buildClusterMembership(projection);
   const nodes = projection.nodes.map((node, index): AppNode => ({
     id: node.id,
     type: graphType(node),
-    position: nodePosition(node, index),
+    position:
+      options.preserveExistingPositions && existing.has(node.id)
+        ? existing.get(node.id)!.position
+        : projectedNodePosition(node, index, membership),
     data: {
       label: node.label,
       type: node.nodeType === 'entity' ? `ENTITY:${node.kind ?? 'unknown'}` : node.nodeType.toUpperCase(),
@@ -107,13 +204,17 @@ export function reconcileKbGraphProjection(
   currentNodes: AppNode[],
   currentEdges: Edge[],
   projection: KbGraphProjection,
+  options: { preserveExistingPositions?: boolean } = { preserveExistingPositions: true },
 ): {
   nodes: AppNode[];
   edges: Edge[];
   removedNodeIds: string[];
   removedEdgeIds: string[];
 } {
-  const graph = kbProjectionToGraph(projection);
+  const graph = kbProjectionToGraph(projection, {
+    existingNodes: currentNodes,
+    preserveExistingPositions: options.preserveExistingPositions ?? true,
+  });
   const incomingNodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const incomingEdges = new Map(graph.edges.map((edge) => [edge.id, edge]));
   const activeNodeIds = new Set(incomingNodes.keys());

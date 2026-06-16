@@ -1,35 +1,34 @@
 ## Active Product Milestone
 
-# Milestone 3 - Knowledge Base Document Manager
+# Milestone 4 - Stable Graph Layout and Orphan Cleanup
 
-Goal: give users safe lifecycle control over SQLite Knowledge Base documents.
+Goal: keep the graph readable and clustered after KB ingestion and deletion.
 
 Definition of done:
 
-- [x] UI lists SQLite KB documents
-- [x] user can remove/delete a KB document from UI
-- [x] deletion is safe soft-delete by default
-- [x] deleted documents no longer appear in search
-- [x] deleted documents no longer appear in graph projection
-- [x] deleted chunks are not returned to retrieval-facing search paths
-- [x] graph nodes/edges projected from deleted documents are removed from visible graph
-- [x] stats update after deletion
-- [x] audit/activity log records deletion
-- [x] tests prove soft-delete, search exclusion, graph exclusion, and stats update
+- [x] graph layout remains stable after deleting a KB document
+- [x] graph does not collapse into a long line
+- [x] connected KB clusters render as readable node clusters
+- [x] document/chunk/entity nodes remain visually distinguishable
+- [x] deleted KB document nodes/edges disappear
+- [x] unrelated graph nodes remain
+- [x] legacy/stale KB-projected orphan nodes are cleaned during projection reconciliation
+- [x] user has a clear way to refresh/stabilize the graph
+- [x] tests cover graph projection cleanup/layout inputs
 - [x] manual verification steps are documented
 - [x] commit created
 
 Target commit:
 
-`feat: add knowledge base document manager`
+`fix: stabilize knowledge graph layout`
 
 ---
 
 ## Next Slice
 
-## Phase 2D - Retrieval MVP
+## Phase 2E - Retrieval MVP
 
-Status: READY AFTER PHASE 2C OWNER REVIEW
+Status: READY AFTER PHASE 2D OWNER REVIEW
 
 Required visible result:
 
@@ -69,14 +68,23 @@ Do not start Chat With KB until retrieval source evidence works.
 - [x] clean projected graph nodes/edges after deletion
 - [x] preserve IndexedDB and audit history
 
-### Milestone 4 - Retrieval MVP
+### Milestone 4 - Stable Graph Layout and Orphan Cleanup
+
+- [x] deterministic clustered KB document layout
+- [x] preserve existing node positions during normal projection updates
+- [x] re-cluster active KB nodes after delete/stabilize
+- [x] remove stale KB-projected orphan nodes and edges
+- [x] keep unrelated graph nodes intact
+- [x] add manual graph stabilize control
+
+### Milestone 5 - Retrieval MVP
 
 - [ ] query SQLite chunks
 - [ ] rank search results
 - [ ] show source snippets
 - [ ] connect retrieval results to chat context
 
-### Milestone 5 - Chat With Knowledge Base
+### Milestone 6 - Chat With Knowledge Base
 
 - [ ] user asks a question
 - [ ] app retrieves relevant chunks
@@ -84,7 +92,7 @@ Do not start Chat With KB until retrieval source evidence works.
 - [ ] answer shows source snippets
 - [ ] works with local model route or synthetic fallback
 
-### Milestone 6 - Real GraphRAG
+### Milestone 7 - Real GraphRAG
 
 - [ ] combine text retrieval with graph traversal
 - [ ] retrieve chunks by document relevance
@@ -92,7 +100,7 @@ Do not start Chat With KB until retrieval source evidence works.
 - [ ] generate grounded answers from both
 - [ ] show source evidence
 
-### Milestone 7 - Product Polish
+### Milestone 8 - Product Polish
 
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
@@ -260,6 +268,57 @@ What still does not work:
 - Full GraphRAG is not implemented.
 - Real embeddings are not implemented.
 - Hard purge and restore flows are intentionally deferred.
+
+Decision:
+
+- [x] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+### Slice: Phase 2D - Stable Graph Layout and Orphan Cleanup
+
+Date: 2026-06-16
+
+Commit: `fix: stabilize knowledge graph layout` (exact hash reported in final response)
+
+What changed in the app:
+
+- Added deterministic clustered/spiderweb positions for SQLite KB document projections.
+- Kept existing projected node positions during normal ingestion updates.
+- Re-clustered active KB projections after delete and manual stabilize.
+- Cleaned stale SQLite-projected orphan nodes and edges during projection reconciliation.
+- Added a visible graph `Stabilize` control.
+- Added a thin-layout guard so line-like coordinate sets render with deterministic lateral spread.
+
+How to verify it:
+
+1. Launch the app with `npm run desktop`.
+2. Ingest `kb-linker-test.txt`.
+3. Ingest `kb-delete-test.txt`.
+4. Confirm both appear in the KB document list.
+5. Confirm graph shows readable connected clusters.
+6. Delete `kb-delete-test.txt`.
+7. Confirm its document disappears from the KB list.
+8. Confirm its graph cluster disappears.
+9. Confirm the `kb-linker-test.txt` graph cluster remains.
+10. Confirm graph does not collapse into a line.
+11. Confirm search for the deleted document term returns nothing.
+12. Confirm search for the remaining document term still works.
+
+What works now:
+
+- KB document, chunk, and entity nodes are positioned as stable clusters.
+- Deleting one KB document removes only that projected cluster.
+- Remaining KB clusters keep or regain readable layout.
+- Unrelated non-KB graph nodes remain intact.
+- Stale SQLite-projected orphan nodes are cleaned during active projection reconciliation.
+
+What still does not work:
+
+- This is not the Retrieval MVP.
+- Chat with KB is not implemented.
+- Full GraphRAG is not implemented.
+- Real embeddings are not implemented.
 
 Decision:
 
