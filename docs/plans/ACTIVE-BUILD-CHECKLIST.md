@@ -4,7 +4,7 @@
 
 Goal: query SQLite chunks, show source snippets, and optionally attach retrieved local context to chat.
 
-Status: IMPLEMENTED - OWNER MANUAL VERIFICATION REQUIRED
+Status: ACCEPTED
 
 Definition of done:
 
@@ -19,11 +19,11 @@ Definition of done:
 - [x] tests cover retrieval helpers/wrappers and local search limit
 - [x] manual verification steps are documented
 - [x] commit created
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
 Target commit:
 
-`feat: add retrieval mvp context panel` (exact hash reported in final response)
+`0b7c9e340f08f3be7b05ee225c056b37f354340b feat: add retrieval mvp context panel`
 
 ---
 
@@ -31,7 +31,7 @@ Target commit:
 
 ## Phase 2F - Chat With Knowledge Base
 
-Status: READY AFTER PHASE 2E OWNER REVIEW
+Status: READY
 
 Required visible result:
 
@@ -113,6 +113,7 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
 - [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, and improved cluster spacing
+- [ ] retrieval polish: citations in generated answers, selected-context controls, and better source cards
 - [ ] improve chat-with-sources UX
 - [ ] add backup/export/import
 - [ ] package for release
@@ -409,7 +410,7 @@ Status:
 
 Date: 2026-06-16
 
-Commit: `feat: add retrieval mvp context panel` (exact hash reported in final response)
+Commit: `0b7c9e340f08f3be7b05ee225c056b37f354340b feat: add retrieval mvp context panel`
 
 What changed in the app:
 
@@ -463,20 +464,39 @@ What works now:
 - Deleted documents remain excluded by local SQLite search and frontend context cleanup.
 - Retrieval events continue to be recorded through existing `kb_search`.
 
+Owner manual verification results:
+
+- Phase 2E Retrieval MVP is accepted.
+- Manual verification passed for explicit SQLite KB retrieval.
+- Test document `phase-2e-retrieval-mvp-smoke.txt` was ingested and appeared in KB Documents.
+- Search for `RetrievalMvpUniqueTerm4821` returned the correct SQLite KB chunk.
+- Right-pane Local KB context panel displayed the retrieved chunk with source label.
+- Attach was OFF by default.
+- Attach ON sent retrieved KB context to chat.
+- Chat correctly answered that `RetrievalMvpUniqueTerm4821` was mentioned in `phase-2e-retrieval-mvp-smoke.txt` with `[KB1]`.
+- After Attach was turned OFF, chat sent a detached message without using KB context.
+- Deleting the test document removed it from KB Documents.
+- Searching `RetrievalMvpUniqueTerm4821` after deletion showed no matches.
+- Deleted context did not remain attachable.
+- Commit verified for Retrieval MVP: `0b7c9e340f08f3be7b05ee225c056b37f354340b`.
+
 What still does not work:
 
 - This is not full Chat With KB polish.
 - This is not full GraphRAG.
 - Real embeddings are not implemented.
+- Vector DB work is not implemented.
 - Graph traversal retrieval is not implemented.
 - Formal answer citation rendering is deferred.
+- Graph readability polish remains non-blocking.
+- Future retrieval polish may include citations in generated answers, selected-context controls, and better source cards.
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Ready for owner review.
+- Accepted by owner manual verification.
