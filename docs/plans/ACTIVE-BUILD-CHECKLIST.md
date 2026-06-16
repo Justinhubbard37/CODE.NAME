@@ -4,7 +4,7 @@
 
 Goal: keep the graph readable and clustered after KB ingestion and deletion.
 
-Status: CORRECTION IMPLEMENTED - OWNER MANUAL VERIFICATION REQUIRED
+Status: ACCEPTED - READY FOR RETRIEVAL MVP
 
 Definition of done:
 
@@ -19,11 +19,11 @@ Definition of done:
 - [x] tests cover graph projection cleanup/layout inputs
 - [x] manual verification steps are documented
 - [x] commit created
-- [ ] owner manual verification accepted after correction
+- [x] owner manual verification accepted after correction
 
 Target commit:
 
-`fix: preserve graph layout during kb updates`
+`50efab6 fix: preserve graph layout during kb updates`
 
 ---
 
@@ -31,7 +31,7 @@ Target commit:
 
 ## Phase 2E - Retrieval MVP
 
-Status: BLOCKED UNTIL PHASE 2C/2D OWNER REVIEW PASSES
+Status: NEXT IMPLEMENTATION SLICE
 
 Required visible result:
 
@@ -64,7 +64,7 @@ Do not start Chat With KB until retrieval source evidence works.
 
 ### Milestone 3 - Knowledge Base Document Manager
 
-Status: IMPLEMENTED - CLOSURE PENDING GRAPH-STABILITY RE-VERIFICATION
+Status: ACCEPTED
 
 - [x] list SQLite KB documents in UI
 - [x] soft-delete KB documents by default
@@ -75,7 +75,7 @@ Status: IMPLEMENTED - CLOSURE PENDING GRAPH-STABILITY RE-VERIFICATION
 
 ### Milestone 4 - Stable Graph Layout and Orphan Cleanup
 
-Status: CORRECTION IMPLEMENTED - AWAITING OWNER VERIFICATION
+Status: ACCEPTED AFTER CORRECTION
 
 - [x] deterministic clustered KB document layout
 - [x] preserve existing node positions during normal projection updates
@@ -112,6 +112,7 @@ Status: CORRECTION IMPLEMENTED - AWAITING OWNER VERIFICATION
 
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
+- [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, and improved cluster spacing
 - [ ] improve chat-with-sources UX
 - [ ] add backup/export/import
 - [ ] package for release
@@ -279,13 +280,13 @@ What still does not work:
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Ready for owner re-verification after the Phase 2D persistent layout correction.
+- Accepted after owner verification of the Phase 2D persistent layout correction.
 
 ### Slice: Phase 2D - Stable Graph Layout and Orphan Cleanup
 
@@ -348,7 +349,7 @@ Status:
 
 Date: 2026-06-16
 
-Commit: `fix: preserve graph layout during kb updates` (exact hash reported in final response)
+Commit: `50efab6 fix: preserve graph layout during kb updates`
 
 What changed in the app:
 
@@ -379,10 +380,16 @@ What works now:
 - Normal KB delete removes stale projected nodes and edges while preserving retained positions.
 - The 3D layout keeps a stable render origin across normal append/delete updates.
 - Stabilize remains an explicit manual action.
+- Functional delete/search verification passed.
+- Deleted KB documents are removed from KB Documents.
+- Deleted search terms no longer return SQLite KB results.
+- Remaining KB documents still return SQLite KB results.
+- The graph no longer collapses into the previous broken vertical/line structure after delete.
 
 What still does not work:
 
-- Phase 2C and Phase 2D are not accepted until owner manual verification passes.
+- Graph is functionally stable but still visually noisy.
+- Graph readability polish is deferred to product polish and does not block Retrieval MVP.
 - This is not the Retrieval MVP.
 - Chat with KB is not implemented.
 - Full GraphRAG is not implemented.
@@ -390,10 +397,10 @@ What still does not work:
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Ready for owner review.
+- Accepted by owner manual verification.
