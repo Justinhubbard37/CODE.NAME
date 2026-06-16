@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -38,6 +38,10 @@ export function Node3D({
   const [tier, setTier] = useState<Tier>('dot');
   const tierRef = useRef<Tier>('dot');
   const v = useRef(new THREE.Vector3(pos[0], pos[1], pos[2])).current;
+
+  useEffect(() => {
+    v.set(pos[0], pos[1], pos[2]);
+  }, [pos, v]);
 
   useFrame(({ camera, size }) => {
     // If this node is collapsed into a cluster, hide it entirely.

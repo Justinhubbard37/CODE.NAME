@@ -69,6 +69,7 @@ import { kgStore } from '../kg/store';
 import {
   hasConnectedKbProjection,
   reconcileKbGraphProjection,
+  upsertKbGraphProjection,
 } from '../kg/kbProjection';
 import { stubEmbed } from '../kg/vector';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
@@ -720,9 +721,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         documentId,
       });
       const connected = hasConnectedKbProjection(projection);
-      const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection, {
-        preserveExistingPositions: true,
-      });
+      const reconciled = upsertKbGraphProjection(nodesRef.current, edgesRef.current, projection);
       const projectedNodes = reconciled.nodes.filter((node) => node.data.src === 'SQLite KB');
       const projectedEdges = reconciled.edges.filter((edge) => edge.id.startsWith('kb_edge_') || edge.id.startsWith('rel_'));
       if (!projectedNodes.length) return { nodes: 0, edges: 0, connected };
@@ -765,7 +764,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const deletion = await kbDeleteDocument({ documentId, mode: 'soft' });
       const projection = await kbGraphProjection({ workspaceId: activeKbWorkspaceId() });
       const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection, {
-        preserveExistingPositions: false,
+        preserveExistingPositions: true,
       });
       setNodes(reconciled.nodes);
       setEdges(reconciled.edges);

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { hasConnectedKbProjection, kbProjectionToGraph, reconcileKbGraphProjection } from './kbProjection';
+import {
+  hasConnectedKbProjection,
+  kbProjectionToGraph,
+  reconcileKbGraphProjection,
+  upsertKbGraphProjection,
+} from './kbProjection';
 import type { KbGraphProjection } from '../lib/kb';
 import type { AppNode, Edge } from '../types';
 
@@ -92,6 +97,11 @@ const twoDocumentProjection: KbGraphProjection = {
   ],
 };
 
+const deleteDocumentProjection: KbGraphProjection = {
+  nodes: twoDocumentProjection.nodes.slice(projection.nodes.length),
+  edges: twoDocumentProjection.edges.slice(projection.edges.length),
+};
+
 describe('SQLite KB graph projection', () => {
   it('converts KB document, chunk, and entity rows into connected graph records', () => {
     const graph = kbProjectionToGraph(projection);
@@ -141,6 +151,45 @@ describe('SQLite KB graph projection', () => {
     });
   });
 
+  it('appends a document-scoped projection without removing existing KB clusters', () => {
+    const existing = kbProjectionToGraph(projection);
+    const pinnedNodes = existing.nodes.map((node) =>
+      node.id === 'doc-default'
+        ? { ...node, position: { x: 1234, y: 5678 } }
+        : node,
+    );
+
+    const upserted = upsertKbGraphProjection(pinnedNodes, existing.edges, deleteDocumentProjection);
+
+    expect(upserted.removedNodeIds).toEqual([]);
+    expect(upserted.removedEdgeIds).toEqual([]);
+    expect(upserted.nodes.some((node) => node.id === 'doc-default')).toBe(true);
+    expect(upserted.nodes.some((node) => node.id === 'doc-delete')).toBe(true);
+    expect(upserted.edges.some((edge) => edge.id === 'edge-doc-chunk')).toBe(true);
+    expect(upserted.edges.some((edge) => edge.id === 'edge-delete-doc-chunk')).toBe(true);
+    expect(upserted.nodes.find((node) => node.id === 'doc-default')?.position).toEqual({
+      x: 1234,
+      y: 5678,
+    });
+    expect(upserted.nodes.find((node) => node.id === 'doc-delete')?.position).toBeDefined();
+  });
+
+  it('assigns positions only to new nodes during document-scoped upsert', () => {
+    const existing = kbProjectionToGraph(projection);
+    const beforePositions = new Map(existing.nodes.map((node) => [node.id, node.position]));
+
+    const upserted = upsertKbGraphProjection(existing.nodes, existing.edges, deleteDocumentProjection);
+
+    for (const [nodeId, position] of beforePositions) {
+      expect(upserted.nodes.find((node) => node.id === nodeId)?.position).toBe(position);
+    }
+    const newNodes = upserted.nodes.filter((node) => node.id.includes('delete'));
+    expect(newNodes).toHaveLength(deleteDocumentProjection.nodes.length);
+    expect(new Set(newNodes.map((node) => `${node.position.x},${node.position.y}`)).size).toBe(
+      newNodes.length,
+    );
+  });
+
   it('removes stale projected KB nodes and edges while preserving unrelated graph content', () => {
     const existing = kbProjectionToGraph(projection);
     const manualNode: AppNode = {
@@ -167,15 +216,49 @@ describe('SQLite KB graph projection', () => {
     expect(reconciled.removedEdgeIds).toEqual(['edge-doc-chunk', 'edge-chunk-entity']);
   });
 
-  it('deleting one projected document keeps the remaining KB cluster', () => {
+  it('deleting one projected document keeps the remaining KB cluster in place', () => {
     const before = kbProjectionToGraph(twoDocumentProjection);
+    const keepPositions = new Map(
+      before.nodes
+        .filter((node) => !node.id.includes('delete'))
+        .map((node) => [node.id, node.position]),
+    );
     const after = reconcileKbGraphProjection(before.nodes, before.edges, projection, {
-      preserveExistingPositions: false,
+      preserveExistingPositions: true,
     });
 
     expect(after.nodes.some((node) => node.id === 'doc-delete')).toBe(false);
     expect(after.edges.some((edge) => edge.source === 'doc-delete' || edge.target === 'doc-delete')).toBe(false);
     expect(after.nodes.some((node) => node.id === 'doc-default')).toBe(true);
     expect(after.edges.some((edge) => edge.id === 'edge-doc-chunk')).toBe(true);
+    for (const [nodeId, position] of keepPositions) {
+      expect(after.nodes.find((node) => node.id === nodeId)?.position).toBe(position);
+    }
+  });
+
+  it('deleting one projected document preserves unrelated non-KB graph records', () => {
+    const before = kbProjectionToGraph(twoDocumentProjection);
+    const manualNode: AppNode = {
+      id: 'manual',
+      type: 'doc',
+      position: { x: 1, y: 1 },
+      data: { label: 'MANUAL', type: 'NOTE', src: 'manual' },
+    };
+    const manualEdge: Edge = {
+      id: 'manual-edge',
+      source: 'manual',
+      target: 'doc-default',
+    };
+
+    const after = reconcileKbGraphProjection(
+      [...before.nodes, manualNode],
+      [...before.edges, manualEdge],
+      projection,
+      { preserveExistingPositions: true },
+    );
+
+    expect(after.nodes).toContain(manualNode);
+    expect(after.edges).toContain(manualEdge);
+    expect(after.nodes.some((node) => node.id === 'doc-delete')).toBe(false);
   });
 });

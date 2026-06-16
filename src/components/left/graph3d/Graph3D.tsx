@@ -5,7 +5,7 @@ import { RotateCcw } from 'lucide-react';
 import * as THREE from 'three';
 import { useApp } from '../../../state/AppState';
 import { systemConfig } from '../../../config/system';
-import { layout3D, type Vec3 } from './layout';
+import { layout3D, resetLayout3DCache, type Vec3 } from './layout';
 import { Node3D, ClusterNode3D } from './Node3D';
 import { Edges3D } from './Edges3D';
 import { NodeDetailsPanel } from '../../NodeDetailsPanel';
@@ -173,6 +173,11 @@ export function Graph3D() {
     });
   };
 
+  const handleStabilize = () => {
+    resetLayout3DCache();
+    void stabilizeGraphLayout();
+  };
+
   // Large-graph render windowing (Slice 10.1).
   const cullingActive = nodes.length > CULL_THRESHOLD;
   const nodeIds = useMemo(() => nodes.map((n) => n.id), [nodes]);
@@ -281,7 +286,7 @@ export function Graph3D() {
       )}
 
       <button
-        onClick={() => void stabilizeGraphLayout()}
+        onClick={handleStabilize}
         className="pointer-events-auto absolute top-2 right-2 z-20 flex items-center gap-1 border border-neutral-800 bg-neutral-950/80 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-neutral-500 backdrop-blur-sm hover:border-emerald-500/50 hover:text-emerald-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
         title="Stabilize SQLite KB graph layout"
         aria-label="Stabilize graph layout"

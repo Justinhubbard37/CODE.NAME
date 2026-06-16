@@ -17,6 +17,25 @@ const baseEdges: Edge[] = [
   { id: 'b-c', source: 'b', target: 'c' },
 ];
 
+const keepCluster: AppNode[] = [
+  node('keep-doc', 900, 180),
+  node('keep-chunk', 900, 30),
+  node('keep-entity', 1190, 180),
+];
+const keepEdges: Edge[] = [
+  { id: 'keep-doc-chunk', source: 'keep-doc', target: 'keep-chunk' },
+  { id: 'keep-chunk-entity', source: 'keep-chunk', target: 'keep-entity' },
+];
+const deleteCluster: AppNode[] = [
+  node('delete-doc', 2300, 1000),
+  node('delete-chunk', 2300, 850),
+  node('delete-entity', 2590, 1000),
+];
+const deleteEdges: Edge[] = [
+  { id: 'delete-doc-chunk', source: 'delete-doc', target: 'delete-chunk' },
+  { id: 'delete-chunk-entity', source: 'delete-chunk', target: 'delete-entity' },
+];
+
 describe('layout3D cache (Slice 10.1)', () => {
   beforeEach(() => resetLayout3DCache());
 
@@ -87,5 +106,42 @@ describe('layout3D cache (Slice 10.1)', () => {
 
     const renderedXs = lineNodes.map((n) => r.map.get(n.id)?.[0] ?? 0);
     expect(new Set(renderedXs.map((x) => x.toFixed(3))).size).toBeGreaterThan(1);
+  });
+
+  it('keeps retained node rendered coordinates stable when a cluster is appended', () => {
+    const before = layout3D(keepCluster, keepEdges);
+    const keepBefore = new Map(keepCluster.map((n) => [n.id, before.map.get(n.id)]));
+
+    const after = layout3D([...keepCluster, ...deleteCluster], [...keepEdges, ...deleteEdges]);
+
+    for (const n of keepCluster) {
+      expect(after.map.get(n.id)).toEqual(keepBefore.get(n.id));
+    }
+    expect(after.map.has('delete-doc')).toBe(true);
+  });
+
+  it('keeps retained node rendered coordinates stable when another cluster is deleted', () => {
+    const before = layout3D([...keepCluster, ...deleteCluster], [...keepEdges, ...deleteEdges]);
+    const keepBefore = new Map(keepCluster.map((n) => [n.id, before.map.get(n.id)]));
+
+    const after = layout3D(keepCluster, keepEdges);
+
+    for (const n of keepCluster) {
+      expect(after.map.get(n.id)).toEqual(keepBefore.get(n.id));
+    }
+    expect(after.map.has('delete-doc')).toBe(false);
+  });
+
+  it('only recenters retained nodes after an explicit layout reset', () => {
+    const before = layout3D(keepCluster, keepEdges);
+    const keepDocBefore = before.map.get('keep-doc');
+    const appended = layout3D([...keepCluster, ...deleteCluster], [...keepEdges, ...deleteEdges]);
+
+    expect(appended.map.get('keep-doc')).toEqual(keepDocBefore);
+
+    resetLayout3DCache();
+    const reset = layout3D([...keepCluster, ...deleteCluster], [...keepEdges, ...deleteEdges]);
+
+    expect(reset.map.get('keep-doc')).not.toEqual(keepDocBefore);
   });
 });

@@ -4,6 +4,8 @@
 
 Goal: keep the graph readable and clustered after KB ingestion and deletion.
 
+Status: CORRECTION IMPLEMENTED - OWNER MANUAL VERIFICATION REQUIRED
+
 Definition of done:
 
 - [x] graph layout remains stable after deleting a KB document
@@ -17,10 +19,11 @@ Definition of done:
 - [x] tests cover graph projection cleanup/layout inputs
 - [x] manual verification steps are documented
 - [x] commit created
+- [ ] owner manual verification accepted after correction
 
 Target commit:
 
-`fix: stabilize knowledge graph layout`
+`fix: preserve graph layout during kb updates`
 
 ---
 
@@ -28,7 +31,7 @@ Target commit:
 
 ## Phase 2E - Retrieval MVP
 
-Status: READY AFTER PHASE 2D OWNER REVIEW
+Status: BLOCKED UNTIL PHASE 2C/2D OWNER REVIEW PASSES
 
 Required visible result:
 
@@ -61,6 +64,8 @@ Do not start Chat With KB until retrieval source evidence works.
 
 ### Milestone 3 - Knowledge Base Document Manager
 
+Status: IMPLEMENTED - CLOSURE PENDING GRAPH-STABILITY RE-VERIFICATION
+
 - [x] list SQLite KB documents in UI
 - [x] soft-delete KB documents by default
 - [x] exclude deleted documents from search
@@ -70,9 +75,12 @@ Do not start Chat With KB until retrieval source evidence works.
 
 ### Milestone 4 - Stable Graph Layout and Orphan Cleanup
 
+Status: CORRECTION IMPLEMENTED - AWAITING OWNER VERIFICATION
+
 - [x] deterministic clustered KB document layout
 - [x] preserve existing node positions during normal projection updates
-- [x] re-cluster active KB nodes after delete/stabilize
+- [x] preserve active KB node positions after delete
+- [x] keep re-cluster/recenter behavior manual through Stabilize
 - [x] remove stale KB-projected orphan nodes and edges
 - [x] keep unrelated graph nodes intact
 - [x] add manual graph stabilize control
@@ -271,9 +279,13 @@ What still does not work:
 
 Decision:
 
-- [x] Accepted
+- [ ] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
+
+Status:
+
+- Ready for owner re-verification after the Phase 2D persistent layout correction.
 
 ### Slice: Phase 2D - Stable Graph Layout and Orphan Cleanup
 
@@ -319,9 +331,69 @@ What still does not work:
 - Chat with KB is not implemented.
 - Full GraphRAG is not implemented.
 - Real embeddings are not implemented.
+- Owner manual verification failed after the original Phase 2D attempt because normal file drops globally restructured the graph.
 
 Decision:
 
 - [ ] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
+
+Status:
+
+- Original manual verification failed.
+- Correction slice required before Phase 2D can be accepted.
+
+### Slice: Phase 2D Correction - Persistent Graph Layout Stability
+
+Date: 2026-06-16
+
+Commit: `fix: preserve graph layout during kb updates` (exact hash reported in final response)
+
+What changed in the app:
+
+- Added an append-only projection merge for document-scoped SQLite KB projections.
+- Prevented partial document projections from cleaning unrelated KB clusters.
+- Preserved stored graph node positions during normal KB ingest and delete.
+- Preserved rendered 3D coordinates for retained node IDs across normal graph updates.
+- Kept graph re-cluster/recenter behavior manual through the Stabilize button.
+
+How to verify it:
+
+1. Launch the app with `npm run desktop`.
+2. Ingest `kb-2d-keep.txt`.
+3. Confirm a readable keep cluster appears.
+4. Ingest `kb-2d-delete.txt`.
+5. Confirm a second cluster appears without dramatically moving the keep cluster.
+6. Delete `kb-2d-delete.txt` from the KB document list.
+7. Confirm only the delete cluster disappears.
+8. Confirm the keep cluster remains in roughly the same position.
+9. Search `DeleteTerm2DStable` or `DeleteClusterAlpha` and confirm deleted content does not appear.
+10. Search `KeepTerm2DStable` or `KeepClusterAlpha` and confirm remaining content still appears.
+11. Confirm the graph does not collapse into a line.
+12. Click Stabilize manually and confirm any reclustering is intentional.
+
+What works now:
+
+- Normal KB ingest appends new document clusters without sweeping existing KB clusters.
+- Normal KB delete removes stale projected nodes and edges while preserving retained positions.
+- The 3D layout keeps a stable render origin across normal append/delete updates.
+- Stabilize remains an explicit manual action.
+
+What still does not work:
+
+- Phase 2C and Phase 2D are not accepted until owner manual verification passes.
+- This is not the Retrieval MVP.
+- Chat with KB is not implemented.
+- Full GraphRAG is not implemented.
+- Real embeddings are not implemented.
+
+Decision:
+
+- [ ] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+Status:
+
+- Ready for owner review.

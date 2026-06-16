@@ -22,6 +22,7 @@ export type Vec3 = [number, number, number];
 
 const SCALE = 90;
 const LAYER_GAP = 7;
+const NODE_DEPTH_SPAN = LAYER_GAP * 2;
 const THIN_LAYOUT_MIN_SPAN = 80;
 
 function hashId(s: string): number {
@@ -76,6 +77,7 @@ function structuralSignature(nodes: AppNode[], edges: Edge[]): number {
 // a time, so a one-slot cache is sufficient and never grows unbounded.
 let _cacheSig: number | null = null;
 let _cacheResult: Layout3DResult | null = null;
+let _layoutOrigin: { x: number; y: number } | null = null;
 
 /**
  * Reset the layout cache. Exposed for tests and for callers that change a
@@ -84,6 +86,7 @@ let _cacheResult: Layout3DResult | null = null;
 export function resetLayout3DCache(): void {
   _cacheSig = null;
   _cacheResult = null;
+  _layoutOrigin = null;
 }
 
 export function layout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
@@ -99,6 +102,16 @@ export function layout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
 
 function computeLayout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
   const communities = detectCommunities(nodes, edges);
+  if (!nodes.length) {
+    _layoutOrigin = null;
+    return {
+      map: new Map(),
+      communities,
+      communityCount: 1,
+      centroids: new Map(),
+      communitySizes: new Map(),
+    };
+  }
 
   let cx = 0;
   let cy = 0;
@@ -114,9 +127,13 @@ function computeLayout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
     minY = Math.min(minY, n.position.y);
     maxY = Math.max(maxY, n.position.y);
   }
-  const N = nodes.length || 1;
+  const N = nodes.length;
   cx /= N;
   cy /= N;
+  if (_layoutOrigin === null) {
+    _layoutOrigin = { x: cx, y: cy };
+  }
+  const origin = _layoutOrigin;
   const spanX = Number.isFinite(maxX - minX) ? maxX - minX : 0;
   const spanY = Number.isFinite(maxY - minY) ? maxY - minY : 0;
   const spreadThinX = nodes.length > 2 && spanX < THIN_LAYOUT_MIN_SPAN;
@@ -124,22 +141,17 @@ function computeLayout3D(nodes: AppNode[], edges: Edge[]): Layout3DResult {
 
   const commSet = new Set(communities.values());
   const commCount = commSet.size || 1;
-  const zCenter = ((commCount - 1) * LAYER_GAP) / 2;
 
   const map = new Map<string, Vec3>();
   for (let i = 0; i < nodes.length; i += 1) {
     const n = nodes[i];
-    const c = communities.get(n.id) ?? 0;
     const ring = 140 + (hashId(n.id) % 90);
-    const angle = (Math.PI * 2 * i) / Math.max(nodes.length, 1);
+    const angle = ((hashId(n.id) % 3600) / 3600) * Math.PI * 2;
     const adjustedX = n.position.x + (spreadThinX ? Math.cos(angle) * ring : 0);
     const adjustedY = n.position.y + (spreadThinY ? Math.sin(angle) * ring : 0);
-    const adjustedCx = cx;
-    const adjustedCy = cy;
-    const x = (adjustedX - adjustedCx) / SCALE;
-    const y = -(adjustedY - adjustedCy) / SCALE;
-    const jitter = ((hashId(n.id) % 100) / 100 - 0.5) * 3;
-    const z = c * LAYER_GAP - zCenter + jitter;
+    const x = (adjustedX - origin.x) / SCALE;
+    const y = -(adjustedY - origin.y) / SCALE;
+    const z = ((hashId(n.id) % 1000) / 1000 - 0.5) * NODE_DEPTH_SPAN;
     map.set(n.id, [x, y, z]);
   }
 
