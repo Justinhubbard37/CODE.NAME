@@ -1,36 +1,35 @@
 ## Active Product Milestone
 
-# Milestone 2 - Knowledge Graph Linker MVP
+# Milestone 3 - Knowledge Base Document Manager
 
-Goal: make ingested SQLite documents and chunks create connected graph structure.
+Goal: give users safe lifecycle control over SQLite Knowledge Base documents.
 
 Definition of done:
 
-- [x] SQLite documents project into graph document nodes
-- [x] SQLite chunks project into graph chunk nodes
-- [x] document -> chunk edges exist
-- [x] deterministic entity extraction runs on chunk text
-- [x] extracted entities are stored in SQLite
-- [x] chunk -> entity edges exist
-- [x] document -> entity edges exist
-- [x] entity -> entity co-occurrence edges exist when entities appear in the same chunk
-- [x] graph UI shows connected document/chunk/entity structure
-- [x] clicking or searching shows why nodes are connected
-- [x] tests prove graph projection/linking works
+- [x] UI lists SQLite KB documents
+- [x] user can remove/delete a KB document from UI
+- [x] deletion is safe soft-delete by default
+- [x] deleted documents no longer appear in search
+- [x] deleted documents no longer appear in graph projection
+- [x] deleted chunks are not returned to retrieval-facing search paths
+- [x] graph nodes/edges projected from deleted documents are removed from visible graph
+- [x] stats update after deletion
+- [x] audit/activity log records deletion
+- [x] tests prove soft-delete, search exclusion, graph exclusion, and stats update
 - [x] manual verification steps are documented
 - [x] commit created
 
 Target commit:
 
-`feat: link sqlite knowledge into graph`
+`feat: add knowledge base document manager`
 
 ---
 
 ## Next Slice
 
-## Phase 2C - Retrieval MVP
+## Phase 2D - Retrieval MVP
 
-Status: READY AFTER PHASE 2B OWNER REVIEW
+Status: READY AFTER PHASE 2C OWNER REVIEW
 
 Required visible result:
 
@@ -61,14 +60,23 @@ Do not start Chat With KB until retrieval source evidence works.
 - [x] create entity co-occurrence edges
 - [x] show connected graph structure in UI
 
-### Milestone 3 - Retrieval MVP
+### Milestone 3 - Knowledge Base Document Manager
+
+- [x] list SQLite KB documents in UI
+- [x] soft-delete KB documents by default
+- [x] exclude deleted documents from search
+- [x] exclude deleted documents from graph projection
+- [x] clean projected graph nodes/edges after deletion
+- [x] preserve IndexedDB and audit history
+
+### Milestone 4 - Retrieval MVP
 
 - [ ] query SQLite chunks
 - [ ] rank search results
 - [ ] show source snippets
 - [ ] connect retrieval results to chat context
 
-### Milestone 4 - Chat With Knowledge Base
+### Milestone 5 - Chat With Knowledge Base
 
 - [ ] user asks a question
 - [ ] app retrieves relevant chunks
@@ -76,7 +84,7 @@ Do not start Chat With KB until retrieval source evidence works.
 - [ ] answer shows source snippets
 - [ ] works with local model route or synthetic fallback
 
-### Milestone 5 - Real GraphRAG
+### Milestone 6 - Real GraphRAG
 
 - [ ] combine text retrieval with graph traversal
 - [ ] retrieve chunks by document relevance
@@ -84,7 +92,7 @@ Do not start Chat With KB until retrieval source evidence works.
 - [ ] generate grounded answers from both
 - [ ] show source evidence
 
-### Milestone 6 - Product Polish
+### Milestone 7 - Product Polish
 
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
@@ -202,6 +210,56 @@ What still does not work:
 - AI/entity extraction is not implemented.
 - Retrieval results are not yet injected into chat context.
 - Graph traversal retrieval is still a future slice.
+
+Decision:
+
+- [x] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+### Slice: Phase 2C - Knowledge Base Document Manager
+
+Date: 2026-06-16
+
+Commit: `feat: add knowledge base document manager` (exact hash reported in final response)
+
+What changed in the app:
+
+- Added active SQLite KB document listing.
+- Added safe soft-delete for KB documents.
+- Added deleted-document count to KB stats.
+- Excluded soft-deleted documents from SQLite search and graph projection.
+- Added a visible remove action in the SQLite KB panel.
+- Reconciled projected graph nodes and edges after deletion while preserving unrelated graph records.
+
+How to verify it:
+
+1. Launch the app with `npm run desktop`.
+2. Ingest a test text file.
+3. Confirm it appears in the SQLite KB document list.
+4. Search for a term from the file.
+5. Confirm a SQLite KB chunk result appears.
+6. Click the remove button for that document and confirm the action.
+7. Confirm active document count decreases or deleted count increases.
+8. Search the same term and confirm that file no longer appears.
+9. Confirm projected graph nodes and edges for that file disappear.
+10. Confirm unrelated graph nodes remain.
+
+What works now:
+
+- Users can see active SQLite KB documents in the app.
+- Users can soft-delete a KB document without physically purging chunks, entities, relationships, or audit history.
+- Deleted documents are excluded from search and graph projection.
+- Visible graph projection is cleaned after deletion.
+- IndexedDB graph compatibility remains in place.
+
+What still does not work:
+
+- This is not the Retrieval MVP.
+- Chat with KB is not implemented.
+- Full GraphRAG is not implemented.
+- Real embeddings are not implemented.
+- Hard purge and restore flows are intentionally deferred.
 
 Decision:
 

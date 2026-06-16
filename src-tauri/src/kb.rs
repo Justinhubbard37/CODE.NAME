@@ -6,17 +6,19 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 const DB_FILE: &str = "knowledge-base.sqlite3";
 const MAX_INPUT_CHARS: usize = 2_000_000;
 const TARGET_CHARS: usize = 1_000;
 const MAX_CHARS: usize = 1_200;
+static RETRIEVAL_EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +35,7 @@ pub struct KbStats {
     pub initialized: bool,
     pub schema_version: i64,
     pub document_count: i64,
+    pub deleted_document_count: i64,
     pub chunk_count: i64,
     pub entity_count: i64,
     pub relationship_count: i64,
@@ -75,8 +78,17 @@ pub struct KbDocument {
     pub byte_length: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    pub deleted_at: Option<i64>,
     pub chunk_count: i64,
     pub chunks: Option<Vec<KbChunk>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbDeleteResult {
+    pub document_id: String,
+    pub deleted: bool,
+    pub deleted_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -558,6 +570,7 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
                 byte_length INTEGER NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
+                deleted_at INTEGER,
                 UNIQUE(workspace_id, content_hash)
             );
 
@@ -623,8 +636,21 @@ fn init_schema(conn: &Connection) -> rusqlite::Result<()> {
             CREATE INDEX IF NOT EXISTS idx_entities_workspace ON entities(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_relationships_workspace ON relationships(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_retrieval_events_workspace ON retrieval_events(workspace_id);
-            INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%s','now'));
             ",
+        )?;
+    }
+
+    if !column_exists(conn, "documents", "deleted_at")? {
+        conn.execute_batch("ALTER TABLE documents ADD COLUMN deleted_at INTEGER;")?;
+    }
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, strftime('%s','now'))",
+        [],
+    )?;
+    if current_schema_version(conn)? < 2 {
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, strftime('%s','now'))",
+            [],
         )?;
     }
 
@@ -646,6 +672,14 @@ fn current_schema_version(conn: &Connection) -> rusqlite::Result<i64> {
     )
 }
 
+fn column_exists(conn: &Connection, table: &str, column: &str) -> rusqlite::Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows.iter().any(|name| name == column))
+}
+
 fn fts_available(conn: &Connection) -> bool {
     conn.query_row(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'chunks_fts' LIMIT 1",
@@ -660,15 +694,74 @@ fn count_table(conn: &Connection, table: &str) -> rusqlite::Result<i64> {
     conn.query_row(&sql, [], |row| row.get(0))
 }
 
+fn count_active_documents(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM documents WHERE deleted_at IS NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+fn count_deleted_documents(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM documents WHERE deleted_at IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )
+}
+
+fn count_active_chunks(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "
+        SELECT COUNT(*)
+        FROM chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE d.deleted_at IS NULL
+        ",
+        [],
+        |row| row.get(0),
+    )
+}
+
+fn count_active_entities(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "
+        SELECT COUNT(DISTINCT e.id)
+        FROM entities e
+        JOIN chunk_entities ce ON ce.entity_id = e.id
+        JOIN chunks c ON c.id = ce.chunk_id
+        JOIN documents d ON d.id = c.document_id
+        WHERE d.deleted_at IS NULL
+        ",
+        [],
+        |row| row.get(0),
+    )
+}
+
+fn count_active_relationships(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "
+        SELECT COUNT(*)
+        FROM relationships r
+        JOIN chunks c ON c.id = r.evidence_chunk_id
+        JOIN documents d ON d.id = c.document_id
+        WHERE d.deleted_at IS NULL
+        ",
+        [],
+        |row| row.get(0),
+    )
+}
+
 fn stats_conn(conn: &Connection) -> rusqlite::Result<KbStats> {
     init_schema(conn)?;
     Ok(KbStats {
         initialized: true,
         schema_version: current_schema_version(conn)?,
-        document_count: count_table(conn, "documents")?,
-        chunk_count: count_table(conn, "chunks")?,
-        entity_count: count_table(conn, "entities")?,
-        relationship_count: count_table(conn, "relationships")?,
+        document_count: count_active_documents(conn)?,
+        deleted_document_count: count_deleted_documents(conn)?,
+        chunk_count: count_active_chunks(conn)?,
+        entity_count: count_active_entities(conn)?,
+        relationship_count: count_active_relationships(conn)?,
         retrieval_event_count: count_table(conn, "retrieval_events")?,
         fts_available: fts_available(conn),
     })
@@ -727,7 +820,8 @@ fn ingest_text_conn(
             source_kind = excluded.source_kind,
             mime_type = excluded.mime_type,
             byte_length = excluded.byte_length,
-            updated_at = excluded.updated_at
+            updated_at = excluded.updated_at,
+            deleted_at = NULL
         ",
         params![
             doc_id,
@@ -927,10 +1021,12 @@ fn insert_retrieval_event(
     result_count: usize,
 ) -> rusqlite::Result<()> {
     let now = now_ms();
+    let seq = RETRIEVAL_EVENT_SEQ.fetch_add(1, Ordering::Relaxed);
     let event_id = format!(
-        "ret_{}_{}_{}",
+        "ret_{}_{}_{}_{}",
         sanitize_fragment(workspace_id),
         now,
+        seq,
         content_hash(query).trim_start_matches("fnv1a64:")
     );
     conn.execute(
@@ -969,6 +1065,7 @@ fn search_conn(
             JOIN chunks c ON c.id = chunks_fts.chunk_id
             JOIN documents d ON d.id = c.document_id
             WHERE chunks_fts MATCH ?1 AND chunks_fts.workspace_id = ?2
+              AND d.deleted_at IS NULL
             ORDER BY score ASC, c.ordinal ASC
             LIMIT ?3
         ";
@@ -995,7 +1092,9 @@ fn search_conn(
                    d.title, d.source_uri, 1.0 AS score
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
-            WHERE c.workspace_id = ?1 AND lower(c.text) LIKE ?2
+            WHERE c.workspace_id = ?1
+              AND d.deleted_at IS NULL
+              AND lower(c.text) LIKE ?2
             ORDER BY c.ordinal ASC
             LIMIT ?3
         ";
@@ -1057,7 +1156,7 @@ fn get_document_conn(
         .query_row(
             "
             SELECT id, workspace_id, title, source_uri, source_kind, mime_type,
-                   content_hash, byte_length, created_at, updated_at
+                   content_hash, byte_length, created_at, updated_at, deleted_at
             FROM documents
             WHERE id = ?1
             ",
@@ -1074,6 +1173,7 @@ fn get_document_conn(
                     byte_length: row.get(7)?,
                     created_at: row.get(8)?,
                     updated_at: row.get(9)?,
+                    deleted_at: row.get(10)?,
                     chunk_count: 0,
                     chunks: None,
                 })
@@ -1096,16 +1196,47 @@ fn projection_documents(
 ) -> rusqlite::Result<Vec<KbDocument>> {
     let mut docs = Vec::new();
     if let Some(document_id) = document_id {
-        docs.push(get_document_conn(conn, document_id, false).map_err(|_| rusqlite::Error::QueryReturnedNoRows)?);
+        if let Some(mut doc) = conn
+            .query_row(
+                "
+                SELECT id, workspace_id, title, source_uri, source_kind, mime_type,
+                       content_hash, byte_length, created_at, updated_at, deleted_at
+                FROM documents
+                WHERE id = ?1 AND workspace_id = ?2 AND deleted_at IS NULL
+                ",
+                params![document_id, workspace_id],
+                |row| {
+                    Ok(KbDocument {
+                        id: row.get(0)?,
+                        workspace_id: row.get(1)?,
+                        title: row.get(2)?,
+                        source_uri: row.get(3)?,
+                        source_kind: row.get(4)?,
+                        mime_type: row.get(5)?,
+                        content_hash: row.get(6)?,
+                        byte_length: row.get(7)?,
+                        created_at: row.get(8)?,
+                        updated_at: row.get(9)?,
+                        deleted_at: row.get(10)?,
+                        chunk_count: 0,
+                        chunks: None,
+                    })
+                },
+            )
+            .optional()?
+        {
+            doc.chunk_count = chunk_count_for_document(conn, &doc.id)?;
+            docs.push(doc);
+        }
         return Ok(docs);
     }
 
     let mut stmt = conn.prepare(
         "
         SELECT id, workspace_id, title, source_uri, source_kind, mime_type,
-               content_hash, byte_length, created_at, updated_at
+               content_hash, byte_length, created_at, updated_at, deleted_at
         FROM documents
-        WHERE workspace_id = ?1
+        WHERE workspace_id = ?1 AND deleted_at IS NULL
         ORDER BY updated_at DESC, title ASC
         LIMIT 25
         ",
@@ -1123,6 +1254,7 @@ fn projection_documents(
                 byte_length: row.get(7)?,
                 created_at: row.get(8)?,
                 updated_at: row.get(9)?,
+                deleted_at: row.get(10)?,
                 chunk_count: 0,
                 chunks: None,
             })
@@ -1133,6 +1265,94 @@ fn projection_documents(
         docs.push(doc);
     }
     Ok(docs)
+}
+
+fn list_documents_conn(conn: &Connection, workspace_id: &str) -> Result<Vec<KbDocument>, String> {
+    let workspace_id = workspace_id.trim();
+    if workspace_id.is_empty() {
+        return Err("workspace_id is required".to_string());
+    }
+    init_schema(conn).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT id, workspace_id, title, source_uri, source_kind, mime_type,
+                   content_hash, byte_length, created_at, updated_at, deleted_at
+            FROM documents
+            WHERE workspace_id = ?1 AND deleted_at IS NULL
+            ORDER BY updated_at DESC, title ASC
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut docs = stmt
+        .query_map(params![workspace_id], |row| {
+            Ok(KbDocument {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                title: row.get(2)?,
+                source_uri: row.get(3)?,
+                source_kind: row.get(4)?,
+                mime_type: row.get(5)?,
+                content_hash: row.get(6)?,
+                byte_length: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+                deleted_at: row.get(10)?,
+                chunk_count: 0,
+                chunks: None,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    for doc in &mut docs {
+        doc.chunk_count = chunk_count_for_document(conn, &doc.id).map_err(|e| e.to_string())?;
+    }
+    Ok(docs)
+}
+
+fn delete_document_conn(
+    conn: &Connection,
+    document_id: &str,
+    mode: Option<&str>,
+) -> Result<KbDeleteResult, String> {
+    let document_id = document_id.trim();
+    if document_id.is_empty() {
+        return Err("document_id is required".to_string());
+    }
+    if let Some(mode) = mode {
+        if mode != "soft" {
+            return Err("only soft delete is supported".to_string());
+        }
+    }
+    init_schema(conn).map_err(|e| e.to_string())?;
+    let deleted_at = now_ms();
+    let changed = conn
+        .execute(
+            "
+            UPDATE documents
+            SET deleted_at = COALESCE(deleted_at, ?2),
+                updated_at = ?2
+            WHERE id = ?1
+            ",
+            params![document_id, deleted_at],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("document not found".to_string());
+    }
+    let effective_deleted_at = conn
+        .query_row(
+            "SELECT deleted_at FROM documents WHERE id = ?1",
+            params![document_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(KbDeleteResult {
+        document_id: document_id.to_string(),
+        deleted: true,
+        deleted_at: effective_deleted_at,
+    })
 }
 
 fn graph_projection_conn(
@@ -1366,6 +1586,22 @@ pub fn kb_get_document(
 }
 
 #[tauri::command]
+pub fn kb_list_documents(app: AppHandle, workspace_id: String) -> Result<Vec<KbDocument>, String> {
+    let conn = open_app_db(&app)?;
+    list_documents_conn(&conn, &workspace_id)
+}
+
+#[tauri::command]
+pub fn kb_delete_document(
+    app: AppHandle,
+    document_id: String,
+    mode: Option<String>,
+) -> Result<KbDeleteResult, String> {
+    let conn = open_app_db(&app)?;
+    delete_document_conn(&conn, &document_id, mode.as_deref())
+}
+
+#[tauri::command]
 pub fn kb_graph_projection(
     app: AppHandle,
     workspace_id: String,
@@ -1568,6 +1804,119 @@ mod tests {
             .edges
             .iter()
             .any(|edge| edge.kind == "co_occurrence"));
+    }
+
+    #[test]
+    fn list_documents_returns_active_ingested_documents() {
+        let mut conn = memory_db();
+        let result = ingest_text_conn(
+            &mut conn,
+            "default",
+            "Managed Document",
+            "Project Atlas mentions CODE NAME 2.",
+            Some("managed.txt"),
+            Some("file"),
+            Some("text/plain"),
+        )
+        .expect("ingest");
+        let docs = list_documents_conn(&conn, "default").expect("list documents");
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].id, result.document_id);
+        assert_eq!(docs[0].title, "Managed Document");
+        assert!(docs[0].deleted_at.is_none());
+        assert!(docs[0].chunk_count >= 1);
+    }
+
+    #[test]
+    fn soft_delete_sets_deleted_at_and_excludes_document_from_list() {
+        let mut conn = memory_db();
+        let result = ingest_text_conn(
+            &mut conn,
+            "default",
+            "Delete Me",
+            "DeleteMeTerm appears with CODE NAME 2.",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        let deletion =
+            delete_document_conn(&conn, &result.document_id, None).expect("soft delete");
+        assert!(deletion.deleted);
+        assert!(deletion.deleted_at > 0);
+        let doc = get_document_conn(&conn, &result.document_id, false).expect("document");
+        assert!(doc.deleted_at.is_some());
+        let docs = list_documents_conn(&conn, "default").expect("list after delete");
+        assert!(docs.is_empty());
+    }
+
+    #[test]
+    fn deleted_document_is_excluded_from_search_projection_and_active_stats() {
+        let mut conn = memory_db();
+        let result = ingest_text_conn(
+            &mut conn,
+            "default",
+            "Search Delete",
+            "UniqueDeletedTerm9137 appears with Project Atlas and CODE NAME 2.",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        assert_eq!(
+            search_conn(&conn, "default", "UniqueDeletedTerm9137", 5)
+                .expect("search before delete")
+                .len(),
+            1
+        );
+        delete_document_conn(&conn, &result.document_id, Some("soft")).expect("delete");
+        assert!(
+            search_conn(&conn, "default", "UniqueDeletedTerm9137", 5)
+                .expect("search after delete")
+                .is_empty()
+        );
+        let projection =
+            graph_projection_conn(&conn, "default", Some(&result.document_id)).expect("projection");
+        assert!(projection.nodes.is_empty());
+        assert!(projection.edges.is_empty());
+        let stats = stats_conn(&conn).expect("stats after delete");
+        assert_eq!(stats.document_count, 0);
+        assert_eq!(stats.deleted_document_count, 1);
+        assert_eq!(stats.chunk_count, 0);
+        assert_eq!(stats.entity_count, 0);
+        assert_eq!(stats.relationship_count, 0);
+    }
+
+    #[test]
+    fn soft_delete_preserves_chunks_entities_and_relationship_rows() {
+        let mut conn = memory_db();
+        let result = ingest_text_conn(
+            &mut conn,
+            "default",
+            "Preserve Rows",
+            "CODE NAME 2 links Project Atlas with UniqueKeepTerm9137. Project Atlas repeats.",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        let chunks_before = count_table(&conn, "chunks").expect("chunks before");
+        let entities_before = count_table(&conn, "entities").expect("entities before");
+        let relationships_before =
+            count_table(&conn, "relationships").expect("relationships before");
+        assert!(chunks_before >= 1);
+        assert!(entities_before >= 2);
+        assert!(relationships_before >= 1);
+        delete_document_conn(&conn, &result.document_id, None).expect("delete");
+        assert_eq!(count_table(&conn, "chunks").expect("chunks after"), chunks_before);
+        assert_eq!(
+            count_table(&conn, "entities").expect("entities after"),
+            entities_before
+        );
+        assert_eq!(
+            count_table(&conn, "relationships").expect("relationships after"),
+            relationships_before
+        );
     }
 
     #[test]

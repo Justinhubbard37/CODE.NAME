@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { ChevronRight, Folder, FolderOpen, Database, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import {
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  Database,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Trash2,
+} from 'lucide-react';
 import { useApp } from '../../state/AppState';
 
 interface TreeNode {
@@ -73,7 +81,18 @@ function Branch({ node, depth }: { node: TreeNode; depth: number }) {
 
 export function ArchiveIndex() {
   const [collapsed, setCollapsed] = useState(false);
-  const { kbStats, kbSearchResults } = useApp();
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { kbStats, kbDocuments, kbSearchResults, deleteKbDocument } = useApp();
+
+  const removeDocument = async (id: string, title: string) => {
+    if (!window.confirm(`Remove "${title}" from the SQLite KB?`)) return;
+    setDeletingId(id);
+    try {
+      await deleteKbDocument(id);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto text-[10px] font-mono">
@@ -100,6 +119,7 @@ export function ArchiveIndex() {
             </div>
             <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-neutral-500">
               <span>Documents</span><span className="text-neutral-300 text-right">{kbStats.documentCount}</span>
+              <span>Deleted</span><span className="text-neutral-300 text-right">{kbStats.deletedDocumentCount}</span>
               <span>Chunks</span><span className="text-neutral-300 text-right">{kbStats.chunkCount}</span>
               <span>Entities</span><span className="text-neutral-300 text-right">{kbStats.entityCount}</span>
               <span>Relationships</span><span className="text-neutral-300 text-right">{kbStats.relationshipCount}</span>
@@ -109,6 +129,37 @@ export function ArchiveIndex() {
               {kbStats.ftsAvailable ? 'FTS5 chunk search' : 'LIKE chunk search fallback'}
             </div>
           </div>
+          {kbDocuments.length > 0 && (
+            <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
+              <div className="text-[9px] uppercase tracking-wider text-neutral-500 mb-1">
+                KB Documents
+              </div>
+              <div className="space-y-1">
+                {kbDocuments.slice(0, 6).map((doc) => (
+                  <div key={doc.id} className="border border-neutral-900 bg-neutral-950/60 p-1">
+                    <div className="flex items-start gap-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[9px] text-neutral-200">{doc.title}</div>
+                        <div className="text-[8px] text-neutral-600">
+                          {doc.chunkCount} chunk{doc.chunkCount === 1 ? '' : 's'} -{' '}
+                          {new Date(doc.updatedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeDocument(doc.id, doc.title)}
+                        disabled={deletingId === doc.id}
+                        className="shrink-0 text-neutral-600 hover:text-red-300 disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-red-500"
+                        title="Remove document from SQLite KB"
+                        aria-label={`Remove ${doc.title} from SQLite KB`}
+                      >
+                        <Trash2 className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {kbSearchResults.length > 0 && (
             <div className="mb-2 border border-emerald-500/20 bg-emerald-500/5 p-1.5">
               <div className="text-[9px] uppercase tracking-wider text-emerald-400/80 mb-1">

@@ -94,3 +94,58 @@ export function hasConnectedKbProjection(projection: KbGraphProjection): boolean
   const nodeIds = new Set(projection.nodes.map((node) => node.id));
   return projection.edges.some((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
 }
+
+export function isKbProjectedNode(node: AppNode): boolean {
+  return node.data.src === 'SQLite KB';
+}
+
+export function isKbProjectedEdge(edge: Edge): boolean {
+  return edge.id.startsWith('kb_edge_') || edge.id.startsWith('rel_');
+}
+
+export function reconcileKbGraphProjection(
+  currentNodes: AppNode[],
+  currentEdges: Edge[],
+  projection: KbGraphProjection,
+): {
+  nodes: AppNode[];
+  edges: Edge[];
+  removedNodeIds: string[];
+  removedEdgeIds: string[];
+} {
+  const graph = kbProjectionToGraph(projection);
+  const incomingNodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const incomingEdges = new Map(graph.edges.map((edge) => [edge.id, edge]));
+  const activeNodeIds = new Set(incomingNodes.keys());
+
+  const removedNodeIds: string[] = [];
+  const nodes: AppNode[] = [];
+  for (const node of currentNodes) {
+    if (isKbProjectedNode(node) && !activeNodeIds.has(node.id)) {
+      removedNodeIds.push(node.id);
+      continue;
+    }
+    nodes.push(incomingNodes.get(node.id) ?? node);
+  }
+  for (const node of graph.nodes) {
+    if (!currentNodes.some((existing) => existing.id === node.id)) nodes.push(node);
+  }
+
+  const removedNodeSet = new Set(removedNodeIds);
+  const removedEdgeIds: string[] = [];
+  const edges: Edge[] = [];
+  for (const edge of currentEdges) {
+    const staleKbEdge = isKbProjectedEdge(edge) && !incomingEdges.has(edge.id);
+    const touchesRemovedNode = removedNodeSet.has(edge.source) || removedNodeSet.has(edge.target);
+    if (staleKbEdge || touchesRemovedNode) {
+      removedEdgeIds.push(edge.id);
+      continue;
+    }
+    edges.push(incomingEdges.get(edge.id) ?? edge);
+  }
+  for (const edge of graph.edges) {
+    if (!currentEdges.some((existing) => existing.id === edge.id)) edges.push(edge);
+  }
+
+  return { nodes, edges, removedNodeIds, removedEdgeIds };
+}

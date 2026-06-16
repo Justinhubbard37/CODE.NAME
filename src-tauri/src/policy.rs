@@ -511,6 +511,22 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "kb_list_documents",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
+        rationale: "Lists active non-deleted documents from the app-local SQLite knowledge base.",
+        priority: PolicyPriority::Normal,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "kb_delete_document",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Medium, RiskLevel::None),
+        rationale: "Soft-deletes a document in the app-local SQLite knowledge base without purging audit history.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "kb_graph_projection",
         required_gates: KB_LOCAL_FILESYSTEM,
         risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),

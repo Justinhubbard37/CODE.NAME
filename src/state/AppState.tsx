@@ -59,11 +59,18 @@ import {
   kbGraphProjection,
   kbSearch,
   kbStats as loadKbStats,
+  kbListDocuments,
+  kbDeleteDocument,
+  type KbDocument,
   type KbSearchResult,
   type KbStats,
 } from '../lib/kb';
 import { kgStore } from '../kg/store';
-import { hasConnectedKbProjection, kbProjectionToGraph } from '../kg/kbProjection';
+import {
+  hasConnectedKbProjection,
+  kbProjectionToGraph,
+  reconcileKbGraphProjection,
+} from '../kg/kbProjection';
 import { stubEmbed } from '../kg/vector';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
 import { retriever } from '../kg/retrieve';
@@ -106,8 +113,11 @@ interface AppStateValue {
   setGraphQuery: (q: string) => void;
   runGraphQuery: (q: string) => void;
   kbStats: KbStats;
+  kbDocuments: KbDocument[];
   kbSearchResults: KbSearchResult[];
   refreshKbStats: () => Promise<void>;
+  refreshKbDocuments: () => Promise<void>;
+  deleteKbDocument: (documentId: string) => Promise<void>;
 
   /* tasks */
   tasks: WorkTask[];
@@ -253,6 +263,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [graphQuery, setGraphQuery] = useState('');
   const [kbStatsState, setKbStatsState] = useState<KbStats>(emptyKbStats);
+  const [kbDocuments, setKbDocuments] = useState<KbDocument[]>([]);
   const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
 
   const onNodesChange = useCallback(
@@ -287,15 +298,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setKbStatsState(await loadKbStats());
   }, []);
 
+  const refreshKbDocuments = useCallback(async () => {
+    setKbDocuments(await kbListDocuments({ workspaceId: activeKbWorkspaceId() }));
+  }, []);
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         await kbInit();
-        const stats = await loadKbStats();
-        if (alive) setKbStatsState(stats);
+        const [stats, docs] = await Promise.all([
+          loadKbStats(),
+          kbListDocuments({ workspaceId: activeKbWorkspaceId() }),
+        ]);
+        if (alive) {
+          setKbStatsState(stats);
+          setKbDocuments(docs);
+        }
       } catch {
-        if (alive) setKbStatsState(emptyKbStats);
+        if (alive) {
+          setKbStatsState(emptyKbStats);
+          setKbDocuments([]);
+        }
       }
     })();
     return () => {
@@ -735,6 +759,46 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       return { nodes: graph.nodes.length, edges: graph.edges.length, connected };
     },
     [activeTaskId, currentUser?.role, pushActivity],
+  );
+
+  const deleteKbDocument = useCallback(
+    async (documentId: string) => {
+      if (!canWrite(currentUser?.role)) {
+        pushActivity(activeTaskId, 'system', 'KB delete denied - viewer role');
+        return;
+      }
+      const deletion = await kbDeleteDocument({ documentId, mode: 'soft' });
+      const projection = await kbGraphProjection({ workspaceId: activeKbWorkspaceId() });
+      const reconciled = reconcileKbGraphProjection(nodesRef.current, edgesRef.current, projection);
+      setNodes(reconciled.nodes);
+      setEdges(reconciled.edges);
+      await Promise.all([
+        ...reconciled.removedNodeIds.map((id) => kgStore.deleteNode(id)),
+        ...reconciled.removedEdgeIds.map((id) => kgStore.deleteEdge(id)),
+        kgStore.putNodes(reconciled.nodes.filter((node) => node.data.src === 'SQLite KB')),
+        kgStore.putEdges(reconciled.edges.filter((edge) => edge.id.startsWith('kb_edge_') || edge.id.startsWith('rel_'))),
+      ]);
+      await kgStore.appendAudit(
+        makeAudit({
+          actor: { kind: 'user', id: currentUser?.id ?? 'local', taskId: activeTaskId },
+          action: 'delete',
+          target: { kind: 'node', id: documentId },
+          decision: { allowed: true, gate: 'filesystem' },
+          diff: `soft delete SQLite KB document ${documentId}`,
+          provenance: { source: 'SQLite KB', ingestionId: documentId },
+        }),
+      );
+      await Promise.all([refreshKbStats(), refreshKbDocuments()]);
+      setKbSearchResults((results) =>
+        results.filter((result) => result.chunk.documentId !== documentId),
+      );
+      pushActivity(
+        activeTaskId,
+        'system',
+        `sqlite kb: soft-deleted ${deletion.documentId}; removed ${reconciled.removedNodeIds.length} graph node(s)`,
+      );
+    },
+    [activeTaskId, currentUser?.id, currentUser?.role, pushActivity, refreshKbDocuments, refreshKbStats],
   );
 
   const sendMessage = useCallback(
@@ -1275,7 +1339,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
             mimeType: file.type || 'text/plain',
           });
           const projection = await mergeKbGraphProjection(kbResult.documentId);
-          await refreshKbStats();
+          await Promise.all([refreshKbStats(), refreshKbDocuments()]);
           pushActivity(activeTaskId, 'system', `sqlite kb: ${kbResult.chunkCount} chunk(s) stored`);
           pushActivity(
             activeTaskId,
@@ -1347,7 +1411,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         pushActivity(activeTaskId, 'system', `communities: ${communities.length} detected`);
       })();
     },
-    [activeTaskId, createDocNode, mergeKbGraphProjection, pushActivity, refreshKbStats, updateNodeData],
+    [
+      activeTaskId,
+      createDocNode,
+      mergeKbGraphProjection,
+      pushActivity,
+      refreshKbDocuments,
+      refreshKbStats,
+      updateNodeData,
+    ],
   );
 
   const resolveConflict = useCallback(
@@ -1421,8 +1493,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setGraphQuery,
     runGraphQuery,
     kbStats: kbStatsState,
+    kbDocuments,
     kbSearchResults,
     refreshKbStats,
+    refreshKbDocuments,
+    deleteKbDocument,
     /* tasks */
     tasks,
     activeTaskId,

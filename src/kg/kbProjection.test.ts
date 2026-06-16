@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { hasConnectedKbProjection, kbProjectionToGraph } from './kbProjection';
+import { hasConnectedKbProjection, kbProjectionToGraph, reconcileKbGraphProjection } from './kbProjection';
 import type { KbGraphProjection } from '../lib/kb';
+import type { AppNode, Edge } from '../types';
 
 const projection: KbGraphProjection = {
   nodes: [
@@ -65,5 +66,31 @@ describe('SQLite KB graph projection', () => {
       label: 'chunk -> entity',
     });
     expect(hasConnectedKbProjection(projection)).toBe(true);
+  });
+
+  it('removes stale projected KB nodes and edges while preserving unrelated graph content', () => {
+    const existing = kbProjectionToGraph(projection);
+    const manualNode: AppNode = {
+      id: 'manual',
+      type: 'doc',
+      position: { x: 1, y: 1 },
+      data: { label: 'MANUAL', type: 'NOTE', src: 'manual' },
+    };
+    const manualEdge: Edge = {
+      id: 'manual-edge',
+      source: 'manual',
+      target: 'manual',
+    };
+
+    const reconciled = reconcileKbGraphProjection(
+      [...existing.nodes, manualNode],
+      [...existing.edges, manualEdge],
+      { nodes: [], edges: [] },
+    );
+
+    expect(reconciled.nodes).toEqual([manualNode]);
+    expect(reconciled.edges).toEqual([manualEdge]);
+    expect(reconciled.removedNodeIds).toEqual(['doc-default', 'chunk-default-0', 'ent-code-name-2']);
+    expect(reconciled.removedEdgeIds).toEqual(['edge-doc-chunk', 'edge-chunk-entity']);
   });
 });

@@ -11,6 +11,7 @@ export interface KbStats {
   initialized: boolean;
   schemaVersion: number;
   documentCount: number;
+  deletedDocumentCount: number;
   chunkCount: number;
   entityCount: number;
   relationshipCount: number;
@@ -47,8 +48,15 @@ export interface KbDocument {
   byteLength: number;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
   chunkCount: number;
   chunks?: KbChunk[];
+}
+
+export interface KbDeleteResult {
+  documentId: string;
+  deleted: boolean;
+  deletedAt: number;
 }
 
 export interface KbSearchResult {
@@ -85,6 +93,7 @@ export const emptyKbStats: KbStats = {
   initialized: false,
   schemaVersion: 0,
   documentCount: 0,
+  deletedDocumentCount: 0,
   chunkCount: 0,
   entityCount: 0,
   relationshipCount: 0,
@@ -165,6 +174,25 @@ export async function kbGetDocument(
   return invokeTauri<KbDocument>('kb_get_document', {
     documentId,
     includeChunks,
+  });
+}
+
+export async function kbListDocuments(input: {
+  workspaceId?: string;
+} = {}): Promise<KbDocument[]> {
+  if (!isTauri()) return [];
+  return invokeTauri<KbDocument[]>('kb_list_documents', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+  });
+}
+
+export async function kbDeleteDocument(input: {
+  documentId: string;
+  mode?: 'soft';
+}): Promise<KbDeleteResult> {
+  return invokeTauri<KbDeleteResult>('kb_delete_document', {
+    documentId: input.documentId,
+    mode: input.mode ?? 'soft',
   });
 }
 

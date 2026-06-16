@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { kbGraphProjection, kbIngestText, kbSearch, kbStats } from './kb';
+import {
+  kbDeleteDocument,
+  kbGraphProjection,
+  kbIngestText,
+  kbListDocuments,
+  kbSearch,
+  kbStats,
+} from './kb';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -29,6 +36,7 @@ describe('SQLite KB wrapper', () => {
       initialized: false,
       schemaVersion: 0,
       documentCount: 0,
+      deletedDocumentCount: 0,
       chunkCount: 0,
       entityCount: 0,
       relationshipCount: 0,
@@ -109,5 +117,47 @@ describe('SQLite KB wrapper', () => {
       documentId: 'doc-1',
     });
     expect(projection.nodes[0].nodeType).toBe('document');
+  });
+
+  it('calls kb_list_documents for the active workspace', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue([
+      {
+        id: 'doc-1',
+        workspaceId: 'default',
+        title: 'Doc',
+        sourceKind: 'file',
+        mimeType: 'text/plain',
+        contentHash: 'fnv1a64:test',
+        byteLength: 10,
+        createdAt: 1,
+        updatedAt: 1,
+        chunkCount: 1,
+      },
+    ]);
+
+    const docs = await kbListDocuments();
+
+    expect(mockedInvoke).toHaveBeenCalledWith('kb_list_documents', {
+      workspaceId: 'default',
+    });
+    expect(docs[0].title).toBe('Doc');
+  });
+
+  it('calls kb_delete_document in soft mode', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue({
+      documentId: 'doc-1',
+      deleted: true,
+      deletedAt: 123,
+    });
+
+    const result = await kbDeleteDocument({ documentId: 'doc-1' });
+
+    expect(mockedInvoke).toHaveBeenCalledWith('kb_delete_document', {
+      documentId: 'doc-1',
+      mode: 'soft',
+    });
+    expect(result.deleted).toBe(true);
   });
 });

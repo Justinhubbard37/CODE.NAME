@@ -38,6 +38,8 @@ pub fn run() {
             kb::kb_ingest_text,
             kb::kb_search,
             kb::kb_get_document,
+            kb::kb_list_documents,
+            kb::kb_delete_document,
             kb::kb_graph_projection,
             sidecar::sidecar_health,
             logging::get_log_dir,
