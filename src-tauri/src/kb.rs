@@ -29,6 +29,7 @@ const HYBRID_SEMANTIC_READY_ERROR: &str =
     "Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.";
 const GRAPH_MAX_DEPTH: i64 = 1;
 const GRAPH_RESULT_LIMIT_DEFAULT: i64 = 8;
+const GRAPH_SEED_RESULT_LIMIT_DEFAULT: i64 = 1;
 const GRAPH_EXPANDED_RESULT_LIMIT: usize = 8;
 const GRAPH_SHARED_ENTITY_WEIGHT: f64 = 0.40;
 const GRAPH_RELATIONSHIP_WEIGHT: f64 = 0.60;
@@ -2279,7 +2280,8 @@ fn graph_search_with_vector_conn(
         return Err("Graph traversal is bounded to depth 1 for Phase 2H".to_string());
     }
 
-    let seed_limit = limit.clamp(1, 50);
+    let output_limit = limit.clamp(1, 50) as usize;
+    let seed_limit = GRAPH_SEED_RESULT_LIMIT_DEFAULT.clamp(1, 50);
     let mut seeds = hybrid_candidates_with_vector_conn(
         conn,
         workspace_id,
@@ -2395,7 +2397,8 @@ fn graph_search_with_vector_conn(
             .then_with(|| left.result.chunk.ordinal.cmp(&right.result.chunk.ordinal))
             .then_with(|| left.result.chunk.id.cmp(&right.result.chunk.id))
     });
-    expanded_results.truncate(GRAPH_EXPANDED_RESULT_LIMIT);
+    let expanded_slots = output_limit.saturating_sub(seeds.len());
+    expanded_results.truncate(GRAPH_EXPANDED_RESULT_LIMIT.min(expanded_slots));
 
     let mut results = seeds;
     for candidate in expanded_results {
@@ -3909,12 +3912,24 @@ mod tests {
             "default",
             "SeedGraphMarker2101 orbital docking",
             &[1.0, 0.0, 0.0],
-            4,
+            8,
             DEFAULT_EMBEDDING_PROVIDER,
             DEFAULT_EMBEDDING_MODEL,
             Some(1),
         )
         .expect("graph search");
+        let stats = stats_conn(&conn).expect("stats");
+        let seed_count = results
+            .iter()
+            .filter(|result| result.graph_role.as_deref() == Some("seed"))
+            .count();
+        let expanded_count = results
+            .iter()
+            .filter(|result| result.graph_role.as_deref() == Some("expanded"))
+            .count();
+        assert_eq!(seed_count, GRAPH_SEED_RESULT_LIMIT_DEFAULT as usize);
+        assert!(seed_count < stats.document_count as usize);
+        assert!(expanded_count > 0);
 
         let seed = results
             .iter()
@@ -3941,6 +3956,10 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("Project Atlas"));
+        assert_eq!(
+            entity_neighbor.expansion_type.as_deref(),
+            Some("shared_entity")
+        );
         assert!(entity_neighbor
             .graph_entities
             .as_ref()
@@ -3962,6 +3981,10 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("Northstar Relay"));
+        assert_eq!(
+            relationship_neighbor.expansion_type.as_deref(),
+            Some("relationship_evidence")
+        );
         assert!(relationship_neighbor
             .graph_relationships
             .as_ref()
@@ -3974,6 +3997,7 @@ mod tests {
         assert!(
             results
                 .iter()
+                .filter(|result| result.graph_role.as_deref() == Some("expanded"))
                 .all(|result| result.document_title != "phase-2h-nonneighbor.txt"),
             "unexpected non-neighbor result(s): {:?}",
             results
