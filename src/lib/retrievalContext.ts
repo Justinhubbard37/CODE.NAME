@@ -8,6 +8,7 @@ export const RETRIEVAL_CHAT_MAX_CHARS = 3200;
 export type RetrievedContextState = {
   query: string;
   results: KbSearchResult[];
+  selectedChunkIds: string[];
   attachEnabled: boolean;
   mode: KbRetrievalMode;
 };
@@ -44,7 +45,13 @@ export function retrievalScoreLabel(score: number): string {
 }
 
 export function retrievalModeLabel(mode: KbRetrievalMode): string {
-  return mode === 'semantic' ? 'semantic' : 'lexical';
+  if (mode === 'semantic') return 'semantic';
+  if (mode === 'hybrid') return 'hybrid';
+  return 'lexical';
+}
+
+export function retrievalMatchKindLabel(result: KbSearchResult): string {
+  return result.matchKind ?? result.retrievalKind ?? 'lexical';
 }
 
 export function filterRetrievalResultsForDeletedDocument(
@@ -54,8 +61,35 @@ export function filterRetrievalResultsForDeletedDocument(
   return results.filter((result) => result.chunk.documentId !== documentId);
 }
 
+export function defaultSelectedChunkIds(
+  results: KbSearchResult[],
+  maxResults = RETRIEVAL_CHAT_RESULT_LIMIT,
+): string[] {
+  return limitedRetrievalResults(results, maxResults).map((result) => result.chunk.id);
+}
+
+export function selectedRetrievalResults(
+  results: KbSearchResult[],
+  selectedChunkIds: string[],
+  maxResults = RETRIEVAL_CHAT_RESULT_LIMIT,
+): KbSearchResult[] {
+  const selected = new Set(selectedChunkIds);
+  return limitedRetrievalResults(
+    results.filter((result) => selected.has(result.chunk.id)),
+    maxResults,
+  );
+}
+
+export function filterSelectedChunkIdsForResults(
+  selectedChunkIds: string[],
+  results: KbSearchResult[],
+): string[] {
+  const activeIds = new Set(results.map((result) => result.chunk.id));
+  return selectedChunkIds.filter((chunkId) => activeIds.has(chunkId));
+}
+
 export function clearRetrievedContextState(mode: KbRetrievalMode = 'lexical'): RetrievedContextState {
-  return { query: '', results: [], attachEnabled: false, mode };
+  return { query: '', results: [], selectedChunkIds: [], attachEnabled: false, mode };
 }
 
 export function retrievedContextAfterSearch(
@@ -63,7 +97,13 @@ export function retrievedContextAfterSearch(
   results: KbSearchResult[],
   mode: KbRetrievalMode = 'lexical',
 ): RetrievedContextState {
-  return { query, results, attachEnabled: false, mode };
+  return {
+    query,
+    results,
+    selectedChunkIds: defaultSelectedChunkIds(results),
+    attachEnabled: false,
+    mode,
+  };
 }
 
 export function retrievedContextAfterDocumentDelete(
@@ -72,7 +112,13 @@ export function retrievedContextAfterDocumentDelete(
 ): RetrievedContextState {
   const results = filterRetrievalResultsForDeletedDocument(state.results, documentId);
   if (results.length === 0) return clearRetrievedContextState(state.mode);
-  return { ...state, results };
+  const selectedChunkIds = filterSelectedChunkIdsForResults(state.selectedChunkIds, results);
+  return {
+    ...state,
+    results,
+    selectedChunkIds,
+    attachEnabled: state.attachEnabled && selectedChunkIds.length > 0,
+  };
 }
 
 export function limitedRetrievalResults(
@@ -100,8 +146,15 @@ export function formatRetrievedContextBlock(
     const source = retrievalSource(result);
     const chunk = result.chunk.text.replace(/\s+/g, ' ').trim();
     const clipped = clipText(chunk, charsPerChunk);
+    const metadata = [
+      result.matchKind ? `match: ${result.matchKind}` : '',
+      Number.isFinite(result.lexicalScore) ? `lexical: ${retrievalScoreLabel(result.lexicalScore!)}` : '',
+      Number.isFinite(result.semanticScore) ? `semantic: ${retrievalScoreLabel(result.semanticScore!)}` : '',
+      Number.isFinite(result.combinedScore) ? `combined: ${retrievalScoreLabel(result.combinedScore!)}` : '',
+    ].filter(Boolean);
+    const metadataText = metadata.length ? ` | ${metadata.join(' | ')}` : '';
     blocks.push(
-      `[${label}] Document: ${result.documentTitle} | chunk ${result.chunk.ordinal + 1} | source: ${source}\n${clipped}`,
+      `[${label}] Document: ${result.documentTitle} | chunk ${result.chunk.ordinal + 1} | source: ${source}${metadataText}\n${clipped}`,
     );
   }
 

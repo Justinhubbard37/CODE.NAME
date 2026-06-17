@@ -19,8 +19,9 @@ export interface KbStats {
   ftsAvailable: boolean;
 }
 
-export type KbRetrievalKind = 'lexical' | 'semantic';
+export type KbRetrievalKind = 'lexical' | 'semantic' | 'hybrid';
 export type KbRetrievalMode = KbRetrievalKind;
+export type KbMatchKind = 'lexical' | 'semantic' | 'both';
 
 export interface KbEmbeddingStatus {
   provider: string;
@@ -90,6 +91,10 @@ export interface KbSearchResult {
   sourceUri?: string;
   score: number;
   retrievalKind?: KbRetrievalKind;
+  lexicalScore?: number;
+  semanticScore?: number;
+  combinedScore?: number;
+  matchKind?: KbMatchKind;
 }
 
 export interface KbGraphNode {
@@ -264,6 +269,25 @@ export async function kbSemanticSearch(input: {
 }): Promise<KbSearchResult[]> {
   if (!isTauri()) return [];
   return invokeTauri<KbSearchResult[]>('kb_semantic_search', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+    query: input.query,
+    limit: input.limit ?? 8,
+    provider: input.provider ?? defaultEmbeddingProvider,
+    model: input.model ?? defaultEmbeddingModel,
+    baseUrl: input.baseUrl ?? defaultEmbeddingBaseUrl,
+  });
+}
+
+export async function kbHybridSearch(input: {
+  workspaceId?: string;
+  query: string;
+  limit?: number;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+}): Promise<KbSearchResult[]> {
+  if (!isTauri()) return [];
+  return invokeTauri<KbSearchResult[]>('kb_hybrid_search', {
     workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
     query: input.query,
     limit: input.limit ?? 8,

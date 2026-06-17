@@ -2,7 +2,12 @@ import { useState, type FormEvent, type ChangeEvent } from 'react';
 import { ScanLine } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { useApp } from '../../state/AppState';
-import { retrievalSnippet, retrievalSource, retrievalScoreLabel } from '../../lib/retrievalContext';
+import {
+  retrievalMatchKindLabel,
+  retrievalSnippet,
+  retrievalSource,
+  retrievalScoreLabel,
+} from '../../lib/retrievalContext';
 
 export function GraphQueryInput() {
   const {
@@ -52,6 +57,15 @@ export function GraphQueryInput() {
     }
     e.target.value = '';
   };
+  const accent = retrievalMode === 'semantic' ? 'cyan' : retrievalMode === 'hybrid' ? 'amber' : 'emerald';
+  const accentText =
+    accent === 'cyan' ? 'text-cyan-300/80' : accent === 'amber' ? 'text-amber-300/80' : 'text-emerald-400/80';
+  const accentBorder =
+    accent === 'cyan' ? 'border-cyan-500/20' : accent === 'amber' ? 'border-amber-500/20' : 'border-emerald-500/20';
+  const hybridWarning =
+    retrievalMode === 'hybrid' && !semanticStatus.ready
+      ? 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.'
+      : semanticError;
 
   return (
     <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-[min(80%,30rem)] pointer-events-auto text-[10px] font-mono">
@@ -80,6 +94,17 @@ export function GraphQueryInput() {
           >
             Semantic
           </button>
+          <button
+            type="button"
+            onClick={() => setRetrievalMode('hybrid')}
+            className={`border px-2 py-0.5 uppercase tracking-wider ${
+              retrievalMode === 'hybrid'
+                ? 'border-amber-500/50 bg-amber-500/10 text-amber-200'
+                : 'border-neutral-700 bg-neutral-900 text-neutral-500 hover:text-neutral-300'
+            }`}
+          >
+            Hybrid
+          </button>
           <label className="cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-neutral-200 px-2 py-0.5 flex items-center gap-1 tracking-wider">
             <ScanLine className="w-3 h-3" aria-hidden="true" /> OCR
             <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
@@ -96,7 +121,9 @@ export function GraphQueryInput() {
           onChange={(e) => setGraphQuery(e.target.value)}
           aria-label="Graph and SQLite KB search"
           placeholder={
-            retrievalMode === 'semantic'
+            retrievalMode === 'hybrid'
+              ? 'Query hybrid SQLite KB retrieval...'
+              : retrievalMode === 'semantic'
               ? 'Query semantic KB embeddings...'
               : 'Query graph + retrieve SQLite KB chunks...'
           }
@@ -104,29 +131,36 @@ export function GraphQueryInput() {
         />
         {ocr && <span className="ml-2 text-[8px] text-emerald-400 animate-pulse whitespace-nowrap">{ocr}</span>}
       </form>
-      {retrievalMode === 'semantic' && (
-        <div className="mt-1 bg-neutral-950/85 border border-cyan-500/20 px-2 py-1 text-[8px] text-cyan-200/80 uppercase tracking-wider">
+      {(retrievalMode === 'semantic' || retrievalMode === 'hybrid') && (
+        <div className={`mt-1 bg-neutral-950/85 border px-2 py-1 text-[8px] uppercase tracking-wider ${
+          retrievalMode === 'hybrid' ? 'border-amber-500/20 text-amber-200/80' : 'border-cyan-500/20 text-cyan-200/80'
+        }`}>
           Semantic index: {semanticStatus.embeddedActiveChunkCount}/{semanticStatus.activeChunkCount} chunks
           {semanticStatus.ready ? ' ready' : ` ${semanticStatus.state}`}
-          {semanticError ? <span className="block normal-case tracking-normal text-amber-300">{semanticError}</span> : null}
+          {hybridWarning ? <span className="block normal-case tracking-normal text-amber-300">{hybridWarning}</span> : null}
         </div>
       )}
       {retrievalResults.length > 0 && (
-        <div className={`mt-1 bg-neutral-950/90 border backdrop-blur-sm p-2 max-h-28 overflow-y-auto ${
-          retrievalMode === 'semantic' ? 'border-cyan-500/20' : 'border-emerald-500/20'
-        }`}>
-          <div className={`text-[8px] uppercase tracking-wider mb-1 ${
-            retrievalMode === 'semantic' ? 'text-cyan-300/80' : 'text-emerald-400/80'
-          }`}>
-            {retrievalMode === 'semantic' ? 'Semantic SQLite KB retrieval' : 'Lexical SQLite KB retrieval'}
+        <div className={`mt-1 bg-neutral-950/90 border backdrop-blur-sm p-2 max-h-28 overflow-y-auto ${accentBorder}`}>
+          <div className={`text-[8px] uppercase tracking-wider mb-1 ${accentText}`}>
+            {retrievalMode === 'hybrid'
+              ? 'Hybrid SQLite KB retrieval'
+              : retrievalMode === 'semantic'
+                ? 'Semantic SQLite KB retrieval'
+                : 'Lexical SQLite KB retrieval'}
           </div>
           <div className="space-y-1">
             {retrievalResults.slice(0, 4).map((result, index) => (
               <div key={result.chunk.id} className="text-[9px] text-neutral-400 leading-snug">
-                <span className="text-emerald-300">#{index + 1}</span>{' '}
+                <span className={accentText}>#{index + 1}</span>{' '}
                 <span className="text-neutral-200">{result.documentTitle}</span>
                 <span className="text-neutral-600"> · chunk {result.chunk.ordinal + 1}</span>
-                <span className="text-neutral-700"> - score {retrievalScoreLabel(result.score)}</span>
+                <span className="text-neutral-700"> - match {retrievalMatchKindLabel(result)}</span>
+                {Number.isFinite(result.combinedScore) ? (
+                  <span className="text-neutral-700"> - combined {retrievalScoreLabel(result.combinedScore!)}</span>
+                ) : (
+                  <span className="text-neutral-700"> - score {retrievalScoreLabel(result.score)}</span>
+                )}
                 <div className="truncate text-neutral-600">source: {retrievalSource(result)}</div>
                 <div className="truncate">{retrievalSnippet(result)}</div>
               </div>

@@ -3,11 +3,14 @@ import {
   buildChatPromptWithRetrievedContext,
   buildOptionalChatPromptWithRetrievedContext,
   clearRetrievedContextState,
+  defaultSelectedChunkIds,
   filterRetrievalResultsForDeletedDocument,
   formatRetrievedContextBlock,
+  selectedRetrievalResults,
   retrievedContextAfterDocumentDelete,
   retrievedContextAfterSearch,
   retrievalCitationLabel,
+  retrievalMatchKindLabel,
   retrievalModeLabel,
   retrievalSnippet,
   retrievalSource,
@@ -33,6 +36,18 @@ function result(id: string, text: string, ordinal = 0): KbSearchResult {
   };
 }
 
+function hybridResult(id: string, text: string, matchKind: 'lexical' | 'semantic' | 'both'): KbSearchResult {
+  return {
+    ...result(id, text),
+    score: 0.03,
+    retrievalKind: 'hybrid',
+    lexicalScore: matchKind === 'semantic' ? undefined : -1.25,
+    semanticScore: matchKind === 'lexical' ? undefined : 0.88,
+    combinedScore: 0.03,
+    matchKind,
+  };
+}
+
 describe('retrieval context helpers', () => {
   it('formats source labels and one-based citation labels', () => {
     const item = result('a', 'alpha chunk', 2);
@@ -40,6 +55,8 @@ describe('retrieval context helpers', () => {
     expect(retrievalSource(item)).toBe('a.txt');
     expect(retrievalCitationLabel(item, 0)).toBe('KB1');
     expect(retrievalModeLabel('semantic')).toBe('semantic');
+    expect(retrievalModeLabel('hybrid')).toBe('hybrid');
+    expect(retrievalMatchKindLabel(hybridResult('h', 'hybrid chunk', 'both'))).toBe('both');
   });
 
   it('clips retrieval snippets for compact UI display', () => {
@@ -60,6 +77,15 @@ describe('retrieval context helpers', () => {
     expect(context).toContain('[KB1] Document: Doc a | chunk 1 | source: a.txt');
     expect(context).toContain('[KB2] Document: Doc b | chunk 2 | source: b.txt');
     expect(context).not.toContain('Doc c');
+  });
+
+  it('formats hybrid context with match kind and separate score fields', () => {
+    const context = formatRetrievedContextBlock([hybridResult('h', 'hybrid evidence', 'both')]);
+
+    expect(context).toContain('match: both');
+    expect(context).toContain('lexical: -1.25');
+    expect(context).toContain('semantic: 0.88');
+    expect(context).toContain('combined: 0.03');
   });
 
   it('clips long chunk text and total context size', () => {
@@ -103,14 +129,70 @@ describe('retrieval context helpers', () => {
 
     expect(state.query).toBe('alpha');
     expect(state.results).toHaveLength(1);
+    expect(state.selectedChunkIds).toEqual(['chunk-a']);
     expect(state.attachEnabled).toBe(false);
     expect(state.mode).toBe('semantic');
+  });
+
+  it('defaults selected chunks to top retrieved results up to the chat cap', () => {
+    const items = [
+      result('a', 'alpha'),
+      result('b', 'bravo'),
+      result('c', 'charlie'),
+      result('d', 'delta'),
+      result('e', 'echo'),
+    ];
+
+    expect(defaultSelectedChunkIds(items)).toEqual(['chunk-a', 'chunk-b', 'chunk-c', 'chunk-d']);
+  });
+
+  it('attaches only selected chunks when attach is on', () => {
+    const items = [result('a', 'alpha text'), result('b', 'bravo text')];
+    const selected = selectedRetrievalResults(items, ['chunk-b']);
+    const prompt = buildOptionalChatPromptWithRetrievedContext(
+      'Which selected file?',
+      selected,
+      true,
+      'hybrid',
+    );
+
+    expect(prompt).toContain('Local SQLite KB context - hybrid:');
+    expect(prompt).toContain('Doc b');
+    expect(prompt).not.toContain('Doc a');
+  });
+
+  it('sends the raw user message when attach is off even if chunks are selected', () => {
+    const selected = selectedRetrievalResults([result('a', 'alpha text')], ['chunk-a']);
+    const prompt = buildOptionalChatPromptWithRetrievedContext('Plain question', selected, false, 'hybrid');
+
+    expect(prompt).toBe('Plain question');
+  });
+
+  it('resets selected IDs on a new retrieval query', () => {
+    const first = retrievedContextAfterSearch('first', [result('a', 'alpha')], 'lexical');
+    const second = retrievedContextAfterSearch('second', [result('b', 'bravo')], first.mode);
+
+    expect(first.selectedChunkIds).toEqual(['chunk-a']);
+    expect(second.query).toBe('second');
+    expect(second.selectedChunkIds).toEqual(['chunk-b']);
+    expect(second.selectedChunkIds).not.toContain('chunk-a');
+  });
+
+  it('clears selected IDs on retrieval mode change', () => {
+    expect(clearRetrievedContextState('hybrid')).toEqual({
+      query: '',
+      results: [],
+      selectedChunkIds: [],
+      attachEnabled: false,
+      mode: 'hybrid',
+    });
   });
 
   it('clears active retrieval state', () => {
     expect(clearRetrievedContextState()).toEqual({
       query: '',
       results: [],
+      selectedChunkIds: [],
       attachEnabled: false,
       mode: 'lexical',
     });
@@ -136,13 +218,53 @@ describe('retrieval context helpers', () => {
 
   it('removes deleted document chunks from attachable retrieval state', () => {
     const state = retrievedContextAfterDocumentDelete(
-      { query: 'alpha', results: [result('a', 'alpha')], attachEnabled: true, mode: 'semantic' },
+      {
+        query: 'alpha',
+        results: [result('a', 'alpha')],
+        selectedChunkIds: ['chunk-a'],
+        attachEnabled: true,
+        mode: 'semantic',
+      },
       'doc-a',
     );
 
     expect(state).toEqual(clearRetrievedContextState('semantic'));
     expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled, state.mode))
       .toBe('question');
+  });
+
+  it('filters selected IDs when a deleted document is removed', () => {
+    const state = retrievedContextAfterDocumentDelete(
+      {
+        query: 'alpha',
+        results: [result('a', 'alpha'), result('b', 'bravo')],
+        selectedChunkIds: ['chunk-a', 'chunk-b'],
+        attachEnabled: true,
+        mode: 'hybrid',
+      },
+      'doc-a',
+    );
+
+    expect(state.results.map((item) => item.chunk.id)).toEqual(['chunk-b']);
+    expect(state.selectedChunkIds).toEqual(['chunk-b']);
+    expect(state.attachEnabled).toBe(true);
+  });
+
+  it('turns attach off when deletion removes all selected IDs', () => {
+    const state = retrievedContextAfterDocumentDelete(
+      {
+        query: 'alpha',
+        results: [result('a', 'alpha'), result('b', 'bravo')],
+        selectedChunkIds: ['chunk-a'],
+        attachEnabled: true,
+        mode: 'hybrid',
+      },
+      'doc-a',
+    );
+
+    expect(state.results.map((item) => item.chunk.id)).toEqual(['chunk-b']);
+    expect(state.selectedChunkIds).toEqual([]);
+    expect(state.attachEnabled).toBe(false);
   });
 
   it('labels semantic context without attaching when explicit attach is off', () => {

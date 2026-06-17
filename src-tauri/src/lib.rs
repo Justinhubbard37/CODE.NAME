@@ -40,6 +40,7 @@ pub fn run() {
             kb::kb_embedding_status,
             kb::kb_embed_missing,
             kb::kb_semantic_search,
+            kb::kb_hybrid_search,
             kb::kb_get_document,
             kb::kb_list_documents,
             kb::kb_delete_document,

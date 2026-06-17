@@ -5,6 +5,7 @@ import {
   kbEmbeddingStatus,
   kbDeleteDocument,
   kbGraphProjection,
+  kbHybridSearch,
   kbIngestText,
   kbListDocuments,
   kbSearch,
@@ -139,8 +140,48 @@ describe('SQLite KB wrapper', () => {
     expect(results[0].retrievalKind).toBe('semantic');
   });
 
+  it('preserves explicit limits for hybrid search requests', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue([
+      {
+        chunk: {
+          id: 'chunk-1',
+          documentId: 'doc-1',
+          workspaceId: 'default',
+          ordinal: 0,
+          text: 'hybrid result',
+          charStart: 0,
+          charEnd: 13,
+          tokenEstimate: 4,
+          contentHash: 'fnv1a64:test',
+        },
+        documentTitle: 'Doc',
+        score: 0.03,
+        retrievalKind: 'hybrid',
+        lexicalScore: -1.2,
+        semanticScore: 0.88,
+        combinedScore: 0.03,
+        matchKind: 'both',
+      },
+    ]);
+
+    const results = await kbHybridSearch({ query: 'spacecraft docking', limit: 2 });
+
+    expect(mockedInvoke).toHaveBeenCalledWith('kb_hybrid_search', {
+      workspaceId: 'default',
+      query: 'spacecraft docking',
+      limit: 2,
+      provider: 'ollama',
+      model: 'nomic-embed-text',
+      baseUrl: 'http://127.0.0.1:11434',
+    });
+    expect(results[0].retrievalKind).toBe('hybrid');
+    expect(results[0].matchKind).toBe('both');
+  });
+
   it('returns safe semantic fallbacks in browser mode without claiming readiness', async () => {
     await expect(kbSemanticSearch({ query: 'spacecraft docking', limit: 2 })).resolves.toEqual([]);
+    await expect(kbHybridSearch({ query: 'spacecraft docking', limit: 2 })).resolves.toEqual([]);
     await expect(kbEmbeddingStatus()).resolves.toMatchObject({
       provider: 'ollama',
       model: 'nomic-embed-text',

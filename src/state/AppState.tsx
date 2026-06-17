@@ -58,6 +58,7 @@ import {
   clearRetrievedContextState,
   retrievedContextAfterDocumentDelete,
   retrievedContextAfterSearch,
+  selectedRetrievalResults,
 } from '../lib/retrievalContext';
 import {
   activeKbWorkspaceId,
@@ -68,6 +69,7 @@ import {
   kbGraphProjection,
   kbSearch,
   kbSemanticSearch,
+  kbHybridSearch,
   kbEmbeddingStatus,
   kbEmbedMissing,
   kbStats as loadKbStats,
@@ -132,6 +134,8 @@ interface AppStateValue {
   retrievalResults: KbSearchResult[];
   retrievalMode: KbRetrievalMode;
   setRetrievalMode: (mode: KbRetrievalMode) => void;
+  retrievalSelectedChunkIds: string[];
+  setRetrievalChunkSelected: (chunkId: string, selected: boolean) => void;
   retrievalEnabledForChat: boolean;
   setRetrievalEnabledForChat: (enabled: boolean) => void;
   runKbRetrieval: (query: string, limit?: number) => Promise<KbSearchResult[]>;
@@ -294,6 +298,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
   const [retrievalQuery, setRetrievalQuery] = useState('');
   const [retrievalMode, setRetrievalModeState] = useState<KbRetrievalMode>('lexical');
+  const [retrievalSelectedChunkIds, setRetrievalSelectedChunkIds] = useState<string[]>([]);
   const [retrievalEnabledForChat, setRetrievalEnabledForChatState] = useState(false);
   const [semanticStatus, setSemanticStatus] = useState<KbEmbeddingStatus>(emptyKbEmbeddingStatus);
   const [semanticIndexing, setSemanticIndexing] = useState(false);
@@ -345,10 +350,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setRetrievalEnabledForChatState(enabled);
   }, []);
 
+  const setRetrievalChunkSelected = useCallback((chunkId: string, selected: boolean) => {
+    setRetrievalSelectedChunkIds((current) => {
+      const hasChunk = current.includes(chunkId);
+      const next = selected
+        ? hasChunk || current.length >= RETRIEVAL_CHAT_RESULT_LIMIT
+          ? current
+          : [...current, chunkId]
+        : current.filter((id) => id !== chunkId);
+      if (next.length === 0) setRetrievalEnabledForChatState(false);
+      return next;
+    });
+  }, []);
+
   const applyRetrievedContext = useCallback(
     (next: ReturnType<typeof clearRetrievedContextState>) => {
       setKbSearchResults(next.results);
       setRetrievalQuery(next.query);
+      setRetrievalSelectedChunkIds(next.selectedChunkIds);
       setRetrievalEnabledForChatState(next.attachEnabled);
       setRetrievalModeState(next.mode);
     },
@@ -373,22 +392,36 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         clearKbRetrieval();
         return [];
       }
+      if (retrievalMode === 'hybrid' && !semanticStatus.ready) {
+        const reason = 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.';
+        const next = retrievedContextAfterSearch(query, [], retrievalMode);
+        applyRetrievedContext(next);
+        await refreshSemanticStatus();
+        setSemanticError(reason);
+        return [];
+      }
       try {
         const results =
-          retrievalMode === 'semantic'
-            ? await kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
-            : await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+          retrievalMode === 'hybrid'
+            ? await kbHybridSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
+            : retrievalMode === 'semantic'
+              ? await kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
+              : await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
         const next = retrievedContextAfterSearch(query, results, retrievalMode);
         applyRetrievedContext(next);
-        if (retrievalMode === 'semantic') setSemanticError('');
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') setSemanticError('');
         await refreshKbStats();
-        if (retrievalMode === 'semantic') await refreshSemanticStatus();
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') await refreshSemanticStatus();
         return results;
       } catch (err) {
         const next = retrievedContextAfterSearch(query, [], retrievalMode);
         applyRetrievedContext(next);
-        if (retrievalMode === 'semantic') {
-          const reason = err instanceof Error ? err.message : 'semantic retrieval unavailable';
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') {
+          const reason = err instanceof Error
+            ? err.message
+            : retrievalMode === 'hybrid'
+              ? 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.'
+              : 'semantic retrieval unavailable';
           setSemanticError(reason);
           setSemanticStatus((current) => ({
             ...current,
@@ -400,7 +433,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return [];
       }
     },
-    [applyRetrievedContext, clearKbRetrieval, refreshKbStats, refreshSemanticStatus, retrievalMode],
+    [applyRetrievedContext, clearKbRetrieval, refreshKbStats, refreshSemanticStatus, retrievalMode, semanticStatus.ready],
   );
 
   useEffect(() => {
@@ -942,6 +975,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         {
           query: retrievalQuery,
           results: kbSearchResults,
+          selectedChunkIds: retrievalSelectedChunkIds,
           attachEnabled: retrievalEnabledForChat,
           mode: retrievalMode,
         },
@@ -949,6 +983,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       );
       setKbSearchResults(nextRetrieval.results);
       setRetrievalQuery(nextRetrieval.query);
+      setRetrievalSelectedChunkIds(nextRetrieval.selectedChunkIds);
       setRetrievalEnabledForChatState(nextRetrieval.attachEnabled);
       pushActivity(
         activeTaskId,
@@ -968,6 +1003,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       retrievalEnabledForChat,
       retrievalMode,
       retrievalQuery,
+      retrievalSelectedChunkIds,
     ],
   );
 
@@ -1018,7 +1054,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pushActivity(taskId, 'query', `routing to ${ep.label} (${ep.kind})`);
 
       const retrievalForMessage = retrievalEnabledForChat
-        ? kbSearchResults.slice(0, RETRIEVAL_CHAT_RESULT_LIMIT)
+        ? selectedRetrievalResults(kbSearchResults, retrievalSelectedChunkIds, RETRIEVAL_CHAT_RESULT_LIMIT)
         : [];
       const hasAttachedRetrieval = retrievalEnabledForChat && retrievalForMessage.length > 0;
       const promptText = buildOptionalChatPromptWithRetrievedContext(
@@ -1028,7 +1064,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         retrievalMode,
       );
       if (hasAttachedRetrieval) {
-        pushActivity(taskId, 'query', `${retrievalMode} retrieval: ${retrievalForMessage.length} local KB chunk(s) attached`);
+        pushActivity(taskId, 'query', `${retrievalMode} retrieval: ${retrievalForMessage.length} selected local KB chunk(s) attached`);
       }
 
       const baseTask = tasks.find((t) => t.id === taskId);
@@ -1241,6 +1277,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       gates.network,
       gates.tools,
       kbSearchResults,
+      retrievalSelectedChunkIds,
       retrievalEnabledForChat,
       retrievalMode,
       patchTask,
@@ -1716,6 +1753,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     retrievalResults: kbSearchResults,
     retrievalMode,
     setRetrievalMode,
+    retrievalSelectedChunkIds,
+    setRetrievalChunkSelected,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
     runKbRetrieval,

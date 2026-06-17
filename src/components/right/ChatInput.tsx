@@ -12,10 +12,14 @@ export function ChatInput() {
     activeProfile,
     retrievalResults,
     retrievalMode,
+    retrievalSelectedChunkIds,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
   } = useApp();
   const [text, setText] = useState('');
+  const selectedRetrievalCount = retrievalResults.filter((result) =>
+    retrievalSelectedChunkIds.includes(result.chunk.id),
+  ).length;
 
   const fire = () => {
     if (!text.trim() || sending) return;
@@ -71,17 +75,22 @@ export function ChatInput() {
           {retrievalResults.length > 0 && (
             <button
               onClick={() => setRetrievalEnabledForChat(!retrievalEnabledForChat)}
+              disabled={selectedRetrievalCount === 0}
               className={
                 retrievalEnabledForChat
                   ? retrievalMode === 'semantic'
                     ? 'text-cyan-300 hover:text-cyan-200'
+                    : retrievalMode === 'hybrid'
+                      ? 'text-amber-300 hover:text-amber-200'
                     : 'text-emerald-400 hover:text-emerald-300'
-                  : 'text-neutral-600 hover:text-neutral-400'
+                  : selectedRetrievalCount === 0
+                    ? 'text-neutral-700'
+                    : 'text-neutral-600 hover:text-neutral-400'
               }
               title="Attach or detach local KB chunks for the next chat request"
               aria-label="Toggle local KB context"
             >
-              {retrievalMode} KB context {retrievalEnabledForChat ? 'ON' : 'OFF'} ({retrievalResults.length})
+              {retrievalMode} KB context {retrievalEnabledForChat ? 'ON' : 'OFF'} ({selectedRetrievalCount})
             </button>
           )}
           <span>{reachesNetwork(activeEndpoint) ? 'CLOUD-CAPABLE' : 'LOCAL-FIRST'}</span>

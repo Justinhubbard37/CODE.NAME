@@ -1,46 +1,51 @@
 ## Active Product Milestone
 
-# Milestone 6 - Real Local Embeddings + Vector Retrieval Foundation
+# Phase 2G - Hybrid Retrieval + Grounded Context Selection
 
-Goal: generate real local Ollama embeddings for SQLite KB chunks, persist them locally, and run semantic vector retrieval without cloud embeddings.
+Goal: combine real lexical SQLite KB retrieval with real local Ollama semantic
+SQLite KB retrieval, deduplicate overlapping chunks, show transparent match
+reasons and scores, and let the user select which chunks may enter chat context.
 
-Status: ACCEPTED
+Status: IMPLEMENTED - PENDING OWNER REVIEW
 
 Definition of done:
 
-- [x] add additive SQLite storage for chunk embeddings
-- [x] generate real local embeddings through loopback-only Ollama
-- [x] default to `nomic-embed-text` without auto-pulling or downloading models
-- [x] validate vectors and reject empty, NaN/Inf, all-zero, or inconsistent dimensions
-- [x] build/refresh a semantic index from active SQLite KB chunks
-- [x] run semantic search by embedding the query locally and cosine-ranking stored chunk embeddings
-- [x] exclude soft-deleted documents from semantic retrieval
-- [x] preserve lexical SQLite retrieval
-- [x] expose explicit Lexical/Semantic retrieval mode in the UI
-- [x] show semantic index status and unavailable/not-ready errors
-- [x] reuse explicit attach/detach chat context behavior
-- [x] relabel legacy hash-vector scaffolds as non-semantic
-- [x] tests cover embedding storage, validation, ranking, stale hashes, deleted docs, wrappers, and attach formatting
-- [x] manual verification steps are documented
-- [x] owner manual verification accepted
+- [x] add `Hybrid` retrieval mode beside Lexical and Semantic
+- [x] add backend `kb_hybrid_search`
+- [x] run lexical and semantic retrieval as real subcomponents
+- [x] embed the hybrid query once through local loopback Ollama
+- [x] deduplicate hybrid results by `chunk.id`
+- [x] preserve raw `lexicalScore` and `semanticScore`
+- [x] compute `combinedScore` with Reciprocal Rank Fusion
+- [x] show `matchKind`: `lexical`, `semantic`, or `both`
+- [x] fail closed when semantic index is unavailable, stale, empty, or not ready
+- [x] preserve Lexical and Semantic mode behavior
+- [x] add selected-context controls
+- [x] keep Attach OFF by default after retrieval
+- [x] attach only selected visible chunks when Attach is ON
+- [x] remove deleted documents from retrieval and selected context
+- [x] document that this is Hybrid SQLite KB retrieval, not GraphRAG
+- [ ] owner manual verification accepted
 
 Target commit:
 
-`be890b0 feat: add local semantic kb retrieval`
+`feat: add hybrid kb retrieval selection`
 
 ---
 
 ## Next Slice
 
-## Phase 2G - Chat With Knowledge Base
+## Owner Review - Phase 2G
 
-Status: READY
+Status: READY AFTER VERIFICATION COMMANDS PASS
 
 Required visible result:
 
-user asks a question -> app retrieves relevant chunks -> model receives retrieved context -> answer shows source snippets
+user searches in Hybrid mode -> app retrieves and deduplicates lexical plus
+semantic chunks -> user selects chunks -> Attach ON sends only selected chunks to
+chat.
 
-Phase 2F semantic retrieval is owner accepted. Keep Phase 2G scoped to Chat With Knowledge Base.
+Phase 2G is not accepted until owner manual verification passes.
 
 ---
 
@@ -425,6 +430,145 @@ Decision:
 Status:
 
 - Accepted by owner manual verification.
+
+---
+
+### Slice: Phase 2G - Hybrid Retrieval + Grounded Context Selection
+
+Date: 2026-06-17
+
+Commit: pending implementation commit
+
+What changed in the app:
+
+- Added real Hybrid SQLite KB retrieval through backend `kb_hybrid_search`.
+- Hybrid retrieval combines existing lexical SQLite retrieval with existing local
+  Ollama semantic retrieval.
+- Hybrid query embedding happens once per hybrid search.
+- Hybrid results deduplicate by stable chunk ID.
+- Hybrid results expose raw lexical score, semantic cosine score, combined RRF
+  score, and match reason.
+- Added per-result selected-context controls.
+- Attach remains OFF by default after retrieval.
+- Attach ON sends only selected visible chunks to chat.
+- Deleted documents are removed from retrieval results and selected context.
+- Full GraphRAG, graph traversal retrieval, external vector DB integration,
+  cloud embeddings, model auto-pull/download, sidecar embedding, and graph polish
+  remain unimplemented.
+
+How to verify it:
+
+1. Confirm Ollama is running locally.
+2. Confirm `nomic-embed-text` is available locally.
+3. Do not auto-pull the model from inside the app.
+4. Create `%USERPROFILE%\Desktop\phase-2g-lexical-ledger.txt` with this exact content:
+
+```text
+Phase 2G lexical ledger test.
+
+Cabinet inventory clerks counted shelf labels, archive boxes, binder tabs, barcode stickers, and warehouse aisle numbers.
+LexicalOnlyMarker7421 appears exactly once for keyword retrieval verification.
+This document is intentionally limited to physical records, shelves, labels, cabinets, binders, and inventory counting.
+```
+
+5. Create `%USERPROFILE%\Desktop\phase-2g-semantic-orchard.txt` with this exact content:
+
+```text
+Phase 2G semantic orchard test.
+
+The harvest crew moved ripe orchard fruit into chilled cellar rooms and tracked fermentation barrels for autumn beverage production.
+Crates were sorted by variety, temperature, ripeness, and packing schedule before the produce left the farm.
+This document is about orchards, harvested fruit, chilled cellar rooms, barrels, and beverage production.
+```
+
+6. Create `%USERPROFILE%\Desktop\phase-2g-hybrid-overlap.txt` with this exact content:
+
+```text
+Phase 2G hybrid aerospace test.
+
+HybridOverlapMarker6149 appears in the same chunk as orbital rendezvous, spacecraft docking, thruster alignment, and station approach planning.
+This document is about spacecraft operations, docking maneuvers, orbital approach procedures, and vehicle alignment.
+```
+
+7. Create `%USERPROFILE%\Desktop\phase-2g-delete-target.txt` with this exact content:
+
+```text
+Phase 2G delete exclusion finance test.
+
+DeleteFinanceMarker8891 appears beside quarterly invoicing, revenue recognition, payment reconciliation, purchase orders, and account settlement workflows.
+This document is about invoices, revenue, payments, reconciliation, accounting, and finance operations.
+```
+
+8. Launch the app with `npm run desktop`.
+9. Drop all four files into the app.
+10. Confirm all four appear in KB Documents.
+11. Build or refresh the semantic index.
+12. Confirm semantic index shows provider `ollama`, model `nomic-embed-text`, active chunks `4`, embedded chunks `4`, missing `0`, state `READY`, and non-empty dimension.
+13. Select Lexical mode.
+14. Query `LexicalOnlyMarker7421`.
+15. Confirm `phase-2g-lexical-ledger.txt` appears and Attach is OFF.
+16. Select Semantic mode.
+17. Query `fruit beverage cold rooms`.
+18. Confirm `phase-2g-semantic-orchard.txt` ranks first or clearly above unrelated files.
+19. Select Hybrid mode.
+20. Query `HybridOverlapMarker6149 spacecraft docking`.
+21. Confirm `phase-2g-hybrid-overlap.txt` appears with match reason `both`, lexical score, semantic score, and combined score.
+22. Query `LexicalOnlyMarker7421`.
+23. Confirm `phase-2g-lexical-ledger.txt` appears with match reason `lexical` or clearly lexical-dominant evidence.
+24. Query `fruit beverage cold rooms`.
+25. Confirm `phase-2g-semantic-orchard.txt` appears with match reason `semantic` or clearly semantic-dominant evidence.
+26. Query `HybridOverlapMarker6149 DeleteFinanceMarker8891 spacecraft invoice`.
+27. Deselect `phase-2g-delete-target.txt` and leave `phase-2g-hybrid-overlap.txt` selected.
+28. Confirm selected count reflects only selected chunks.
+29. Leave Attach OFF and send chat: `Reply exactly: phase 2g detached check complete.`
+30. Confirm reply contains no `[KB1]`, no KB filename, and no attached-context behavior.
+31. Turn Attach ON.
+32. Send chat: `List the attached KB source filenames.`
+33. Confirm only selected source filenames are listed.
+34. Confirm `phase-2g-delete-target.txt` is not listed if it was deselected.
+35. Delete `phase-2g-delete-target.txt` from KB Documents.
+36. Query `DeleteFinanceMarker8891` in Lexical mode.
+37. Confirm deleted document returns no lexical result.
+38. Query `DeleteFinanceMarker8891 invoice reconciliation` in Hybrid mode.
+39. Confirm deleted document returns no hybrid result and cannot remain selected or attached.
+40. Delete the remaining three Phase 2G test documents from KB Documents.
+41. Confirm active KB documents and active chunks return to their pre-test values.
+42. Cleanup Desktop files with:
+
+```powershell
+Remove-Item -LiteralPath "$env:USERPROFILE\Desktop\phase-2g-lexical-ledger.txt","$env:USERPROFILE\Desktop\phase-2g-semantic-orchard.txt","$env:USERPROFILE\Desktop\phase-2g-hybrid-overlap.txt","$env:USERPROFILE\Desktop\phase-2g-delete-target.txt" -ErrorAction SilentlyContinue
+```
+
+What works now:
+
+- Hybrid SQLite KB retrieval is implemented.
+- Lexical and Semantic modes remain explicit and available.
+- Hybrid mode uses real lexical and semantic KB candidates.
+- Hybrid mode fails closed when the semantic index is not ready.
+- User-controlled selected context is implemented.
+- Attach OFF still sends no retrieved context.
+- Attach ON sends only selected chunks.
+- Deleted documents are excluded from retrieval and selected context.
+
+What still does not work:
+
+- Full GraphRAG is not implemented.
+- Graph traversal retrieval is not implemented.
+- External vector DB integration is not implemented.
+- Cloud embeddings are not implemented.
+- Ollama models are not auto-pulled or downloaded by the app.
+- Sidecar/hash-vector semantic fallback is not used for SQLite KB retrieval.
+- Graph readability polish remains deferred.
+
+Decision:
+
+- [ ] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+Status:
+
+- Ready for owner review after verification commands pass.
 
 ### Slice: Phase 2E - Retrieval MVP
 

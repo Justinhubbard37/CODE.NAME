@@ -22,6 +22,10 @@ const MAX_CHARS: usize = 1_200;
 const DEFAULT_EMBEDDING_PROVIDER: &str = "ollama";
 const DEFAULT_EMBEDDING_MODEL: &str = "nomic-embed-text";
 const DEFAULT_OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
+const HYBRID_RRF_K: f64 = 60.0;
+const HYBRID_MIN_SEMANTIC_SCORE: f64 = 0.25;
+const HYBRID_SEMANTIC_READY_ERROR: &str =
+    "Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.";
 static RETRIEVAL_EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,6 +133,10 @@ pub struct KbSearchResult {
     pub source_uri: Option<String>,
     pub score: f64,
     pub retrieval_kind: String,
+    pub lexical_score: Option<f64>,
+    pub semantic_score: Option<f64>,
+    pub combined_score: Option<f64>,
+    pub match_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1133,6 +1141,20 @@ fn embedding_status_conn(
     })
 }
 
+fn require_ready_semantic_index_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    provider: &str,
+    model: &str,
+) -> Result<(), String> {
+    let status = embedding_status_conn(conn, workspace_id, provider, model, None)?;
+    if status.ready {
+        Ok(())
+    } else {
+        Err(HYBRID_SEMANTIC_READY_ERROR.to_string())
+    }
+}
+
 fn store_chunk_embeddings_conn(
     conn: &mut Connection,
     chunks: &[EmbeddingChunk],
@@ -1521,6 +1543,10 @@ fn row_to_search_result(row: &rusqlite::Row<'_>) -> rusqlite::Result<KbSearchRes
         source_uri: row.get(10)?,
         score: row.get(11)?,
         retrieval_kind: "lexical".to_string(),
+        lexical_score: None,
+        semantic_score: None,
+        combined_score: None,
+        match_kind: None,
     })
 }
 
@@ -1547,7 +1573,7 @@ fn insert_retrieval_event(
     Ok(())
 }
 
-fn search_conn(
+fn lexical_candidates_conn(
     conn: &Connection,
     workspace_id: &str,
     query: &str,
@@ -1616,11 +1642,22 @@ fn search_conn(
             .map_err(|e| e.to_string())?;
     }
 
-    insert_retrieval_event(conn, workspace_id, query, results.len()).map_err(|e| e.to_string())?;
     Ok(results)
 }
 
-fn semantic_search_with_vector_conn(
+fn search_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<KbSearchResult>, String> {
+    let results = lexical_candidates_conn(conn, workspace_id, query, limit)?;
+    insert_retrieval_event(conn, workspace_id.trim(), query.trim(), results.len())
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+fn semantic_candidates_with_vector_conn(
     conn: &Connection,
     workspace_id: &str,
     query: &str,
@@ -1678,6 +1715,10 @@ fn semantic_search_with_vector_conn(
                     source_uri: row.get(10)?,
                     score: 0.0,
                     retrieval_kind: "semantic".to_string(),
+                    lexical_score: None,
+                    semantic_score: None,
+                    combined_score: None,
+                    match_kind: None,
                 },
                 row.get::<_, Vec<u8>>(11)?,
             ))
@@ -1704,8 +1745,187 @@ fn semantic_search_with_vector_conn(
             .then_with(|| left.chunk.ordinal.cmp(&right.chunk.ordinal))
     });
     scored.truncate(limit as usize);
-    insert_retrieval_event(conn, workspace_id, query, scored.len()).map_err(|e| e.to_string())?;
     Ok(scored)
+}
+
+fn semantic_search_with_vector_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    query: &str,
+    query_vector: &[f32],
+    limit: i64,
+    provider: &str,
+    model: &str,
+) -> Result<Vec<KbSearchResult>, String> {
+    let results = semantic_candidates_with_vector_conn(
+        conn,
+        workspace_id,
+        query,
+        query_vector,
+        limit,
+        provider,
+        model,
+    )?;
+    insert_retrieval_event(conn, workspace_id.trim(), query.trim(), results.len())
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+#[derive(Debug, Clone)]
+struct HybridCandidate {
+    result: KbSearchResult,
+    lexical_score: Option<f64>,
+    semantic_score: Option<f64>,
+    lexical_rank: Option<usize>,
+    semantic_rank: Option<usize>,
+}
+
+fn hybrid_match_priority(match_kind: &str) -> i32 {
+    match match_kind {
+        "both" => 0,
+        "semantic" => 1,
+        "lexical" => 2,
+        _ => 3,
+    }
+}
+
+fn hybrid_search_with_vector_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    query: &str,
+    query_vector: &[f32],
+    limit: i64,
+    provider: &str,
+    model: &str,
+) -> Result<Vec<KbSearchResult>, String> {
+    let workspace_id = workspace_id.trim();
+    let query = query.trim();
+    if workspace_id.is_empty() {
+        return Err("workspace_id is required".to_string());
+    }
+    if query.is_empty() {
+        return Err("query is required".to_string());
+    }
+    require_ready_semantic_index_conn(conn, workspace_id, provider, model)?;
+    let limit = limit.clamp(1, 50);
+    let candidate_limit = limit.saturating_mul(4).clamp(limit, 50);
+
+    let lexical = lexical_candidates_conn(conn, workspace_id, query, candidate_limit)?;
+    let semantic = match semantic_candidates_with_vector_conn(
+        conn,
+        workspace_id,
+        query,
+        query_vector,
+        candidate_limit,
+        provider,
+        model,
+    ) {
+        Ok(results) => results,
+        Err(error) if error.contains("semantic index is not ready") => {
+            return Err(HYBRID_SEMANTIC_READY_ERROR.to_string());
+        }
+        Err(error) => return Err(error),
+    };
+
+    let mut merged = BTreeMap::<String, HybridCandidate>::new();
+
+    for (rank, result) in lexical.into_iter().enumerate() {
+        let chunk_id = result.chunk.id.clone();
+        let score = result.score;
+        merged
+            .entry(chunk_id)
+            .and_modify(|candidate| {
+                candidate.lexical_score = Some(score);
+                candidate.lexical_rank = Some(rank + 1);
+            })
+            .or_insert(HybridCandidate {
+                result,
+                lexical_score: Some(score),
+                semantic_score: None,
+                lexical_rank: Some(rank + 1),
+                semantic_rank: None,
+            });
+    }
+
+    for (rank, result) in semantic.into_iter().enumerate() {
+        if result.score < HYBRID_MIN_SEMANTIC_SCORE {
+            continue;
+        }
+        let chunk_id = result.chunk.id.clone();
+        let score = result.score;
+        merged
+            .entry(chunk_id)
+            .and_modify(|candidate| {
+                candidate.semantic_score = Some(score);
+                candidate.semantic_rank = Some(rank + 1);
+            })
+            .or_insert(HybridCandidate {
+                result,
+                lexical_score: None,
+                semantic_score: Some(score),
+                lexical_rank: None,
+                semantic_rank: Some(rank + 1),
+            });
+    }
+
+    let mut results = Vec::with_capacity(merged.len());
+    for mut candidate in merged.into_values() {
+        let lexical_contribution = candidate
+            .lexical_rank
+            .map(|rank| 1.0 / (HYBRID_RRF_K + rank as f64))
+            .unwrap_or(0.0);
+        let semantic_contribution = candidate
+            .semantic_rank
+            .map(|rank| 1.0 / (HYBRID_RRF_K + rank as f64))
+            .unwrap_or(0.0);
+        let combined_score = lexical_contribution + semantic_contribution;
+        if combined_score <= 0.0 {
+            continue;
+        }
+
+        let match_kind = match (candidate.lexical_score.is_some(), candidate.semantic_score.is_some()) {
+            (true, true) => "both",
+            (true, false) => "lexical",
+            (false, true) => "semantic",
+            (false, false) => continue,
+        };
+        candidate.result.retrieval_kind = "hybrid".to_string();
+        candidate.result.score = combined_score;
+        candidate.result.lexical_score = candidate.lexical_score;
+        candidate.result.semantic_score = candidate.semantic_score;
+        candidate.result.combined_score = Some(combined_score);
+        candidate.result.match_kind = Some(match_kind.to_string());
+        results.push(candidate.result);
+    }
+
+    results.sort_by(|left, right| {
+        right
+            .combined_score
+            .unwrap_or(right.score)
+            .partial_cmp(&left.combined_score.unwrap_or(left.score))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                hybrid_match_priority(left.match_kind.as_deref().unwrap_or(""))
+                    .cmp(&hybrid_match_priority(right.match_kind.as_deref().unwrap_or("")))
+            })
+            .then_with(|| {
+                let left_rank = left
+                    .lexical_score
+                    .map(|_| 0usize)
+                    .unwrap_or(1usize);
+                let right_rank = right
+                    .lexical_score
+                    .map(|_| 0usize)
+                    .unwrap_or(1usize);
+                left_rank.cmp(&right_rank)
+            })
+            .then_with(|| left.document_title.cmp(&right.document_title))
+            .then_with(|| left.chunk.ordinal.cmp(&right.chunk.ordinal))
+            .then_with(|| left.chunk.id.cmp(&right.chunk.id))
+    });
+    results.truncate(limit as usize);
+    insert_retrieval_event(conn, workspace_id, query, results.len()).map_err(|e| e.to_string())?;
+    Ok(results)
 }
 
 fn chunk_count_for_document(conn: &Connection, document_id: &str) -> rusqlite::Result<i64> {
@@ -2284,6 +2504,40 @@ pub async fn kb_semantic_search(
 }
 
 #[tauri::command]
+pub async fn kb_hybrid_search(
+    app: AppHandle,
+    workspace_id: String,
+    query: String,
+    limit: Option<i64>,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+) -> Result<Vec<KbSearchResult>, String> {
+    let (provider, model) = normalize_embedding_config(provider.as_deref(), model.as_deref())?;
+    {
+        let conn = open_app_db(&app)?;
+        require_ready_semantic_index_conn(&conn, &workspace_id, &provider, &model)?;
+    }
+
+    let query_texts = vec![query.clone()];
+    let query_embedding = ollama_embed_texts(base_url.as_deref(), &model, &query_texts)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "semantic query embedding was not returned".to_string())?;
+    let conn = open_app_db(&app)?;
+    hybrid_search_with_vector_conn(
+        &conn,
+        &workspace_id,
+        &query,
+        &query_embedding,
+        limit.unwrap_or(10),
+        &provider,
+        &model,
+    )
+}
+
+#[tauri::command]
 pub fn kb_get_document(
     app: AppHandle,
     document_id: String,
@@ -2706,6 +2960,322 @@ mod tests {
             DEFAULT_EMBEDDING_MODEL,
         )
         .is_err());
+    }
+
+    fn ingest_hybrid_fixture(conn: &mut Connection) {
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2g-lexical-ledger.txt",
+            "LexicalOnlyMarker7421 cabinet shelf binder records",
+            None,
+            None,
+            None,
+        )
+        .expect("lexical fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2g-semantic-orchard.txt",
+            "orchard harvest cellar barrels produce",
+            None,
+            None,
+            None,
+        )
+        .expect("semantic fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2g-hybrid-overlap.txt",
+            "HybridOverlapMarker6149 spacecraft docking orbital approach",
+            None,
+            None,
+            None,
+        )
+        .expect("hybrid fixture ingest");
+        let chunks = vec![
+            chunk_for_title(conn, "phase-2g-lexical-ledger.txt"),
+            chunk_for_title(conn, "phase-2g-semantic-orchard.txt"),
+            chunk_for_title(conn, "phase-2g-hybrid-overlap.txt"),
+        ];
+        let embeddings = vec![
+            vec![0.0, 1.0, 0.0],
+            vec![1.0, 0.0, 0.0],
+            vec![1.0, 0.0, 0.0],
+        ];
+        store_chunk_embeddings_conn(
+            conn,
+            &chunks,
+            &embeddings,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("store hybrid fixture embeddings");
+    }
+
+    #[test]
+    fn hybrid_search_combines_deduplicates_scores_and_logs_once() {
+        let mut conn = memory_db();
+        ingest_hybrid_fixture(&mut conn);
+
+        let results = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridOverlapMarker6149 spacecraft docking",
+            &[1.0, 0.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("hybrid search");
+
+        let overlap = results
+            .iter()
+            .find(|result| result.document_title == "phase-2g-hybrid-overlap.txt")
+            .expect("overlap result");
+        assert_eq!(overlap.retrieval_kind, "hybrid");
+        assert_eq!(overlap.match_kind.as_deref(), Some("both"));
+        assert!(overlap.lexical_score.is_some());
+        assert!(overlap.semantic_score.is_some());
+        assert_eq!(overlap.combined_score, Some(overlap.score));
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| result.chunk.id == overlap.chunk.id)
+                .count(),
+            1
+        );
+
+        let stats = stats_conn(&conn).expect("stats");
+        assert_eq!(stats.retrieval_event_count, 1);
+    }
+
+    #[test]
+    fn hybrid_search_can_surface_lexical_semantic_and_both_match_kinds() {
+        let mut conn = memory_db();
+        ingest_hybrid_fixture(&mut conn);
+
+        let lexical_results = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "LexicalOnlyMarker7421",
+            &[1.0, 0.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("lexical hybrid search");
+        let lexical = lexical_results
+            .iter()
+            .find(|result| result.document_title == "phase-2g-lexical-ledger.txt")
+            .expect("lexical result");
+        assert_eq!(lexical.match_kind.as_deref(), Some("lexical"));
+        assert!(lexical.lexical_score.is_some());
+        assert!(lexical.semantic_score.is_none());
+
+        let semantic_results = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "semantic only concept",
+            &[1.0, 0.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("semantic hybrid search");
+        let semantic = semantic_results
+            .iter()
+            .find(|result| result.document_title == "phase-2g-semantic-orchard.txt")
+            .expect("semantic result");
+        assert_eq!(semantic.match_kind.as_deref(), Some("semantic"));
+        assert!(semantic.lexical_score.is_none());
+        assert!(semantic.semantic_score.is_some());
+
+        let both_results = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridOverlapMarker6149",
+            &[1.0, 0.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("both hybrid search");
+        let both = both_results
+            .iter()
+            .find(|result| result.document_title == "phase-2g-hybrid-overlap.txt")
+            .expect("both result");
+        assert_eq!(both.match_kind.as_deref(), Some("both"));
+    }
+
+    #[test]
+    fn hybrid_search_respects_top_k_with_deterministic_order() {
+        let mut conn = memory_db();
+        ingest_hybrid_fixture(&mut conn);
+
+        let first = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridOverlapMarker6149 spacecraft docking",
+            &[1.0, 0.0, 0.0],
+            2,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("first hybrid search");
+        let second = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridOverlapMarker6149 spacecraft docking",
+            &[1.0, 0.0, 0.0],
+            2,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("second hybrid search");
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(
+            first.iter().map(|result| &result.chunk.id).collect::<Vec<_>>(),
+            second.iter().map(|result| &result.chunk.id).collect::<Vec<_>>()
+        );
+        assert_eq!(first[0].document_title, "phase-2g-hybrid-overlap.txt");
+    }
+
+    #[test]
+    fn hybrid_search_refuses_unavailable_semantic_index_without_logging() {
+        let mut conn = memory_db();
+        ingest_text_conn(
+            &mut conn,
+            "default",
+            "Unindexed",
+            "HybridUnavailableMarker123",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+
+        let error = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridUnavailableMarker123",
+            &[1.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect_err("hybrid should fail closed");
+
+        assert_eq!(error, HYBRID_SEMANTIC_READY_ERROR);
+        assert_eq!(
+            stats_conn(&conn)
+                .expect("stats")
+                .retrieval_event_count,
+            0
+        );
+    }
+
+    #[test]
+    fn hybrid_search_rejects_stale_semantic_embeddings() {
+        let mut conn = memory_db();
+        ingest_text_conn(
+            &mut conn,
+            "default",
+            "Hybrid Stale Hash",
+            "HybridStaleMarker123",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest");
+        let chunk = chunk_for_title(&conn, "Hybrid Stale Hash");
+        let blob = encode_embedding(&normalize_embedding_vector(vec![1.0, 0.0]).expect("normalize"))
+            .expect("encode");
+        conn.execute(
+            "
+            INSERT INTO chunk_embeddings(
+                chunk_id, workspace_id, model, provider, dimension,
+                embedding, content_hash, created_at, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, 2, ?5, 'stale-hash', 1, 1)
+            ",
+            params![
+                chunk.id,
+                chunk.workspace_id,
+                DEFAULT_EMBEDDING_MODEL,
+                DEFAULT_EMBEDDING_PROVIDER,
+                blob,
+            ],
+        )
+        .expect("insert stale embedding");
+
+        let error = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "HybridStaleMarker123",
+            &[1.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect_err("hybrid should reject stale embeddings");
+
+        assert_eq!(error, HYBRID_SEMANTIC_READY_ERROR);
+    }
+
+    #[test]
+    fn hybrid_search_excludes_deleted_documents() {
+        let mut conn = memory_db();
+        let deleted = ingest_text_conn(
+            &mut conn,
+            "default",
+            "phase-2g-delete-target.txt",
+            "DeleteFinanceMarker8891 payment reconciliation",
+            None,
+            None,
+            None,
+        )
+        .expect("deleted ingest");
+        ingest_text_conn(
+            &mut conn,
+            "default",
+            "Active Hybrid Finance",
+            "active invoice settlement",
+            None,
+            None,
+            None,
+        )
+        .expect("active ingest");
+        let chunks = vec![
+            chunk_for_title(&conn, "phase-2g-delete-target.txt"),
+            chunk_for_title(&conn, "Active Hybrid Finance"),
+        ];
+        let embeddings = vec![vec![1.0, 0.0], vec![1.0, 0.0]];
+        store_chunk_embeddings_conn(
+            &mut conn,
+            &chunks,
+            &embeddings,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("store embeddings");
+        delete_document_conn(&conn, &deleted.document_id, Some("soft")).expect("delete");
+
+        let results = hybrid_search_with_vector_conn(
+            &conn,
+            "default",
+            "DeleteFinanceMarker8891 invoice reconciliation",
+            &[1.0, 0.0],
+            5,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("hybrid search");
+
+        assert!(results
+            .iter()
+            .all(|result| result.document_title != "phase-2g-delete-target.txt"));
     }
 
     #[test]

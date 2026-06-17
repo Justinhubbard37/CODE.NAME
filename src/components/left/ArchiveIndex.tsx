@@ -10,7 +10,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState';
-import { retrievalSnippet, retrievalSource, retrievalScoreLabel } from '../../lib/retrievalContext';
+import {
+  retrievalMatchKindLabel,
+  retrievalSnippet,
+  retrievalSource,
+  retrievalScoreLabel,
+} from '../../lib/retrievalContext';
 
 interface TreeNode {
   label: string;
@@ -106,6 +111,26 @@ export function ArchiveIndex() {
       setDeletingId(null);
     }
   };
+  const retrievalAccent =
+    retrievalMode === 'semantic' ? 'cyan' : retrievalMode === 'hybrid' ? 'amber' : 'emerald';
+  const retrievalBorder =
+    retrievalAccent === 'cyan'
+      ? 'border-cyan-500/20 bg-cyan-500/5'
+      : retrievalAccent === 'amber'
+        ? 'border-amber-500/20 bg-amber-500/5'
+        : 'border-emerald-500/20 bg-emerald-500/5';
+  const retrievalText =
+    retrievalAccent === 'cyan'
+      ? 'text-cyan-300/80'
+      : retrievalAccent === 'amber'
+        ? 'text-amber-300/80'
+        : 'text-emerald-400/80';
+  const retrievalTitle =
+    retrievalMode === 'hybrid'
+      ? 'Hybrid KB Results'
+      : retrievalMode === 'semantic'
+        ? 'Semantic KB Results'
+        : 'Lexical KB Results';
 
   return (
     <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto text-[10px] font-mono">
@@ -215,15 +240,9 @@ export function ArchiveIndex() {
             </div>
           )}
           {retrievalResults.length > 0 && (
-            <div className={`mb-2 border p-1.5 ${
-              retrievalMode === 'semantic'
-                ? 'border-cyan-500/20 bg-cyan-500/5'
-                : 'border-emerald-500/20 bg-emerald-500/5'
-            }`}>
-              <div className={`text-[9px] uppercase tracking-wider mb-1 ${
-                retrievalMode === 'semantic' ? 'text-cyan-300/80' : 'text-emerald-400/80'
-              }`}>
-                {retrievalMode === 'semantic' ? 'Semantic KB Results' : 'Lexical KB Results'}
+            <div className={`mb-2 border p-1.5 ${retrievalBorder}`}>
+              <div className={`text-[9px] uppercase tracking-wider mb-1 ${retrievalText}`}>
+                {retrievalTitle}
               </div>
               <div className="space-y-1">
                 {retrievalResults.slice(0, 3).map((r, index) => (
@@ -232,7 +251,11 @@ export function ArchiveIndex() {
                       #{index + 1} {r.documentTitle} - chunk {r.chunk.ordinal + 1}
                     </div>
                     <div className="truncate text-neutral-600">
-                      score {retrievalScoreLabel(r.score)} - {retrievalSource(r)}
+                      match {retrievalMatchKindLabel(r)} -{' '}
+                      {Number.isFinite(r.combinedScore)
+                        ? `combined ${retrievalScoreLabel(r.combinedScore!)}`
+                        : `score ${retrievalScoreLabel(r.score)}`}{' '}
+                      - {retrievalSource(r)}
                     </div>
                     <div className="line-clamp-2">{retrievalSnippet(r)}</div>
                   </div>

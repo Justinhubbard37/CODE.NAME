@@ -16,8 +16,9 @@ The window is split into two panes.
 - **Knowledge graph (3D):** documents, entities, and links between them.
 - **Archive Index:** a tree view of current graph/search stores and planned
   retrieval scaffolds.
-- **Graph Search box** (bottom): searches the current local graph using hybrid
-  local retrieval. This is not production GraphRAG yet.
+- **Graph / KB Search box** (bottom): filters the current local graph and runs
+  SQLite KB retrieval in the selected Lexical, Semantic, or Hybrid mode. This is
+  not production GraphRAG or graph traversal retrieval.
 - **Drop zone:** drag files onto this pane to ingest them.
 - **Task tabs / Environment bar:** isolated work threads and per-tab capabilities.
 
@@ -27,6 +28,8 @@ The window is split into two panes.
 - **Activity feed:** a live log of routing, tool calls, and system events.
 - **Ingestion Ledger:** files being hashed, de-duplicated, and indexed.
 - **Audit Ledger:** the append-only history of knowledge-graph writes.
+- **Local KB context panel:** review retrieved chunks, select which chunks are
+  allowed into chat context, and explicitly turn Attach on or off.
 - **Chat thread + composer:** talk to the selected model or the offline synthetic fallback.
 
 ## 2. Ingesting Documents
@@ -51,24 +54,45 @@ the same gated path.
 Ingestion requires the **Filesystem** gate to be open. If it is closed, drops are
 rejected and the reason is shown.
 
-## 3. Searching The Graph
+## 3. Searching The Graph And SQLite KB
 
-Type in the **Graph Search** box and press **Enter**. Current retrieval combines:
+Type in the **Graph / KB Search** box and press **Enter**. The graph view still
+uses local graph filtering so matching nodes stay highlighted and non-matches are
+dimmed. Clear the box and press Enter to show everything again.
 
-- lexical keyword ranking, and
-- deterministic stub-vector scoring used as a retrieval scaffold.
+The same search also retrieves SQLite KB chunks. Pick one retrieval mode before
+running the query:
 
-This is useful for local search, but it is not production semantic vector search
-and it is not durable GraphRAG. Real embeddings, durable graph communities, and
-GraphRAG summaries are planned later.
+- **Lexical:** keyword retrieval over local SQLite chunks.
+- **Semantic:** local Ollama query embeddings ranked against persisted SQLite
+  chunk embeddings.
+- **Hybrid:** real lexical and real semantic SQLite KB retrieval combined into
+  one deduplicated result list.
 
-Matching nodes stay highlighted in the graph; non-matches are dimmed. Clear the
-box and press Enter to show everything again.
+Hybrid SQLite KB retrieval shows why each chunk was selected: lexical score when
+present, semantic cosine score when present, combined rank-fusion score, and a
+match reason of `lexical`, `semantic`, or `both`. Hybrid requires a ready
+semantic index. If the index is empty, stale, missing embeddings, or unavailable,
+Hybrid does not fake results and asks you to build or refresh the semantic index.
+
+Semantic and Hybrid retrieval use local loopback Ollama embeddings only. The app
+does not use OpenAI/Gemini/cloud embeddings, does not auto-pull embedding models,
+and does not use the legacy graph hash-vector scaffold for SQLite KB semantic
+retrieval.
+
+Full GraphRAG, graph traversal retrieval, durable GraphRAG communities, and
+external vector DB integration are still not implemented.
 
 ## 4. Chatting With A Model
 
 Type in the composer on the right and press **Enter**. Use Shift + Enter for a
 newline. While the model streams, **Send** becomes **Stop**.
+
+Retrieved KB chunks are not attached automatically. After a search, Attach is OFF
+by default. Use the Local KB context panel to select or deselect visible chunks,
+then turn Attach ON when you want selected chunks included in the next chat
+request. Deselected chunks are never attached. If a KB document is deleted, its
+chunks are removed from both retrieval results and selected context.
 
 **Choosing a model.** Open **Settings -> Models & routing**:
 

@@ -527,6 +527,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "kb_hybrid_search",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::Low, RiskLevel::Low, RiskLevel::None),
+        rationale: "Combines local SQLite lexical retrieval with loopback-only Ollama semantic retrieval; no graph, sidecar, or cloud embedding path.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "kb_get_document",
         required_gates: KB_LOCAL_FILESYSTEM,
         risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
@@ -816,6 +824,14 @@ mod tests {
                 "{command} should require the Filesystem gate"
             );
         }
+    }
+
+    #[test]
+    fn hybrid_kb_search_policy_matches_local_kb_boundary() {
+        let policy = policy_for_command("kb_hybrid_search").expect("kb_hybrid_search policy");
+        assert!(policy_requires_gate("kb_hybrid_search", Gate::Filesystem));
+        assert_eq!(policy.priority, PolicyPriority::High);
+        assert_eq!(policy.risk.tool_sidecar, RiskLevel::None);
     }
 
     #[test]
