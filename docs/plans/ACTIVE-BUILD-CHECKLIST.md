@@ -4,7 +4,7 @@
 
 Goal: generate real local Ollama embeddings for SQLite KB chunks, persist them locally, and run semantic vector retrieval without cloud embeddings.
 
-Status: READY FOR OWNER REVIEW
+Status: ACCEPTED
 
 Definition of done:
 
@@ -22,11 +22,11 @@ Definition of done:
 - [x] relabel legacy hash-vector scaffolds as non-semantic
 - [x] tests cover embedding storage, validation, ranking, stale hashes, deleted docs, wrappers, and attach formatting
 - [x] manual verification steps are documented
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
 Target commit:
 
-`feat: add local semantic kb retrieval` (exact hash reported in final response)
+`be890b0 feat: add local semantic kb retrieval`
 
 ---
 
@@ -34,13 +34,13 @@ Target commit:
 
 ## Phase 2G - Chat With Knowledge Base
 
-Status: READY AFTER OWNER ACCEPTS PHASE 2F
+Status: READY
 
 Required visible result:
 
 user asks a question -> app retrieves relevant chunks -> model receives retrieved context -> answer shows source snippets
 
-Do not start full Chat With KB polish until Phase 2F semantic retrieval owner verification passes.
+Phase 2F semantic retrieval is owner accepted. Keep Phase 2G scoped to Chat With Knowledge Base.
 
 ---
 
@@ -144,6 +144,8 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] Full GraphRAG
 - [ ] Graph traversal retrieval
 - [ ] External vector DB integration
+- [ ] Cloud embeddings
+- [ ] Model auto-pull/download
 - [x] Real local SQLite KB embeddings
 - [ ] SSO
 - [ ] Compliance packaging
@@ -523,7 +525,7 @@ Status:
 
 Date: 2026-06-16
 
-Commit: `feat: add local semantic kb retrieval` (exact hash reported in final response)
+Commit: `be890b0 feat: add local semantic kb retrieval`
 
 What changed in the app:
 
@@ -612,6 +614,38 @@ What works now:
 - Semantic context can be explicitly attached to chat only when the user turns attachment on.
 - If Ollama or `nomic-embed-text` is unavailable, semantic indexing/search reports unavailable instead of faking results.
 
+Owner manual verification results:
+
+- Phase 2F Real Local Embeddings + Vector Retrieval Foundation is accepted.
+- Implementation commit verified: `be890b0 feat: add local semantic kb retrieval`.
+- User manually installed local Ollama model `nomic-embed-text`.
+- App did not auto-pull or auto-download the embedding model.
+- Three exact Desktop files were created: `phase-2f-orchard.txt`, `phase-2f-aerospace.txt`, and `phase-2f-finance.txt`.
+- All three files ingested successfully.
+- KB stats showed `3` active documents and `3` active chunks after ingestion.
+- Semantic Index initially showed provider `ollama`, model `nomic-embed-text`, active chunks `3`, embedded `0`, missing `3`, and state `NOT-READY`.
+- Lexical query `ExactFruitLexicalMarker4821` returned `phase-2f-orchard.txt`.
+- Local KB context showed lexical mode.
+- Attach was OFF by default.
+- Semantic index build changed state to `READY`.
+- Semantic index status showed active chunks `3`, embedded `3`, missing `0`, and dimension `768`.
+- Semantic query `spacecraft connection in orbit` ranked `phase-2f-aerospace.txt` first.
+- Semantic query `apple cider storage` ranked `phase-2f-orchard.txt` first.
+- Semantic query `invoice payment reconciliation` ranked `phase-2f-finance.txt` first.
+- Right panel showed `Local KB context - semantic`.
+- Semantic results were source-labeled.
+- Semantic Attach was OFF by default.
+- After re-running `spacecraft connection in orbit`, turning Attach ON, and asking `Which file discusses orbital docking?`, chat correctly identified `phase-2f-aerospace.txt` and cited `[KB1]`.
+- After turning Attach OFF and sending `Reply exactly: semantic detach check complete.`, chat replied exactly `semantic detach check complete.` with no KB file reference, no `[KB1]`, and no hidden context injection.
+- Deleted `phase-2f-aerospace.txt`, `phase-2f-orchard.txt`, and `phase-2f-finance.txt` from KB Documents.
+- Active KB documents dropped to `0`.
+- Active chunks dropped to `0`.
+- Semantic Index became unavailable/empty for active chunks.
+- Semantic query `spacecraft connection in orbit` returned no matches.
+- Lexical query `ExactFruitLexicalMarker4821` returned no matches.
+- Attach stayed OFF/disabled with no attachable context.
+- Desktop cleanup completed for `phase-2f-orchard.txt`, `phase-2f-aerospace.txt`, and `phase-2f-finance.txt`.
+
 What still does not work:
 
 - This is not full GraphRAG.
@@ -619,14 +653,17 @@ What still does not work:
 - External vector DB integration is not implemented.
 - Cloud embeddings are not implemented.
 - Ollama models are not auto-pulled or downloaded by the app.
-- Owner manual verification is still required before acceptance.
+- Graph polish remains deferred.
+- Full GraphRAG over graph/community expansion remains deferred.
+- Stronger citation rendering in final generated answers remains deferred.
+- Selected-context controls remain deferred.
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Ready for owner review.
+- Accepted by owner manual verification.
