@@ -58,8 +58,13 @@ import {
   clearRetrievedContextState,
   retrievedContextAfterDocumentDelete,
   retrievedContextAfterSearch,
+  retrievalContextDisplayLabel,
   selectedRetrievalResults,
+  updateRouteTraceCounts,
+  type RetrievalRouteTrace,
+  type RetrievedContextState,
 } from '../lib/retrievalContext';
+import { routeRetrieval } from '../lib/autoRetrievalRouter';
 import {
   activeKbWorkspaceId,
   emptyKbStats,
@@ -78,6 +83,7 @@ import {
   kbDeleteDocument,
   type KbDocument,
   type KbEmbeddingStatus,
+  type KbResolvedRetrievalMode,
   type KbRetrievalMode,
   type KbSearchResult,
   type KbStats,
@@ -134,6 +140,7 @@ interface AppStateValue {
   retrievalQuery: string;
   retrievalResults: KbSearchResult[];
   retrievalMode: KbRetrievalMode;
+  retrievalRouteTrace?: RetrievalRouteTrace;
   setRetrievalMode: (mode: KbRetrievalMode) => void;
   retrievalSelectedChunkIds: string[];
   setRetrievalChunkSelected: (chunkId: string, selected: boolean) => void;
@@ -298,7 +305,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [kbDocuments, setKbDocuments] = useState<KbDocument[]>([]);
   const [kbSearchResults, setKbSearchResults] = useState<KbSearchResult[]>([]);
   const [retrievalQuery, setRetrievalQuery] = useState('');
-  const [retrievalMode, setRetrievalModeState] = useState<KbRetrievalMode>('lexical');
+  const [retrievalMode, setRetrievalModeState] = useState<KbRetrievalMode>('auto');
+  const [retrievalRouteTrace, setRetrievalRouteTrace] = useState<RetrievalRouteTrace | undefined>(undefined);
   const [retrievalSelectedChunkIds, setRetrievalSelectedChunkIds] = useState<string[]>([]);
   const [retrievalEnabledForChat, setRetrievalEnabledForChatState] = useState(false);
   const [semanticStatus, setSemanticStatus] = useState<KbEmbeddingStatus>(emptyKbEmbeddingStatus);
@@ -349,7 +357,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const setRetrievalEnabledForChat = useCallback((enabled: boolean) => {
     setRetrievalEnabledForChatState(enabled);
-  }, []);
+    setRetrievalRouteTrace((current) =>
+      updateRouteTraceCounts(current, kbSearchResults, retrievalSelectedChunkIds, enabled),
+    );
+  }, [kbSearchResults, retrievalSelectedChunkIds]);
 
   const setRetrievalChunkSelected = useCallback((chunkId: string, selected: boolean) => {
     setRetrievalSelectedChunkIds((current) => {
@@ -359,18 +370,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           ? current
           : [...current, chunkId]
         : current.filter((id) => id !== chunkId);
+      const attachEnabled = next.length === 0 ? false : retrievalEnabledForChat;
       if (next.length === 0) setRetrievalEnabledForChatState(false);
+      setRetrievalRouteTrace((trace) =>
+        updateRouteTraceCounts(trace, kbSearchResults, next, attachEnabled),
+      );
       return next;
     });
-  }, []);
+  }, [kbSearchResults, retrievalEnabledForChat]);
 
   const applyRetrievedContext = useCallback(
-    (next: ReturnType<typeof clearRetrievedContextState>) => {
+    (next: RetrievedContextState) => {
       setKbSearchResults(next.results);
       setRetrievalQuery(next.query);
       setRetrievalSelectedChunkIds(next.selectedChunkIds);
       setRetrievalEnabledForChatState(next.attachEnabled);
       setRetrievalModeState(next.mode);
+      setRetrievalRouteTrace(next.routeTrace);
     },
     [],
   );
@@ -393,43 +409,92 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         clearKbRetrieval();
         return [];
       }
-      if ((retrievalMode === 'hybrid' || retrievalMode === 'graph') && !semanticStatus.ready) {
+      const routeTrace = routeRetrieval({
+        requestedMode: retrievalMode,
+        query,
+        kbStats: kbStatsState,
+        semanticStatus,
+      });
+
+      if (routeTrace.resolvedMode === 'none') {
+        applyRetrievedContext(retrievedContextAfterSearch(query, [], retrievalMode, routeTrace));
+        setSemanticError(routeTrace.warningMessage ?? '');
+        return [];
+      }
+
+      if (retrievalMode !== 'auto' && (retrievalMode === 'hybrid' || retrievalMode === 'graph') && !semanticStatus.ready) {
         const reason =
           retrievalMode === 'graph'
             ? 'Graph retrieval requires a ready semantic index because it uses Hybrid seed retrieval. Build / Refresh semantic index first.'
             : 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.';
-        const next = retrievedContextAfterSearch(query, [], retrievalMode);
+        const next = retrievedContextAfterSearch(query, [], retrievalMode, {
+          ...routeTrace,
+          routeReason: reason,
+          warningMessage: reason,
+        });
         applyRetrievedContext(next);
         await refreshSemanticStatus();
         setSemanticError(reason);
         return [];
       }
+
+      const runResolvedSearch = async (resolvedMode: KbResolvedRetrievalMode): Promise<KbSearchResult[]> => {
+        if (resolvedMode === 'graph') {
+          return kbGraphRagSearch({ workspaceId: activeKbWorkspaceId(), query, limit, maxDepth: 1 });
+        }
+        if (resolvedMode === 'hybrid') {
+          return kbHybridSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+        }
+        if (resolvedMode === 'semantic') {
+          return kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+        }
+        return kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
+      };
+
       try {
-        const results =
-          retrievalMode === 'graph'
-            ? await kbGraphRagSearch({ workspaceId: activeKbWorkspaceId(), query, limit, maxDepth: 1 })
-            : retrievalMode === 'hybrid'
-            ? await kbHybridSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
-            : retrievalMode === 'semantic'
-              ? await kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
-              : await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
-        const next = retrievedContextAfterSearch(query, results, retrievalMode);
+        const results = await runResolvedSearch(routeTrace.resolvedMode);
+        const next = retrievedContextAfterSearch(query, results, retrievalMode, routeTrace);
         applyRetrievedContext(next);
-        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') setSemanticError('');
+        setSemanticError(next.routeTrace?.warningMessage ?? '');
         await refreshKbStats();
-        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') await refreshSemanticStatus();
+        if (routeTrace.resolvedMode === 'semantic' || routeTrace.resolvedMode === 'hybrid' || routeTrace.resolvedMode === 'graph') await refreshSemanticStatus();
         return results;
       } catch (err) {
-        const next = retrievedContextAfterSearch(query, [], retrievalMode);
+        const reason = err instanceof Error
+          ? err.message
+          : routeTrace.resolvedMode === 'graph'
+            ? 'Graph retrieval unavailable; using lexical retrieval only.'
+          : routeTrace.resolvedMode === 'hybrid'
+            ? 'Hybrid retrieval unavailable; using lexical retrieval only.'
+            : 'semantic retrieval unavailable';
+        if (retrievalMode === 'auto' && routeTrace.resolvedMode !== 'lexical') {
+          const fallbackTrace: RetrievalRouteTrace = {
+            ...routeTrace,
+            resolvedMode: 'lexical',
+            routeReason: reason,
+            fallbackFrom: routeTrace.resolvedMode,
+            fallbackReason: reason,
+            warningMessage: reason,
+          };
+          const fallbackResults = await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit }).catch(() => []);
+          const fallbackState = retrievedContextAfterSearch(query, fallbackResults, retrievalMode, fallbackTrace);
+          applyRetrievedContext(fallbackState);
+          setSemanticError(reason);
+          setSemanticStatus((current) => ({
+            ...current,
+            ready: false,
+            state: 'unavailable',
+            lastError: reason,
+          }));
+          await refreshKbStats();
+          return fallbackResults;
+        }
+        const next = retrievedContextAfterSearch(query, [], retrievalMode, {
+          ...routeTrace,
+          warningMessage: reason,
+        });
         applyRetrievedContext(next);
         if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') {
-          const reason = err instanceof Error
-            ? err.message
-            : retrievalMode === 'graph'
-              ? 'Graph retrieval requires a ready semantic index because it uses Hybrid seed retrieval. Build / Refresh semantic index first.'
-            : retrievalMode === 'hybrid'
-              ? 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.'
-              : 'semantic retrieval unavailable';
           setSemanticError(reason);
           setSemanticStatus((current) => ({
             ...current,
@@ -441,7 +506,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return [];
       }
     },
-    [applyRetrievedContext, clearKbRetrieval, refreshKbStats, refreshSemanticStatus, retrievalMode, semanticStatus.ready],
+    [
+      applyRetrievedContext,
+      clearKbRetrieval,
+      kbStatsState,
+      refreshKbStats,
+      refreshSemanticStatus,
+      retrievalMode,
+      semanticStatus,
+    ],
   );
 
   useEffect(() => {
@@ -986,6 +1059,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           selectedChunkIds: retrievalSelectedChunkIds,
           attachEnabled: retrievalEnabledForChat,
           mode: retrievalMode,
+          routeTrace: retrievalRouteTrace,
         },
         documentId,
       );
@@ -993,6 +1067,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setRetrievalQuery(nextRetrieval.query);
       setRetrievalSelectedChunkIds(nextRetrieval.selectedChunkIds);
       setRetrievalEnabledForChatState(nextRetrieval.attachEnabled);
+      setRetrievalRouteTrace(nextRetrieval.routeTrace);
       pushActivity(
         activeTaskId,
         'system',
@@ -1011,6 +1086,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       retrievalEnabledForChat,
       retrievalMode,
       retrievalQuery,
+      retrievalRouteTrace,
       retrievalSelectedChunkIds,
     ],
   );
@@ -1070,9 +1146,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         retrievalForMessage,
         hasAttachedRetrieval,
         retrievalMode,
+        retrievalRouteTrace,
       );
       if (hasAttachedRetrieval) {
-        pushActivity(taskId, 'query', `${retrievalMode} retrieval: ${retrievalForMessage.length} selected local KB chunk(s) attached`);
+        pushActivity(
+          taskId,
+          'query',
+          `${retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace)} retrieval: ${retrievalForMessage.length} selected local KB chunk(s) attached`,
+        );
       }
 
       const baseTask = tasks.find((t) => t.id === taskId);
@@ -1288,6 +1369,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       retrievalSelectedChunkIds,
       retrievalEnabledForChat,
       retrievalMode,
+      retrievalRouteTrace,
       patchTask,
       pushActivity,
       tasks,
@@ -1760,6 +1842,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     retrievalQuery,
     retrievalResults: kbSearchResults,
     retrievalMode,
+    retrievalRouteTrace,
     setRetrievalMode,
     retrievalSelectedChunkIds,
     setRetrievalChunkSelected,

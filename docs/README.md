@@ -4,10 +4,11 @@ Start here.
 
 ## Guides
 
-- **[User Guide](USER_GUIDE.md)** - get going: ingest documents, search the graph
-  and SQLite KB, use Lexical/Semantic/Hybrid/Graph KB retrieval, select chat
-  context, chat with local or cloud models, use tools, read the audit ledger,
-  and the keyboard shortcuts.
+- **[User Guide](USER_GUIDE.md)** - get going: ingest documents, use Auto
+  knowledge search with visible route traces, access Advanced
+  Lexical/Semantic/Hybrid/Graph KB retrieval, select chat context, chat with
+  local or cloud models, use tools, read the audit ledger, and the keyboard
+  shortcuts.
 - **[Admin Guide](ADMIN_GUIDE.md)** - run it for a team: accounts and roles
   (RBAC), workspaces, security gates, the admin policy ceiling, identity/SSO,
   secrets, the tamper-evident audit chain, SIEM forwarding, logging, and the

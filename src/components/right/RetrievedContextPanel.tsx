@@ -3,10 +3,13 @@ import { useApp } from '../../state/AppState';
 import {
   RETRIEVAL_CHAT_RESULT_LIMIT,
   RETRIEVAL_RESULT_LIMIT,
+  resolvedRetrievalKindForDisplay,
+  retrievalContextDisplayLabel,
   retrievalMatchKindLabel,
   retrievalSnippet,
   retrievalSource,
   retrievalScoreLabel,
+  retrievalTraceSummary,
 } from '../../lib/retrievalContext';
 
 export function RetrievedContextPanel() {
@@ -14,6 +17,7 @@ export function RetrievedContextPanel() {
     retrievalQuery,
     retrievalResults,
     retrievalMode,
+    retrievalRouteTrace,
     retrievalSelectedChunkIds,
     setRetrievalChunkSelected,
     retrievalEnabledForChat,
@@ -28,12 +32,14 @@ export function RetrievedContextPanel() {
   const selectedCount = retrievalResults.filter((result) => selectedSet.has(result.chunk.id)).length;
   const seedCount = retrievalResults.filter((result) => result.graphRole === 'seed').length;
   const expandedCount = retrievalResults.filter((result) => result.graphRole === 'expanded').length;
+  const resolvedMode = resolvedRetrievalKindForDisplay(retrievalMode, retrievalRouteTrace);
+  const traceSummary = retrievalTraceSummary(retrievalRouteTrace);
   const accent =
-    retrievalMode === 'graph'
+    resolvedMode === 'graph'
       ? 'violet'
-      : retrievalMode === 'semantic'
+      : resolvedMode === 'semantic'
         ? 'cyan'
-        : retrievalMode === 'hybrid'
+        : resolvedMode === 'hybrid'
           ? 'amber'
           : 'emerald';
   const accentText =
@@ -52,10 +58,7 @@ export function RetrievedContextPanel() {
         : accent === 'amber'
           ? 'border-amber-500/50'
           : 'border-emerald-500/50';
-  const panelLabel =
-    retrievalMode === 'graph'
-      ? 'Local KB context - graph traversal'
-      : `Local KB context - ${retrievalMode}`;
+  const panelLabel = `Local KB context - ${retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace)}`;
 
   return (
     <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-3 py-2 font-mono">
@@ -63,13 +66,11 @@ export function RetrievedContextPanel() {
         <Database className={`h-3.5 w-3.5 shrink-0 ${accentText}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider">
-            <span className={accentText}>
-              {panelLabel}
-            </span>
+            <span className={accentText}>{panelLabel}</span>
             <span className="text-neutral-600">
               {hasResults ? `${retrievalResults.length} chunk${retrievalResults.length === 1 ? '' : 's'}` : 'no matches'}
             </span>
-            {retrievalMode === 'graph' && hasResults && (
+            {resolvedMode === 'graph' && hasResults && (
               <span className="text-neutral-500">
                 seeds {seedCount} expanded {expandedCount}
               </span>
@@ -85,10 +86,31 @@ export function RetrievedContextPanel() {
               query: {retrievalQuery}
             </div>
           )}
-          {retrievalMode === 'graph' && hasResults && expandedCount === 0 && (
-            <div className="text-[8px] text-amber-300">
-              Seed-only: no graph-expanded evidence found
-            </div>
+          {traceSummary && (
+            <div className="text-[8px] text-neutral-400">{traceSummary}</div>
+          )}
+          {retrievalRouteTrace?.warningMessage && (
+            <div className="text-[8px] text-amber-300">{retrievalRouteTrace.warningMessage}</div>
+          )}
+          {retrievalRouteTrace && (
+            <details className="mt-0.5 text-[8px] text-neutral-600">
+              <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Route trace</summary>
+              <div className="mt-0.5 grid grid-cols-2 gap-x-2 gap-y-0.5">
+                <span>Requested</span><span className="text-neutral-400">{retrievalRouteTrace.requestedMode}</span>
+                <span>Resolved</span><span className="text-neutral-400">{retrievalRouteTrace.resolvedMode}</span>
+                <span>Reason</span><span className="text-neutral-400">{retrievalRouteTrace.routeReason}</span>
+                <span>Semantic</span><span className="text-neutral-400">{retrievalRouteTrace.semanticIndexState}</span>
+                <span>Ready</span><span className="text-neutral-400">{retrievalRouteTrace.semanticReady ? 'yes' : 'no'}</span>
+                <span>Chunks</span><span className="text-neutral-400">{retrievalRouteTrace.embeddedActiveChunkCount}/{retrievalRouteTrace.activeChunkCount}</span>
+                <span>Missing</span><span className="text-neutral-400">{retrievalRouteTrace.missingActiveChunkCount}</span>
+                <span>Graph tried</span><span className="text-neutral-400">{retrievalRouteTrace.graphExpansionAttempted ? 'yes' : 'no'}</span>
+                <span>Graph counts</span><span className="text-neutral-400">{retrievalRouteTrace.graphSeedCount ?? 0} seed / {retrievalRouteTrace.graphExpandedCount ?? 0} expanded</span>
+                <span>Fallback</span><span className="text-neutral-400">{retrievalRouteTrace.fallbackFrom ?? 'none'}</span>
+                <span>Local only</span><span className="text-neutral-400">{retrievalRouteTrace.localOnly ? 'yes' : 'no'}</span>
+                <span>Attach</span><span className="text-neutral-400">{retrievalRouteTrace.attachEnabled ? 'on' : 'off'}</span>
+                <span>Selected</span><span className="text-neutral-400">{retrievalRouteTrace.selectedResultCount}/{retrievalRouteTrace.resultCount}</span>
+              </div>
+            </details>
           )}
         </div>
         <button
@@ -120,69 +142,69 @@ export function RetrievedContextPanel() {
             const selected = selectedSet.has(result.chunk.id);
             const selectionDisabled = !selected && selectedCount >= RETRIEVAL_CHAT_RESULT_LIMIT;
             return (
-            <div key={result.chunk.id} className="border border-neutral-800 bg-black/30 p-1.5">
-              <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  disabled={selectionDisabled}
-                  onChange={(event) => setRetrievalChunkSelected(result.chunk.id, event.currentTarget.checked)}
-                  className="h-3 w-3 accent-emerald-500 disabled:opacity-40"
-                  aria-label={`${selected ? 'Deselect' : 'Select'} ${result.documentTitle} chunk ${result.chunk.ordinal + 1} for chat context`}
-                  title={selectionDisabled ? `Select up to ${RETRIEVAL_CHAT_RESULT_LIMIT} chunks` : 'Select this chunk for chat context'}
-                />
-                <span className={accentText}>KB{index + 1}</span>
-                <span className="min-w-0 flex-1 truncate text-neutral-300">
-                  {result.documentTitle}
-                </span>
-                <span className="text-neutral-600">chunk {result.chunk.ordinal + 1}</span>
-              </div>
-              <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] uppercase tracking-wider text-neutral-600">
-                <span className={accentText}>match {retrievalMatchKindLabel(result)}</span>
-                {Number.isFinite(result.lexicalScore) && (
-                  <span>lexical {retrievalScoreLabel(result.lexicalScore!)}</span>
-                )}
-                {Number.isFinite(result.semanticScore) && (
-                  <span>semantic {retrievalScoreLabel(result.semanticScore!)}</span>
-                )}
-                {Number.isFinite(result.combinedScore) ? (
-                  <span>combined {retrievalScoreLabel(result.combinedScore!)}</span>
-                ) : (
-                  <span>score {retrievalScoreLabel(result.score)}</span>
-                )}
-                {result.graphRole && <span>role {result.graphRole}</span>}
-                {Number.isFinite(result.traversalDepth) && <span>depth {result.traversalDepth}</span>}
-                {result.expansionType && <span>expansion {result.expansionType.replace(/_/g, ' ')}</span>}
-                {Number.isFinite(result.graphScore) && (
-                  <span>graph {retrievalScoreLabel(result.graphScore!)}</span>
-                )}
-              </div>
-              <div className="mt-0.5 truncate text-[8px] text-neutral-600" title={retrievalSource(result)}>
-                source: {retrievalSource(result)}
-              </div>
-              {result.graphReason && (
-                <div className="mt-0.5 line-clamp-2 text-[8px] leading-snug text-violet-300/75">
-                  reason: {result.graphReason}
+              <div key={result.chunk.id} className="border border-neutral-800 bg-black/30 p-1.5">
+                <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={selectionDisabled}
+                    onChange={(event) => setRetrievalChunkSelected(result.chunk.id, event.currentTarget.checked)}
+                    className="h-3 w-3 accent-emerald-500 disabled:opacity-40"
+                    aria-label={`${selected ? 'Deselect' : 'Select'} ${result.documentTitle} chunk ${result.chunk.ordinal + 1} for chat context`}
+                    title={selectionDisabled ? `Select up to ${RETRIEVAL_CHAT_RESULT_LIMIT} chunks` : 'Select this chunk for chat context'}
+                  />
+                  <span className={accentText}>KB{index + 1}</span>
+                  <span className="min-w-0 flex-1 truncate text-neutral-300">
+                    {result.documentTitle}
+                  </span>
+                  <span className="text-neutral-600">chunk {result.chunk.ordinal + 1}</span>
                 </div>
-              )}
-              {result.graphEntities?.length ? (
-                <div className="mt-0.5 truncate text-[8px] text-neutral-600">
-                  entities: {result.graphEntities.map((entity) => entity.name).join(', ')}
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] uppercase tracking-wider text-neutral-600">
+                  <span className={accentText}>match {retrievalMatchKindLabel(result)}</span>
+                  {result.graphRole && <span>role {result.graphRole}</span>}
+                  {Number.isFinite(result.traversalDepth) && <span>depth {result.traversalDepth}</span>}
+                  {result.expansionType && <span>expansion {result.expansionType.replace(/_/g, ' ')}</span>}
                 </div>
-              ) : null}
-              {result.graphRelationships?.length ? (
-                <div className="mt-0.5 truncate text-[8px] text-neutral-600">
-                  relationships:{' '}
-                  {result.graphRelationships
-                    .map((relationship) => `${relationship.sourceName} -> ${relationship.targetName}`)
-                    .join('; ')}
+                <div className="mt-0.5 truncate text-[8px] text-neutral-600" title={retrievalSource(result)}>
+                  source: {retrievalSource(result)}
                 </div>
-              ) : null}
-              <div className="mt-1 line-clamp-2 text-[9px] leading-snug text-neutral-400">
-                {retrievalSnippet(result, 220)}
+                {result.graphReason && (
+                  <div className="mt-0.5 line-clamp-2 text-[8px] leading-snug text-violet-300/75">
+                    reason: {result.graphReason}
+                  </div>
+                )}
+                <details className="mt-0.5 text-[8px] text-neutral-600">
+                  <summary className="cursor-pointer hover:text-neutral-300">Scores and graph details</summary>
+                  <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 uppercase tracking-wider">
+                    {Number.isFinite(result.lexicalScore) && <span>lexical {retrievalScoreLabel(result.lexicalScore!)}</span>}
+                    {Number.isFinite(result.semanticScore) && <span>semantic {retrievalScoreLabel(result.semanticScore!)}</span>}
+                    {Number.isFinite(result.combinedScore) ? (
+                      <span>combined {retrievalScoreLabel(result.combinedScore!)}</span>
+                    ) : (
+                      <span>score {retrievalScoreLabel(result.score)}</span>
+                    )}
+                    {Number.isFinite(result.graphScore) && <span>graph {retrievalScoreLabel(result.graphScore!)}</span>}
+                  </div>
+                  {result.graphEntities?.length ? (
+                    <div className="mt-0.5 truncate">
+                      entities: {result.graphEntities.map((entity) => entity.name).join(', ')}
+                    </div>
+                  ) : null}
+                  {result.graphRelationships?.length ? (
+                    <div className="mt-0.5 truncate">
+                      relationships:{' '}
+                      {result.graphRelationships
+                        .map((relationship) => `${relationship.sourceName} -> ${relationship.targetName}`)
+                        .join('; ')}
+                    </div>
+                  ) : null}
+                </details>
+                <div className="mt-1 line-clamp-2 text-[9px] leading-snug text-neutral-400">
+                  {retrievalSnippet(result, 220)}
+                </div>
               </div>
-            </div>
-          )})}
+            );
+          })}
         </div>
       )}
     </div>

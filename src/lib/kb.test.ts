@@ -281,6 +281,12 @@ describe('SQLite KB wrapper', () => {
     expect(source).not.toMatch(/stubEmbed|sidecarEmbed|sidecar_embed/);
   });
 
+  it('does not add a backend auto search wrapper', () => {
+    const source = readFileSync(new URL('./kb.ts', import.meta.url), 'utf8');
+
+    expect(source).not.toMatch(/kb_auto_search|kbAutoSearch/);
+  });
+
   it('calls kb_graph_projection for the active workspace and document', async () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
     mockedInvoke.mockResolvedValue({

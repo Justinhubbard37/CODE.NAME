@@ -1,4 +1,9 @@
-import type { KbRetrievalMode, KbSearchResult } from './kb';
+import type {
+  KbResolvedRetrievalMode,
+  KbRetrievalKind,
+  KbRetrievalMode,
+  KbSearchResult,
+} from './kb';
 
 export const RETRIEVAL_RESULT_LIMIT = 6;
 export const RETRIEVAL_CHAT_RESULT_LIMIT = 4;
@@ -11,6 +16,28 @@ export type RetrievedContextState = {
   selectedChunkIds: string[];
   attachEnabled: boolean;
   mode: KbRetrievalMode;
+  routeTrace?: RetrievalRouteTrace;
+};
+
+export type RetrievalRouteTrace = {
+  requestedMode: KbRetrievalMode;
+  resolvedMode: KbResolvedRetrievalMode;
+  routeReason: string;
+  semanticIndexState: string;
+  semanticReady: boolean;
+  activeChunkCount: number;
+  embeddedActiveChunkCount: number;
+  missingActiveChunkCount: number;
+  graphExpansionAttempted: boolean;
+  graphSeedCount?: number;
+  graphExpandedCount?: number;
+  fallbackFrom?: KbRetrievalKind;
+  fallbackReason?: string;
+  warningMessage?: string;
+  localOnly: true;
+  attachEnabled: boolean;
+  selectedResultCount: number;
+  resultCount: number;
 };
 
 function clipText(text: string, maxChars: number): string {
@@ -44,11 +71,69 @@ export function retrievalScoreLabel(score: number): string {
   return score.toFixed(2);
 }
 
-export function retrievalModeLabel(mode: KbRetrievalMode): string {
+export function retrievalModeLabel(mode: KbRetrievalMode | KbResolvedRetrievalMode): string {
+  if (mode === 'auto') return 'auto';
+  if (mode === 'none') return 'none';
   if (mode === 'semantic') return 'semantic';
   if (mode === 'hybrid') return 'hybrid';
   if (mode === 'graph') return 'graph traversal';
   return 'lexical';
+}
+
+function isResolvedKind(mode: KbResolvedRetrievalMode | KbRetrievalMode | undefined): mode is KbRetrievalKind {
+  return mode === 'lexical' || mode === 'semantic' || mode === 'hybrid' || mode === 'graph';
+}
+
+export function resolvedRetrievalKindForDisplay(
+  mode: KbRetrievalMode,
+  routeTrace?: RetrievalRouteTrace,
+): KbRetrievalKind {
+  if (mode === 'auto' && isResolvedKind(routeTrace?.resolvedMode)) return routeTrace.resolvedMode;
+  if (isResolvedKind(mode)) return mode;
+  return 'lexical';
+}
+
+export function retrievalContextDisplayLabel(
+  mode: KbRetrievalMode,
+  routeTrace?: RetrievalRouteTrace,
+): string {
+  if (mode === 'auto' && isResolvedKind(routeTrace?.resolvedMode)) {
+    return `auto -> ${retrievalModeLabel(routeTrace.resolvedMode)}`;
+  }
+  return retrievalModeLabel(mode);
+}
+
+export function retrievalPromptModeLabel(
+  mode: KbRetrievalMode,
+  routeTrace?: RetrievalRouteTrace,
+): string {
+  if (mode === 'auto' && isResolvedKind(routeTrace?.resolvedMode)) {
+    return `auto resolved ${retrievalModeLabel(routeTrace.resolvedMode)}`;
+  }
+  return retrievalModeLabel(mode);
+}
+
+function sentenceFragment(value: string): string {
+  return value.trim().replace(/\.$/, '');
+}
+
+export function retrievalTraceSummary(trace?: RetrievalRouteTrace): string {
+  if (!trace) return '';
+  if (trace.warningMessage?.startsWith('Graph seed-only')) {
+    return 'Graph seed-only - no graph-expanded evidence found.';
+  }
+  if (trace.requestedMode === 'auto') {
+    if (trace.resolvedMode === 'none') return `Auto skipped retrieval - ${sentenceFragment(trace.routeReason)}.`;
+    if (trace.fallbackFrom) {
+      return `Auto used Lexical fallback - ${sentenceFragment(trace.fallbackReason ?? trace.routeReason)}.`;
+    }
+    if (trace.resolvedMode === 'graph' && (trace.graphExpandedCount ?? 0) > 0) {
+      return 'Auto chose Graph - relationship query with graph expansion.';
+    }
+    return `Auto chose ${retrievalModeLabel(trace.resolvedMode)} - ${sentenceFragment(trace.routeReason)}.`;
+  }
+  if (trace.resolvedMode === 'none') return sentenceFragment(trace.routeReason);
+  return `Manual ${retrievalModeLabel(trace.resolvedMode)} retrieval.`;
 }
 
 function graphValueLabel(value: string): string {
@@ -97,21 +182,54 @@ export function filterSelectedChunkIdsForResults(
   return selectedChunkIds.filter((chunkId) => activeIds.has(chunkId));
 }
 
-export function clearRetrievedContextState(mode: KbRetrievalMode = 'lexical'): RetrievedContextState {
+export function updateRouteTraceCounts(
+  routeTrace: RetrievalRouteTrace | undefined,
+  results: KbSearchResult[],
+  selectedChunkIds: string[],
+  attachEnabled: boolean,
+): RetrievalRouteTrace | undefined {
+  if (!routeTrace) return undefined;
+  const selected = new Set(selectedChunkIds);
+  const graphSeedCount = results.filter((result) => result.graphRole === 'seed').length;
+  const graphExpandedCount = results.filter((result) => result.graphRole === 'expanded').length;
+  const graphSeedOnly =
+    routeTrace.resolvedMode === 'graph' &&
+    routeTrace.graphExpansionAttempted &&
+    results.length > 0 &&
+    graphExpandedCount === 0;
+  return {
+    ...routeTrace,
+    resultCount: results.length,
+    selectedResultCount: results.filter((result) => selected.has(result.chunk.id)).length,
+    attachEnabled,
+    graphSeedCount: routeTrace.graphExpansionAttempted ? graphSeedCount : routeTrace.graphSeedCount,
+    graphExpandedCount: routeTrace.graphExpansionAttempted
+      ? graphExpandedCount
+      : routeTrace.graphExpandedCount,
+    warningMessage: graphSeedOnly
+      ? 'Graph seed-only: no graph-expanded evidence found.'
+      : routeTrace.warningMessage,
+  };
+}
+
+export function clearRetrievedContextState(mode: KbRetrievalMode = 'auto'): RetrievedContextState {
   return { query: '', results: [], selectedChunkIds: [], attachEnabled: false, mode };
 }
 
 export function retrievedContextAfterSearch(
   query: string,
   results: KbSearchResult[],
-  mode: KbRetrievalMode = 'lexical',
+  mode: KbRetrievalMode = 'auto',
+  routeTrace?: RetrievalRouteTrace,
 ): RetrievedContextState {
+  const selectedChunkIds = defaultSelectedChunkIds(results);
   return {
     query,
     results,
-    selectedChunkIds: defaultSelectedChunkIds(results),
+    selectedChunkIds,
     attachEnabled: false,
     mode,
+    routeTrace: updateRouteTraceCounts(routeTrace, results, selectedChunkIds, false),
   };
 }
 
@@ -122,11 +240,13 @@ export function retrievedContextAfterDocumentDelete(
   const results = filterRetrievalResultsForDeletedDocument(state.results, documentId);
   if (results.length === 0) return clearRetrievedContextState(state.mode);
   const selectedChunkIds = filterSelectedChunkIdsForResults(state.selectedChunkIds, results);
+  const attachEnabled = state.attachEnabled && selectedChunkIds.length > 0;
   return {
     ...state,
     results,
     selectedChunkIds,
-    attachEnabled: state.attachEnabled && selectedChunkIds.length > 0,
+    attachEnabled,
+    routeTrace: updateRouteTraceCounts(state.routeTrace, results, selectedChunkIds, attachEnabled),
   };
 }
 
@@ -190,19 +310,21 @@ export function formatRetrievedContextBlock(
 export function buildChatPromptWithRetrievedContext(
   userQuestion: string,
   results: KbSearchResult[],
-  mode: KbRetrievalMode = 'lexical',
+  mode: KbRetrievalMode = 'auto',
+  routeTrace?: RetrievalRouteTrace,
 ): string {
   const context = formatRetrievedContextBlock(results);
   if (!context) return userQuestion;
-  return `Local SQLite KB context - ${retrievalModeLabel(mode)}:\n${context}\n\nUser question:\n${userQuestion}`;
+  return `Local SQLite KB context - ${retrievalPromptModeLabel(mode, routeTrace)}:\n${context}\n\nUser question:\n${userQuestion}`;
 }
 
 export function buildOptionalChatPromptWithRetrievedContext(
   userQuestion: string,
   results: KbSearchResult[],
   attachEnabled: boolean,
-  mode: KbRetrievalMode = 'lexical',
+  mode: KbRetrievalMode = 'auto',
+  routeTrace?: RetrievalRouteTrace,
 ): string {
   if (!attachEnabled) return userQuestion;
-  return buildChatPromptWithRetrievedContext(userQuestion, results, mode);
+  return buildChatPromptWithRetrievedContext(userQuestion, results, mode, routeTrace);
 }

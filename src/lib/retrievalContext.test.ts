@@ -14,6 +14,8 @@ import {
   retrievalModeLabel,
   retrievalSnippet,
   retrievalSource,
+  retrievalTraceSummary,
+  type RetrievalRouteTrace,
 } from './retrievalContext';
 import type { KbSearchResult } from './kb';
 
@@ -89,12 +91,31 @@ function graphResult(
   };
 }
 
+function autoTrace(resolvedMode: RetrievalRouteTrace['resolvedMode'] = 'hybrid'): RetrievalRouteTrace {
+  return {
+    requestedMode: 'auto',
+    resolvedMode,
+    routeReason: 'Conceptual query with ready semantic index.',
+    semanticIndexState: 'ready',
+    semanticReady: true,
+    activeChunkCount: 2,
+    embeddedActiveChunkCount: 2,
+    missingActiveChunkCount: 0,
+    graphExpansionAttempted: resolvedMode === 'graph',
+    localOnly: true,
+    attachEnabled: false,
+    selectedResultCount: 0,
+    resultCount: 0,
+  };
+}
+
 describe('retrieval context helpers', () => {
   it('formats source labels and one-based citation labels', () => {
     const item = result('a', 'alpha chunk', 2);
 
     expect(retrievalSource(item)).toBe('a.txt');
     expect(retrievalCitationLabel(item, 0)).toBe('KB1');
+    expect(retrievalModeLabel('auto')).toBe('auto');
     expect(retrievalModeLabel('semantic')).toBe('semantic');
     expect(retrievalModeLabel('hybrid')).toBe('hybrid');
     expect(retrievalModeLabel('graph')).toBe('graph traversal');
@@ -163,7 +184,7 @@ describe('retrieval context helpers', () => {
   it('preserves the user question when building the chat prompt', () => {
     const prompt = buildChatPromptWithRetrievedContext('What mentions alpha?', [
       result('a', 'alpha text'),
-    ]);
+    ], 'lexical');
 
     expect(prompt).toContain('Local SQLite KB context - lexical:');
     expect(prompt).toContain('User question:\nWhat mentions alpha?');
@@ -179,6 +200,19 @@ describe('retrieval context helpers', () => {
       'What mentions alpha?',
       [result('a', 'alpha text')],
       false,
+    );
+
+    expect(prompt).toBe('What mentions alpha?');
+    expect(prompt).not.toContain('Local SQLite KB context');
+  });
+
+  it('does not attach retrieved context when Auto attach is off', () => {
+    const prompt = buildOptionalChatPromptWithRetrievedContext(
+      'What mentions alpha?',
+      [result('a', 'alpha text')],
+      false,
+      'auto',
+      autoTrace('hybrid'),
     );
 
     expect(prompt).toBe('What mentions alpha?');
@@ -218,6 +252,22 @@ describe('retrieval context helpers', () => {
     );
 
     expect(prompt).toContain('Local SQLite KB context - hybrid:');
+    expect(prompt).toContain('Doc b');
+    expect(prompt).not.toContain('Doc a');
+  });
+
+  it('attaches selected Auto chunks with a resolved-mode prompt heading', () => {
+    const items = [result('a', 'alpha text'), result('b', 'bravo text')];
+    const selected = selectedRetrievalResults(items, ['chunk-b']);
+    const prompt = buildOptionalChatPromptWithRetrievedContext(
+      'Which selected file?',
+      selected,
+      true,
+      'auto',
+      autoTrace('hybrid'),
+    );
+
+    expect(prompt).toContain('Local SQLite KB context - auto resolved hybrid:');
     expect(prompt).toContain('Doc b');
     expect(prompt).not.toContain('Doc a');
   });
@@ -275,7 +325,7 @@ describe('retrieval context helpers', () => {
       results: [],
       selectedChunkIds: [],
       attachEnabled: false,
-      mode: 'lexical',
+      mode: 'auto',
     });
   });
 
@@ -284,6 +334,7 @@ describe('retrieval context helpers', () => {
       'What mentions alpha?',
       [result('a', 'alpha text')],
       true,
+      'lexical',
     );
 
     expect(prompt).toContain('Local SQLite KB context - lexical:');
@@ -334,6 +385,48 @@ describe('retrieval context helpers', () => {
     expect(state.attachEnabled).toBe(true);
     expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled, state.mode))
       .not.toContain('Doc expanded');
+  });
+
+  it('removes deleted Auto results, selected IDs, and updates route trace counts', () => {
+    const state = retrievedContextAfterDocumentDelete(
+      {
+        query: 'fruit beverage cold rooms',
+        results: [result('a', 'alpha'), result('b', 'bravo')],
+        selectedChunkIds: ['chunk-a', 'chunk-b'],
+        attachEnabled: true,
+        mode: 'auto',
+        routeTrace: {
+          ...autoTrace('hybrid'),
+          resultCount: 2,
+          selectedResultCount: 2,
+          attachEnabled: true,
+        },
+      },
+      'doc-a',
+    );
+
+    expect(state.results.map((item) => item.chunk.id)).toEqual(['chunk-b']);
+    expect(state.selectedChunkIds).toEqual(['chunk-b']);
+    expect(state.routeTrace?.resultCount).toBe(1);
+    expect(state.routeTrace?.selectedResultCount).toBe(1);
+    expect(state.routeTrace?.attachEnabled).toBe(true);
+  });
+
+  it('reports graph seed-only trace without claiming expanded evidence', () => {
+    const state = retrievedContextAfterSearch(
+      'what is connected to Project Atlas',
+      [graphResult('seed', 'seed evidence', 'seed')],
+      'auto',
+      {
+        ...autoTrace('graph'),
+        routeReason: 'Relationship-style query with ready semantic index.',
+      },
+    );
+
+    expect(state.routeTrace?.graphSeedCount).toBe(1);
+    expect(state.routeTrace?.graphExpandedCount).toBe(0);
+    expect(state.routeTrace?.warningMessage).toBe('Graph seed-only: no graph-expanded evidence found.');
+    expect(retrievalTraceSummary(state.routeTrace)).toBe('Graph seed-only - no graph-expanded evidence found.');
   });
 
   it('filters selected IDs when a deleted document is removed', () => {

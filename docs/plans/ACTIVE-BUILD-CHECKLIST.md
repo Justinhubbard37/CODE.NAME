@@ -1,57 +1,67 @@
 ## Active Product Milestone
 
-# Phase 2H - Real Graph Traversal Retrieval / One-Hop GraphRAG Foundation
+# Phase 2I-A - Auto Retrieval Router + Simplified Mode UX
 
-Goal: add real bounded one-hop graph traversal retrieval on top of the accepted
-Hybrid SQLite KB retrieval stack. Graph mode uses Hybrid seed retrieval, then
-expands through Rust-owned SQLite entities, chunk-entity links, relationships,
-active chunks, and active documents.
+Goal: make Auto the default user-facing retrieval mode, keep manual
+Lexical/Semantic/Hybrid/Graph verification modes under Advanced controls, and
+show a visible route trace for every Auto decision without adding hidden context
+injection or changing backend retrieval commands.
 
-Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
+Status: IMPLEMENTED - VERIFICATION BLOCKED PENDING `npm test` RERUN
 
 Definition of done:
 
-- [x] add `Graph` retrieval mode beside Lexical, Semantic, and Hybrid
-- [x] add backend `kb_graphrag_search`
-- [x] use Hybrid retrieval as Graph seed retrieval
-- [x] embed the Graph query once through local loopback Ollama
-- [x] expand one hop through SQLite `entities`, `chunk_entities`, `relationships`, active `chunks`, and active `documents`
-- [x] distinguish seed evidence from graph-expanded evidence
-- [x] show graph role, traversal depth, expansion type, graph reason, related entity/relationship metadata, and graph score
-- [x] deduplicate by `chunk.id`, with seed chunks winning over expanded duplicates
-- [x] fail closed when semantic index is unavailable, stale, empty, or not ready
-- [x] show `Seed-only: no graph-expanded evidence found` when no expanded evidence exists
-- [x] preserve Lexical, Semantic, and Hybrid mode behavior
+- [x] add `Auto` as the default frontend retrieval mode
+- [x] keep manual Lexical, Semantic, Hybrid, and Graph modes under Advanced controls
+- [x] implement deterministic frontend Auto routing over existing backend commands
+- [x] route exact marker / filename / identifier queries to Lexical
+- [x] route conceptual natural-language queries to Hybrid when semantic index is ready
+- [x] route relationship-style queries to Graph when semantic index is ready
+- [x] visibly degrade Auto to Lexical when semantic or graph prerequisites are unavailable
+- [x] preserve manual Hybrid/Graph fail-closed behavior when semantic index is not ready
+- [x] add visible route trace with requested mode, resolved mode, reason, semantic index state, graph expansion counts, fallback reason, local-only status, Attach state, and selected count
+- [x] keep backend result `retrievalKind` as the real resolved kind, never `auto`
+- [x] simplify default operator-facing status to Knowledge Ready / No active documents / Semantic index needed / Needs Ollama / Semantic unavailable / Indexing
+- [x] keep manual Build / Refresh available under Advanced/fallback UI
 - [x] keep Attach OFF by default after retrieval
 - [x] attach only selected visible chunks when Attach is ON
-- [x] remove deleted documents from seed retrieval, graph expansion, selected context, and prompt attachment
-- [x] document that this is bounded one-hop graph traversal, not full multi-hop GraphRAG
-- [x] owner manual verification accepted
+- [x] remove deleted documents from Auto results, manual results, selected context, graph expansion, and prompt attachment through existing active-document filters and frontend cleanup
+- [x] document that Auto uses deterministic local rules, not a model router
+- [x] document that automatic semantic indexing remains future Phase 2I-B
+- [ ] owner manual verification accepted
 
 Target commit:
 
-`f930c80 feat: add graph traversal kb retrieval`
+`feat: add auto retrieval router ux`
 
-Verification fix commit:
+Explicitly not implemented in Phase 2I-A:
 
-`80915ca fix: bound graph seeds to enable traversal expansion`
+- backend `kb_auto_search`
+- automatic semantic indexing queue after ingestion
+- model-based routing
+- cloud embeddings
+- external vector DB
+- model auto-pull/download
+- hidden retrieval on chat send
+- hidden context injection
+- full multi-hop GraphRAG
 
 ---
 
 ## Next Slice
 
-## Owner Review - Phase 2H
+## Owner Review - Phase 2I-A
 
-Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
+Status: VERIFICATION BLOCKED
 
 Required visible result:
 
-user searches in Graph mode -> app retrieves Hybrid seed chunks -> app expands
-one hop through SQLite graph entities/relationships -> user sees seed versus
-expanded evidence and graph reasons -> user selects chunks -> Attach ON sends
-only selected visible chunks to chat.
+user searches in Auto mode -> app resolves Lexical/Hybrid/Graph through
+deterministic frontend rules -> user sees the route trace -> user selects chunks
+-> Attach ON sends only selected visible chunks to chat.
 
-Phase 2H is accepted after owner manual verification.
+Phase 2I-A is not ready for owner review until the sandbox-blocked `npm test`
+rerun passes and owner manual verification is completed.
 
 ---
 
@@ -141,10 +151,10 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] improve KB search UX
 - [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, and improved cluster spacing
 - [ ] retrieval polish: citations in generated answers, selected-context controls, and better source cards
-- [ ] Auto retrieval router
-- [ ] hide retrieval modes behind Advanced/debug controls
+- [x] Auto retrieval router
+- [x] hide retrieval modes behind Advanced/debug controls
 - [ ] automatic semantic indexing after ingestion
-- [ ] simpler Knowledge Ready status
+- [x] simpler Knowledge Ready status
 - [ ] improved Graph evidence UX
 - [ ] stronger citation rendering
 - [ ] multi-hop graph traversal after bounded one-hop behavior remains stable

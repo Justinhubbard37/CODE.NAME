@@ -17,10 +17,11 @@ The window is split into two panes.
 - **Knowledge graph (3D):** documents, entities, and links between them.
 - **Archive Index:** a tree view of current graph/search stores and planned
   retrieval scaffolds.
-- **Graph / KB Search box** (bottom): filters the current local graph and runs
-  SQLite KB retrieval in the selected Lexical, Semantic, Hybrid, or Graph mode.
-  Graph mode is bounded one-hop graph traversal, not full multi-hop GraphRAG
-  reasoning.
+- **Knowledge Search box** (bottom): filters the current local graph and runs
+  SQLite KB retrieval. Auto is the default mode and chooses Lexical, Hybrid, or
+  Graph traversal with deterministic local rules. Manual Lexical, Semantic,
+  Hybrid, and Graph modes remain available under Advanced. Graph mode is bounded
+  one-hop graph traversal, not full multi-hop GraphRAG reasoning.
 - **Drop zone:** drag files onto this pane to ingest them.
 - **Task tabs / Environment bar:** isolated work threads and per-tab capabilities.
 
@@ -58,12 +59,29 @@ rejected and the reason is shown.
 
 ## 3. Searching The Graph And SQLite KB
 
-Type in the **Graph / KB Search** box and press **Enter**. The graph view still
+Type in the **Knowledge Search** box and press **Enter**. The graph view still
 uses local graph filtering so matching nodes stay highlighted and non-matches are
 dimmed. Clear the box and press Enter to show everything again.
 
-The same search also retrieves SQLite KB chunks. Pick one retrieval mode before
-running the query:
+The same search also retrieves SQLite KB chunks. Auto is the default user-facing
+mode. It uses deterministic frontend rules, not a model router, to choose one of
+the existing local retrieval paths:
+
+- Exact markers, quoted phrases, filenames, identifiers, hashes, or citation
+  tokens route to **Lexical**.
+- Natural-language conceptual queries route to **Hybrid** when the semantic index
+  is ready; otherwise Auto visibly falls back to Lexical.
+- Relationship-style queries such as connected, related, through, tied to, or
+  relationship between route to **Graph** when the semantic index is ready;
+  otherwise Auto visibly falls back to Lexical.
+
+After each Auto search, the Local KB context panel shows a concise route trace:
+requested mode, resolved mode, route reason, semantic index state, graph
+expansion counts when relevant, fallback reason when relevant, local-only status,
+Attach state, and selected result count. The route decision is visible; it is not
+hidden or model-routed.
+
+Manual modes remain available under **Advanced**:
 
 - **Lexical:** keyword retrieval over local SQLite chunks.
 - **Semantic:** local Ollama query embeddings ranked against persisted SQLite
@@ -96,6 +114,10 @@ community summaries, or an external vector DB for SQLite KB retrieval.
 Full multi-hop GraphRAG reasoning, durable GraphRAG communities, sidecar
 GraphRAG, and external vector DB integration are still not implemented.
 
+Semantic index **Build / Refresh** remains a manual Advanced/fallback action in
+this phase. The app does not automatically queue semantic indexing after every
+ingestion yet; that is future Phase 2I-B.
+
 ## 4. Chatting With A Model
 
 Type in the composer on the right and press **Enter**. Use Shift + Enter for a
@@ -106,6 +128,10 @@ by default. Use the Local KB context panel to select or deselect visible chunks,
 then turn Attach ON when you want selected chunks included in the next chat
 request. Deselected chunks are never attached. If a KB document is deleted, its
 chunks are removed from both retrieval results and selected context.
+
+Auto route traces are visible in the UI but are not silently injected into chat.
+When Attach is ON, the chat prompt labels the selected context with the Auto
+resolved mode, such as `auto resolved hybrid` or `auto resolved graph traversal`.
 
 **Choosing a model.** Open **Settings -> Models & routing**:
 

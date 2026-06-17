@@ -20,7 +20,8 @@ export interface KbStats {
 }
 
 export type KbRetrievalKind = 'lexical' | 'semantic' | 'hybrid' | 'graph';
-export type KbRetrievalMode = KbRetrievalKind;
+export type KbRetrievalMode = 'auto' | KbRetrievalKind;
+export type KbResolvedRetrievalMode = KbRetrievalKind | 'none';
 export type KbMatchKind = 'lexical' | 'semantic' | 'both';
 export type KbSeedRetrievalKind = 'hybrid';
 export type KbGraphRole = 'seed' | 'expanded';

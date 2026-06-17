@@ -2,6 +2,10 @@ import { useState, type KeyboardEvent } from 'react';
 import { Send, Square } from 'lucide-react';
 import { useApp } from '../../state/AppState';
 import { reachesNetwork } from '../../lib/llm';
+import {
+  resolvedRetrievalKindForDisplay,
+  retrievalContextDisplayLabel,
+} from '../../lib/retrievalContext';
 
 export function ChatInput() {
   const {
@@ -12,6 +16,7 @@ export function ChatInput() {
     activeProfile,
     retrievalResults,
     retrievalMode,
+    retrievalRouteTrace,
     retrievalSelectedChunkIds,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
@@ -21,15 +26,14 @@ export function ChatInput() {
     retrievalSelectedChunkIds.includes(result.chunk.id),
   ).length;
   const retrievalAccentClass =
-    retrievalMode === 'graph'
+    resolvedRetrievalKindForDisplay(retrievalMode, retrievalRouteTrace) === 'graph'
       ? 'text-violet-300 hover:text-violet-200'
-      : retrievalMode === 'semantic'
+      : resolvedRetrievalKindForDisplay(retrievalMode, retrievalRouteTrace) === 'semantic'
         ? 'text-cyan-300 hover:text-cyan-200'
-        : retrievalMode === 'hybrid'
+        : resolvedRetrievalKindForDisplay(retrievalMode, retrievalRouteTrace) === 'hybrid'
           ? 'text-amber-300 hover:text-amber-200'
           : 'text-emerald-400 hover:text-emerald-300';
-  const retrievalContextLabel =
-    retrievalMode === 'graph' ? 'graph traversal' : retrievalMode;
+  const retrievalContextLabel = retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace);
 
   const fire = () => {
     if (!text.trim() || sending) return;

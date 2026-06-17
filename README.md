@@ -2,20 +2,23 @@
 
 CODE NAME 2 is a local-first, model-agnostic desktop agent harness. The current
 implementation includes a governed two-pane workspace, local knowledge-graph
-persistence, SQLite knowledge-base ingestion/retrieval, real local Ollama
-semantic chunk retrieval, Hybrid SQLite KB retrieval with selected-context
-controls, bounded one-hop Graph traversal retrieval over SQLite KB entities and
-relationships, a supervised Python sidecar, settings for model routing,
-capability gates, and a gated ingestion path.
+persistence, SQLite knowledge-base ingestion/retrieval, a deterministic Auto
+retrieval router, real local Ollama semantic chunk retrieval, Hybrid SQLite KB
+retrieval with selected-context controls, bounded one-hop Graph traversal
+retrieval over SQLite KB entities and relationships, a supervised Python sidecar,
+settings for model routing, capability gates, and a gated ingestion path.
 
 Current reality: full multi-hop GraphRAG reasoning is still a roadmap capability.
 SQLite lexical, semantic, Hybrid, and one-hop Graph KB retrieval are
 implemented. Graph mode uses Hybrid seed retrieval plus SQLite entities,
 chunk-entity links, relationships, active chunks, and active documents. Semantic,
 Hybrid, and Graph KB retrieval use locally generated Ollama embeddings persisted
-in SQLite. Legacy graph-node hash vectors remain as non-semantic compatibility
-scaffolding. Capability gates exist in the UI and are partially mirrored into
-Rust, but backend enforcement is not complete yet.
+in SQLite. Auto is the default user-facing retrieval mode and uses deterministic
+frontend rules, not a model router, to choose existing local backend commands.
+Manual Lexical, Semantic, Hybrid, and Graph modes remain available under
+Advanced controls. Legacy graph-node hash vectors remain as non-semantic
+compatibility scaffolding. Capability gates exist in the UI and are partially
+mirrored into Rust, but backend enforcement is not complete yet.
 
 Stack: Tauri v2 (Rust shell) + React 19 + TypeScript + Vite + Tailwind v4 +
 React Three Fiber / Three.js, with some legacy React Flow code retained under
@@ -72,6 +75,12 @@ fallback is not proof that a real model/provider is ready.
 
 ## Current Stabilization Notes
 
+- Auto retrieval is frontend-only in this phase. It visibly reports requested
+  mode, resolved mode, route reason, semantic readiness, graph expansion counts,
+  fallback reason, local-only status, Attach state, and selected result count.
+- Auto may visibly degrade to Lexical when semantic or graph prerequisites are
+  unavailable. Manual Advanced modes keep their stricter behavior and do not
+  silently fallback.
 - Graph mode is implemented as bounded one-hop SQLite KB graph traversal: Hybrid
   seed retrieval expands through stored entities, chunk-entity links,
   relationships, and active chunks/documents. It is not full multi-hop GraphRAG
@@ -85,6 +94,10 @@ fallback is not proof that a real model/provider is ready.
 - Graph mode labels seed versus expanded evidence, shows traversal depth,
   expansion type, graph reason, graph score, and attaches only user-selected
   visible chunks when Attach is ON.
+- Semantic index Build / Refresh remains manual in this phase. Automatic
+  semantic indexing after ingestion is future Phase 2I-B and is not implemented.
+- Retrieved chunks are never hidden-injected on chat send. Attach remains OFF by
+  default, and Attach ON sends only selected visible chunks.
 - Full multi-hop GraphRAG reasoning, external vector DB integration, sidecar
   community GraphRAG, legacy hash-vector GraphRAG, and model auto-pull/download
   are not implemented.
