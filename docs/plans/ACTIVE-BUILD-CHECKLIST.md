@@ -6,7 +6,7 @@ Goal: combine real lexical SQLite KB retrieval with real local Ollama semantic
 SQLite KB retrieval, deduplicate overlapping chunks, show transparent match
 reasons and scores, and let the user select which chunks may enter chat context.
 
-Status: IMPLEMENTED - PENDING OWNER REVIEW
+Status: ACCEPTED
 
 Definition of done:
 
@@ -25,7 +25,7 @@ Definition of done:
 - [x] attach only selected visible chunks when Attach is ON
 - [x] remove deleted documents from retrieval and selected context
 - [x] document that this is Hybrid SQLite KB retrieval, not GraphRAG
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
 Target commit:
 
@@ -37,7 +37,7 @@ Target commit:
 
 ## Owner Review - Phase 2G
 
-Status: READY AFTER VERIFICATION COMMANDS PASS
+Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
 
 Required visible result:
 
@@ -45,7 +45,7 @@ user searches in Hybrid mode -> app retrieves and deduplicates lexical plus
 semantic chunks -> user selects chunks -> Attach ON sends only selected chunks to
 chat.
 
-Phase 2G is not accepted until owner manual verification passes.
+Phase 2G is accepted after owner manual verification.
 
 ---
 
@@ -437,7 +437,7 @@ Status:
 
 Date: 2026-06-17
 
-Commit: pending implementation commit
+Commit: `a5717b9 feat: add hybrid kb retrieval selection`
 
 What changed in the app:
 
@@ -550,6 +550,33 @@ What works now:
 - Attach ON sends only selected chunks.
 - Deleted documents are excluded from retrieval and selected context.
 
+Owner manual verification results:
+
+- Phase 2G Hybrid Retrieval + Grounded Context Selection is accepted.
+- Implementation commit verified: `a5717b9 feat: add hybrid kb retrieval selection`.
+- Four exact Desktop files were created:
+  - `phase-2g-lexical-ledger.txt`
+  - `phase-2g-semantic-orchard.txt`
+  - `phase-2g-hybrid-overlap.txt`
+  - `phase-2g-delete-target.txt`
+- All four files ingested successfully.
+- Ingestion ledger showed all four indexed.
+- Semantic Index initially showed provider `ollama`, model `nomic-embed-text`, active chunks `4`, embedded `0`, missing `4`, and state `NOT-READY`.
+- Semantic index build worked: state changed to `READY`, active chunks `4`, embedded `4`, missing `0`, and dimension `768`.
+- Retrieval modes were visible: Lexical, Semantic, and Hybrid.
+- Lexical mode still worked: query `LexicalOnlyMarker7421` returned `phase-2g-lexical-ledger.txt`, right panel showed `Local KB context - lexical`, and Attach was OFF by default.
+- Semantic mode still worked: query `fruit beverage cold rooms` ranked `phase-2g-semantic-orchard.txt` first, right panel showed `Local KB context - semantic`, and Attach was OFF by default.
+- Hybrid overlap retrieval worked: query `HybridOverlapMarker6149 spacecraft docking` ranked `phase-2g-hybrid-overlap.txt` first, right panel showed `Local KB context - hybrid`, result showed match reason `both`, lexical score, semantic score, and combined score, and Attach was OFF by default.
+- Hybrid lexical-evidence retrieval worked with caveat: query `LexicalOnlyMarker7421` ranked `phase-2g-lexical-ledger.txt` first, exposed lexical evidence and score, and showed `MATCH BOTH` rather than pure lexical-only because semantic contribution also passed threshold. This was accepted as lexical evidence verification, not a pure lexical-only demonstration.
+- Hybrid semantic-dominant retrieval worked: query `fruit beverage cold rooms` ranked `phase-2g-semantic-orchard.txt` first and showed semantic match evidence.
+- Selection and deselection worked: query `HybridOverlapMarker6149 DeleteFinanceMarker8891 spacecraft invoice` returned hybrid results, `phase-2g-delete-target.txt` was deselected, `phase-2g-hybrid-overlap.txt` remained selected, selected count dropped to `3/4`, and Attach remained OFF by default.
+- Attach OFF behavior worked: sending `Reply exactly: phase 2g detached check complete.` returned exactly `phase 2g detached check complete.` with no `[KB1]`, no filename, and no hidden KB context.
+- Attach ON selected-only behavior worked: after Attach was turned ON, sending `List the attached KB source filenames.` listed only selected files: `phase-2g-hybrid-overlap.txt`, `phase-2g-lexical-ledger.txt`, and `phase-2g-semantic-orchard.txt`; it did not list deselected `phase-2g-delete-target.txt`.
+- Deleted-document lexical exclusion worked: `phase-2g-delete-target.txt` was deleted from KB Documents, lexical query `DeleteFinanceMarker8891` returned no matches, and the deleted file was not attachable.
+- Deleted-document hybrid exclusion worked: hybrid query `DeleteFinanceMarker8891 invoice reconciliation` did not return `phase-2g-delete-target.txt`, the deleted file did not remain selected or attachable, and remaining selected results were non-deleted documents.
+- App-side cleanup worked: remaining Phase 2G test docs `phase-2g-lexical-ledger.txt`, `phase-2g-hybrid-overlap.txt`, and `phase-2g-semantic-orchard.txt` were deleted from KB Documents, active KB documents dropped to `0`, active chunks dropped to `0`, and Semantic Index became `EMPTY`.
+- Desktop cleanup completed for `phase-2g-lexical-ledger.txt`, `phase-2g-semantic-orchard.txt`, `phase-2g-hybrid-overlap.txt`, and `phase-2g-delete-target.txt`.
+
 What still does not work:
 
 - Full GraphRAG is not implemented.
@@ -562,13 +589,13 @@ What still does not work:
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Ready for owner review after verification commands pass.
+- Accepted after owner manual verification.
 
 ### Slice: Phase 2E - Retrieval MVP
 
