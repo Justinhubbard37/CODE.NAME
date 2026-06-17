@@ -7,7 +7,7 @@ Hybrid SQLite KB retrieval stack. Graph mode uses Hybrid seed retrieval, then
 expands through Rust-owned SQLite entities, chunk-entity links, relationships,
 active chunks, and active documents.
 
-Status: IMPLEMENTED - PENDING OWNER REVIEW
+Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
 
 Definition of done:
 
@@ -26,11 +26,15 @@ Definition of done:
 - [x] attach only selected visible chunks when Attach is ON
 - [x] remove deleted documents from seed retrieval, graph expansion, selected context, and prompt attachment
 - [x] document that this is bounded one-hop graph traversal, not full multi-hop GraphRAG
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
 Target commit:
 
-`feat: add graph traversal kb retrieval`
+`f930c80 feat: add graph traversal kb retrieval`
+
+Verification fix commit:
+
+`80915ca fix: bound graph seeds to enable traversal expansion`
 
 ---
 
@@ -38,7 +42,7 @@ Target commit:
 
 ## Owner Review - Phase 2H
 
-Status: PENDING OWNER MANUAL VERIFICATION
+Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
 
 Required visible result:
 
@@ -47,7 +51,7 @@ one hop through SQLite graph entities/relationships -> user sees seed versus
 expanded evidence and graph reasons -> user selects chunks -> Attach ON sends
 only selected visible chunks to chat.
 
-Phase 2H is not accepted until owner manual verification passes.
+Phase 2H is accepted after owner manual verification.
 
 ---
 
@@ -137,6 +141,13 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] improve KB search UX
 - [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, and improved cluster spacing
 - [ ] retrieval polish: citations in generated answers, selected-context controls, and better source cards
+- [ ] Auto retrieval router
+- [ ] hide retrieval modes behind Advanced/debug controls
+- [ ] automatic semantic indexing after ingestion
+- [ ] simpler Knowledge Ready status
+- [ ] improved Graph evidence UX
+- [ ] stronger citation rendering
+- [ ] multi-hop graph traversal after bounded one-hop behavior remains stable
 - [ ] improve chat-with-sources UX
 - [ ] add backup/export/import
 - [ ] package for release
@@ -439,7 +450,10 @@ Status:
 
 Date: 2026-06-17
 
-Commit: `feat: add graph traversal kb retrieval` (exact hash reported after commit)
+Implementation commits:
+
+- `f930c80 feat: add graph traversal kb retrieval`
+- `80915ca fix: bound graph seeds to enable traversal expansion`
 
 What changed in the app:
 
@@ -456,6 +470,71 @@ What changed in the app:
 - Attach remains OFF by default; Attach ON sends only selected visible chunks.
 - Same-document neighbor traversal is not used for Phase 2H acceptance.
 
+Owner manual verification:
+
+- Created five exact Desktop files:
+  - `phase-2h-seed-atlas.txt`
+  - `phase-2h-entity-neighbor.txt`
+  - `phase-2h-relationship-neighbor.txt`
+  - `phase-2h-nonneighbor.txt`
+  - `phase-2h-delete-target.txt`
+- All five files ingested successfully.
+- KB stats showed active documents `5` and active chunks `5`.
+- Semantic Index initially showed provider `ollama`, model `nomic-embed-text`,
+  active chunks `5`, embedded `0`, missing `5`, and state `NOT-READY`.
+- Semantic index build worked: state changed to `READY`, active chunks `5`,
+  embedded `5`, missing `0`, and dimension `768`.
+- Graph mode was visible beside Lexical, Semantic, and Hybrid.
+- Initial owner graph verification found a blocking issue before the fix: query
+  `SeedGraphMarker2101 orbital docking` in Graph mode returned `5 chunks`,
+  `seeds 5`, `expanded 0`; the panel showed
+  `Seed-only: no graph-expanded evidence found`; all visible cards were
+  `ROLE SEED`; and `phase-2h-nonneighbor.txt` appeared as seed evidence. This
+  was rejected because it did not prove graph traversal.
+- Fix commit `80915ca` corrected the root cause: Graph mode had reused the
+  visible result limit as the Hybrid seed limit, so in the five-document fixture
+  Hybrid consumed all documents as seeds. The fix separated the seed cap from the
+  visible result cap and defaulted Graph seed count to `1`.
+- After relaunching the app, Graph query `SeedGraphMarker2101 orbital docking`
+  passed: summary showed `4 chunks`, `seeds 1`, `expanded 3`.
+- `phase-2h-seed-atlas.txt` appeared as `ROLE SEED`.
+- `phase-2h-entity-neighbor.txt` appeared as `ROLE EXPANDED` through shared
+  entity `Project Atlas`.
+- `phase-2h-relationship-neighbor.txt` appeared as `ROLE EXPANDED` through
+  relationship evidence involving `Aurora Bridge` and/or `Northstar Relay`.
+- `phase-2h-delete-target.txt` appeared as `ROLE EXPANDED` before deletion,
+  which was acceptable because it shared `Project Atlas`.
+- `phase-2h-nonneighbor.txt` did not appear.
+- Graph evidence cards showed role, traversal depth, expansion type, graph
+  reason, graph score, and source filename.
+- Selected-only controls worked: `phase-2h-delete-target.txt` and
+  `phase-2h-relationship-neighbor.txt` were deselected;
+  `phase-2h-seed-atlas.txt` and `phase-2h-entity-neighbor.txt` remained
+  selected; selected count showed `2/4`.
+- Attach OFF behavior worked: sending
+  `Reply exactly: phase 2h detached check complete.` returned exactly
+  `phase 2h detached check complete.` with no `[KB1]`, no filenames, and no
+  graph context leakage.
+- Attach ON selected-only behavior worked: sending
+  `List the attached KB source filenames and graph reasons.` listed only
+  `phase-2h-seed-atlas.txt` and `phase-2h-entity-neighbor.txt`; did not list
+  deselected `phase-2h-delete-target.txt` or
+  `phase-2h-relationship-neighbor.txt`; and included graph reasons for seed
+  evidence from Hybrid retrieval and shared entity `Project Atlas` from seed
+  chunk 1.
+- Deleted-document graph exclusion worked: `phase-2h-delete-target.txt` was
+  deleted from KB Documents; Graph query `DeletionGraphMarker4208 Project Atlas`
+  did not return it; the deleted target did not remain selected; it was not
+  attachable; and remaining results were active, non-deleted documents only.
+- App-side cleanup worked: remaining Phase 2H test docs
+  `phase-2h-seed-atlas.txt`, `phase-2h-entity-neighbor.txt`,
+  `phase-2h-relationship-neighbor.txt`, and `phase-2h-nonneighbor.txt` were
+  deleted from KB Documents; active documents dropped to `0`; active chunks
+  dropped to `0`; and Semantic Index became `EMPTY`.
+- Desktop cleanup completed for `phase-2h-seed-atlas.txt`,
+  `phase-2h-entity-neighbor.txt`, `phase-2h-relationship-neighbor.txt`,
+  `phase-2h-nonneighbor.txt`, and `phase-2h-delete-target.txt`.
+
 What still does not work:
 
 - Full multi-hop GraphRAG reasoning is not implemented.
@@ -465,16 +544,18 @@ What still does not work:
 - Sidecar community summaries are not the Graph retrieval path.
 - Legacy hash-vector graph filtering is not the Graph retrieval path.
 - Hidden/autonomous retrieval on chat send is not implemented.
+- Same-document neighbor expansion is not used for Phase 2H acceptance.
+- Auto retrieval router / UX simplification is not implemented.
 
 Decision:
 
-- [ ] Accepted
+- [x] Accepted
 - [ ] Needs fixes
 - [ ] Rejected
 
 Status:
 
-- Pending owner manual verification.
+- Accepted by owner manual verification.
 
 ---
 
