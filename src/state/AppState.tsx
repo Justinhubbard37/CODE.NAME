@@ -70,6 +70,7 @@ import {
   kbSearch,
   kbSemanticSearch,
   kbHybridSearch,
+  kbGraphRagSearch,
   kbEmbeddingStatus,
   kbEmbedMissing,
   kbStats as loadKbStats,
@@ -392,8 +393,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         clearKbRetrieval();
         return [];
       }
-      if (retrievalMode === 'hybrid' && !semanticStatus.ready) {
-        const reason = 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.';
+      if ((retrievalMode === 'hybrid' || retrievalMode === 'graph') && !semanticStatus.ready) {
+        const reason =
+          retrievalMode === 'graph'
+            ? 'Graph retrieval requires a ready semantic index because it uses Hybrid seed retrieval. Build / Refresh semantic index first.'
+            : 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.';
         const next = retrievedContextAfterSearch(query, [], retrievalMode);
         applyRetrievedContext(next);
         await refreshSemanticStatus();
@@ -402,23 +406,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       }
       try {
         const results =
-          retrievalMode === 'hybrid'
+          retrievalMode === 'graph'
+            ? await kbGraphRagSearch({ workspaceId: activeKbWorkspaceId(), query, limit, maxDepth: 1 })
+            : retrievalMode === 'hybrid'
             ? await kbHybridSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
             : retrievalMode === 'semantic'
               ? await kbSemanticSearch({ workspaceId: activeKbWorkspaceId(), query, limit })
               : await kbSearch({ workspaceId: activeKbWorkspaceId(), query, limit });
         const next = retrievedContextAfterSearch(query, results, retrievalMode);
         applyRetrievedContext(next);
-        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') setSemanticError('');
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') setSemanticError('');
         await refreshKbStats();
-        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') await refreshSemanticStatus();
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') await refreshSemanticStatus();
         return results;
       } catch (err) {
         const next = retrievedContextAfterSearch(query, [], retrievalMode);
         applyRetrievedContext(next);
-        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid') {
+        if (retrievalMode === 'semantic' || retrievalMode === 'hybrid' || retrievalMode === 'graph') {
           const reason = err instanceof Error
             ? err.message
+            : retrievalMode === 'graph'
+              ? 'Graph retrieval requires a ready semantic index because it uses Hybrid seed retrieval. Build / Refresh semantic index first.'
             : retrievalMode === 'hybrid'
               ? 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.'
               : 'semantic retrieval unavailable';

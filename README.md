@@ -4,14 +4,18 @@ CODE NAME 2 is a local-first, model-agnostic desktop agent harness. The current
 implementation includes a governed two-pane workspace, local knowledge-graph
 persistence, SQLite knowledge-base ingestion/retrieval, real local Ollama
 semantic chunk retrieval, Hybrid SQLite KB retrieval with selected-context
-controls, a supervised Python sidecar, settings for model
-routing, capability gates, and a gated ingestion path.
+controls, bounded one-hop Graph traversal retrieval over SQLite KB entities and
+relationships, a supervised Python sidecar, settings for model routing,
+capability gates, and a gated ingestion path.
 
-Current reality: full GraphRAG is still a roadmap capability. SQLite lexical,
-semantic, and Hybrid KB retrieval are implemented. Semantic and Hybrid KB
-retrieval use locally generated Ollama embeddings persisted in SQLite. Legacy
-graph-node hash vectors remain as non-semantic compatibility scaffolding. Capability gates exist in the UI and are
-partially mirrored into Rust, but backend enforcement is not complete yet.
+Current reality: full multi-hop GraphRAG reasoning is still a roadmap capability.
+SQLite lexical, semantic, Hybrid, and one-hop Graph KB retrieval are
+implemented. Graph mode uses Hybrid seed retrieval plus SQLite entities,
+chunk-entity links, relationships, active chunks, and active documents. Semantic,
+Hybrid, and Graph KB retrieval use locally generated Ollama embeddings persisted
+in SQLite. Legacy graph-node hash vectors remain as non-semantic compatibility
+scaffolding. Capability gates exist in the UI and are partially mirrored into
+Rust, but backend enforcement is not complete yet.
 
 Stack: Tauri v2 (Rust shell) + React 19 + TypeScript + Vite + Tailwind v4 +
 React Three Fiber / Three.js, with some legacy React Flow code retained under
@@ -68,16 +72,22 @@ fallback is not proof that a real model/provider is ready.
 
 ## Current Stabilization Notes
 
-- Graph search is implemented as local hybrid retrieval over the current graph
-  and legacy non-semantic hash-vector scaffolding, not production GraphRAG.
+- Graph mode is implemented as bounded one-hop SQLite KB graph traversal: Hybrid
+  seed retrieval expands through stored entities, chunk-entity links,
+  relationships, and active chunks/documents. It is not full multi-hop GraphRAG
+  reasoning.
 - Semantic KB retrieval uses local loopback Ollama embeddings for SQLite chunks;
   it does not use OpenAI, Gemini, cloud embeddings, random vectors, or hash-vector
   fallback.
 - Hybrid SQLite KB retrieval combines real lexical and semantic KB candidates,
   deduplicates chunks by ID, displays lexical/semantic/combined scores plus match
   reasons, and attaches only user-selected visible chunks when Attach is ON.
-- Full GraphRAG, graph traversal retrieval, external vector DB integration, and
-  model auto-pull/download are not implemented.
+- Graph mode labels seed versus expanded evidence, shows traversal depth,
+  expansion type, graph reason, graph score, and attaches only user-selected
+  visible chunks when Attach is ON.
+- Full multi-hop GraphRAG reasoning, external vector DB integration, sidecar
+  community GraphRAG, legacy hash-vector GraphRAG, and model auto-pull/download
+  are not implemented.
 - Capability gates are real controls, but not every backend command is fully
   enforced by Rust yet.
 - API keys are stored through the OS keychain path, but current frontend APIs can

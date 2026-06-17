@@ -535,6 +535,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "kb_graphrag_search",
+        required_gates: KB_LOCAL_FILESYSTEM,
+        risk: risk(RiskLevel::Low, RiskLevel::Low, RiskLevel::Low, RiskLevel::None),
+        rationale: "Runs local Hybrid SQLite KB seed retrieval plus one-hop SQLite entity and relationship traversal through loopback-only Ollama embeddings; no sidecar, cloud embedding, external vector DB, or legacy hash-vector graph path.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "kb_get_document",
         required_gates: KB_LOCAL_FILESYSTEM,
         risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
@@ -832,6 +840,15 @@ mod tests {
         assert!(policy_requires_gate("kb_hybrid_search", Gate::Filesystem));
         assert_eq!(policy.priority, PolicyPriority::High);
         assert_eq!(policy.risk.tool_sidecar, RiskLevel::None);
+    }
+
+    #[test]
+    fn graphrag_kb_search_policy_matches_local_graph_boundary() {
+        let policy = policy_for_command("kb_graphrag_search").expect("kb_graphrag_search policy");
+        assert!(policy_requires_gate("kb_graphrag_search", Gate::Filesystem));
+        assert_eq!(policy.priority, PolicyPriority::High);
+        assert_eq!(policy.risk.tool_sidecar, RiskLevel::None);
+        assert!(policy.rationale.contains("one-hop SQLite entity"));
     }
 
     #[test]

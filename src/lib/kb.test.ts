@@ -4,6 +4,7 @@ import {
   kbEmbedMissing,
   kbEmbeddingStatus,
   kbDeleteDocument,
+  kbGraphRagSearch,
   kbGraphProjection,
   kbHybridSearch,
   kbIngestText,
@@ -179,9 +180,51 @@ describe('SQLite KB wrapper', () => {
     expect(results[0].matchKind).toBe('both');
   });
 
+  it('calls kb_graphrag_search with local Ollama defaults and one-hop depth', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue([
+      {
+        chunk: {
+          id: 'chunk-1',
+          documentId: 'doc-1',
+          workspaceId: 'default',
+          ordinal: 0,
+          text: 'graph seed result',
+          charStart: 0,
+          charEnd: 17,
+          tokenEstimate: 5,
+          contentHash: 'fnv1a64:test',
+        },
+        documentTitle: 'Doc',
+        score: 0.03,
+        retrievalKind: 'graph',
+        seedRetrievalKind: 'hybrid',
+        graphRole: 'seed',
+        expansionType: 'seed',
+        traversalDepth: 0,
+        graphReason: 'Seed evidence from Hybrid retrieval rank 1',
+      },
+    ]);
+
+    const results = await kbGraphRagSearch({ query: 'SeedGraphMarker2101 orbital docking', limit: 2 });
+
+    expect(mockedInvoke).toHaveBeenCalledWith('kb_graphrag_search', {
+      workspaceId: 'default',
+      query: 'SeedGraphMarker2101 orbital docking',
+      limit: 2,
+      provider: 'ollama',
+      model: 'nomic-embed-text',
+      baseUrl: 'http://127.0.0.1:11434',
+      maxDepth: 1,
+    });
+    expect(results[0].retrievalKind).toBe('graph');
+    expect(results[0].graphRole).toBe('seed');
+  });
+
   it('returns safe semantic fallbacks in browser mode without claiming readiness', async () => {
     await expect(kbSemanticSearch({ query: 'spacecraft docking', limit: 2 })).resolves.toEqual([]);
     await expect(kbHybridSearch({ query: 'spacecraft docking', limit: 2 })).resolves.toEqual([]);
+    await expect(kbGraphRagSearch({ query: 'spacecraft docking', limit: 2 })).resolves.toEqual([]);
     await expect(kbEmbeddingStatus()).resolves.toMatchObject({
       provider: 'ollama',
       model: 'nomic-embed-text',

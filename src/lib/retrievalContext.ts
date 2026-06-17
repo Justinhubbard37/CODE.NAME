@@ -47,10 +47,19 @@ export function retrievalScoreLabel(score: number): string {
 export function retrievalModeLabel(mode: KbRetrievalMode): string {
   if (mode === 'semantic') return 'semantic';
   if (mode === 'hybrid') return 'hybrid';
+  if (mode === 'graph') return 'graph traversal';
   return 'lexical';
 }
 
+function graphValueLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
 export function retrievalMatchKindLabel(result: KbSearchResult): string {
+  if (result.graphRole === 'seed') return 'graph seed';
+  if (result.graphRole === 'expanded') {
+    return result.expansionType ? graphValueLabel(result.expansionType) : 'graph expanded';
+  }
   return result.matchKind ?? result.retrievalKind ?? 'lexical';
 }
 
@@ -147,10 +156,25 @@ export function formatRetrievedContextBlock(
     const chunk = result.chunk.text.replace(/\s+/g, ' ').trim();
     const clipped = clipText(chunk, charsPerChunk);
     const metadata = [
+      result.graphRole ? `graph role: ${result.graphRole}` : '',
+      Number.isFinite(result.traversalDepth) ? `depth: ${result.traversalDepth}` : '',
+      result.expansionType ? `expansion: ${graphValueLabel(result.expansionType)}` : '',
+      result.seedChunkId ? `seed chunk: ${result.seedChunkId}` : '',
+      result.graphReason ? `graph reason: ${result.graphReason}` : '',
+      Number.isFinite(result.graphScore) ? `graph score: ${retrievalScoreLabel(result.graphScore!)}` : '',
       result.matchKind ? `match: ${result.matchKind}` : '',
       Number.isFinite(result.lexicalScore) ? `lexical: ${retrievalScoreLabel(result.lexicalScore!)}` : '',
       Number.isFinite(result.semanticScore) ? `semantic: ${retrievalScoreLabel(result.semanticScore!)}` : '',
       Number.isFinite(result.combinedScore) ? `combined: ${retrievalScoreLabel(result.combinedScore!)}` : '',
+      Number.isFinite(result.combinedDisplayScore) ? `display score: ${retrievalScoreLabel(result.combinedDisplayScore!)}` : '',
+      result.graphEntities?.length
+        ? `graph entities: ${result.graphEntities.map((entity) => `${entity.name} (${entity.kind})`).join(', ')}`
+        : '',
+      result.graphRelationships?.length
+        ? `graph relationships: ${result.graphRelationships
+            .map((relationship) => `${relationship.sourceName} -${relationship.kind}-> ${relationship.targetName}`)
+            .join('; ')}`
+        : '',
     ].filter(Boolean);
     const metadataText = metadata.length ? ` | ${metadata.join(' | ')}` : '';
     blocks.push(

@@ -19,9 +19,16 @@ export interface KbStats {
   ftsAvailable: boolean;
 }
 
-export type KbRetrievalKind = 'lexical' | 'semantic' | 'hybrid';
+export type KbRetrievalKind = 'lexical' | 'semantic' | 'hybrid' | 'graph';
 export type KbRetrievalMode = KbRetrievalKind;
 export type KbMatchKind = 'lexical' | 'semantic' | 'both';
+export type KbSeedRetrievalKind = 'hybrid';
+export type KbGraphRole = 'seed' | 'expanded';
+export type KbGraphExpansionType =
+  | 'seed'
+  | 'shared_entity'
+  | 'relationship_evidence'
+  | 'same_document_neighbor';
 
 export interface KbEmbeddingStatus {
   provider: string;
@@ -85,6 +92,24 @@ export interface KbDeleteResult {
   deletedAt: number;
 }
 
+export interface KbGraphEntityRef {
+  id: string;
+  name: string;
+  kind: string;
+  confidence?: number;
+}
+
+export interface KbGraphRelationshipRef {
+  id: string;
+  kind: string;
+  sourceEntityId: string;
+  sourceName: string;
+  targetEntityId: string;
+  targetName: string;
+  evidenceChunkId?: string;
+  confidence?: number;
+}
+
 export interface KbSearchResult {
   chunk: KbChunk;
   documentTitle: string;
@@ -95,6 +120,17 @@ export interface KbSearchResult {
   semanticScore?: number;
   combinedScore?: number;
   matchKind?: KbMatchKind;
+  seedRetrievalKind?: KbSeedRetrievalKind;
+  graphRole?: KbGraphRole;
+  seedResultId?: string;
+  seedChunkId?: string;
+  expansionType?: KbGraphExpansionType;
+  traversalDepth?: number;
+  graphEntities?: KbGraphEntityRef[];
+  graphRelationships?: KbGraphRelationshipRef[];
+  graphReason?: string;
+  graphScore?: number;
+  combinedDisplayScore?: number;
 }
 
 export interface KbGraphNode {
@@ -294,6 +330,27 @@ export async function kbHybridSearch(input: {
     provider: input.provider ?? defaultEmbeddingProvider,
     model: input.model ?? defaultEmbeddingModel,
     baseUrl: input.baseUrl ?? defaultEmbeddingBaseUrl,
+  });
+}
+
+export async function kbGraphRagSearch(input: {
+  workspaceId?: string;
+  query: string;
+  limit?: number;
+  provider?: string;
+  model?: string;
+  baseUrl?: string;
+  maxDepth?: number;
+}): Promise<KbSearchResult[]> {
+  if (!isTauri()) return [];
+  return invokeTauri<KbSearchResult[]>('kb_graphrag_search', {
+    workspaceId: input.workspaceId ?? activeKbWorkspaceId(),
+    query: input.query,
+    limit: input.limit ?? 8,
+    provider: input.provider ?? defaultEmbeddingProvider,
+    model: input.model ?? defaultEmbeddingModel,
+    baseUrl: input.baseUrl ?? defaultEmbeddingBaseUrl,
+    maxDepth: input.maxDepth ?? 1,
   });
 }
 

@@ -1,51 +1,53 @@
 ## Active Product Milestone
 
-# Phase 2G - Hybrid Retrieval + Grounded Context Selection
+# Phase 2H - Real Graph Traversal Retrieval / One-Hop GraphRAG Foundation
 
-Goal: combine real lexical SQLite KB retrieval with real local Ollama semantic
-SQLite KB retrieval, deduplicate overlapping chunks, show transparent match
-reasons and scores, and let the user select which chunks may enter chat context.
+Goal: add real bounded one-hop graph traversal retrieval on top of the accepted
+Hybrid SQLite KB retrieval stack. Graph mode uses Hybrid seed retrieval, then
+expands through Rust-owned SQLite entities, chunk-entity links, relationships,
+active chunks, and active documents.
 
-Status: ACCEPTED
+Status: IMPLEMENTED - PENDING OWNER REVIEW
 
 Definition of done:
 
-- [x] add `Hybrid` retrieval mode beside Lexical and Semantic
-- [x] add backend `kb_hybrid_search`
-- [x] run lexical and semantic retrieval as real subcomponents
-- [x] embed the hybrid query once through local loopback Ollama
-- [x] deduplicate hybrid results by `chunk.id`
-- [x] preserve raw `lexicalScore` and `semanticScore`
-- [x] compute `combinedScore` with Reciprocal Rank Fusion
-- [x] show `matchKind`: `lexical`, `semantic`, or `both`
+- [x] add `Graph` retrieval mode beside Lexical, Semantic, and Hybrid
+- [x] add backend `kb_graphrag_search`
+- [x] use Hybrid retrieval as Graph seed retrieval
+- [x] embed the Graph query once through local loopback Ollama
+- [x] expand one hop through SQLite `entities`, `chunk_entities`, `relationships`, active `chunks`, and active `documents`
+- [x] distinguish seed evidence from graph-expanded evidence
+- [x] show graph role, traversal depth, expansion type, graph reason, related entity/relationship metadata, and graph score
+- [x] deduplicate by `chunk.id`, with seed chunks winning over expanded duplicates
 - [x] fail closed when semantic index is unavailable, stale, empty, or not ready
-- [x] preserve Lexical and Semantic mode behavior
-- [x] add selected-context controls
+- [x] show `Seed-only: no graph-expanded evidence found` when no expanded evidence exists
+- [x] preserve Lexical, Semantic, and Hybrid mode behavior
 - [x] keep Attach OFF by default after retrieval
 - [x] attach only selected visible chunks when Attach is ON
-- [x] remove deleted documents from retrieval and selected context
-- [x] document that this is Hybrid SQLite KB retrieval, not GraphRAG
-- [x] owner manual verification accepted
+- [x] remove deleted documents from seed retrieval, graph expansion, selected context, and prompt attachment
+- [x] document that this is bounded one-hop graph traversal, not full multi-hop GraphRAG
+- [ ] owner manual verification accepted
 
 Target commit:
 
-`feat: add hybrid kb retrieval selection`
+`feat: add graph traversal kb retrieval`
 
 ---
 
 ## Next Slice
 
-## Owner Review - Phase 2G
+## Owner Review - Phase 2H
 
-Status: ACCEPTED AFTER OWNER MANUAL VERIFICATION
+Status: PENDING OWNER MANUAL VERIFICATION
 
 Required visible result:
 
-user searches in Hybrid mode -> app retrieves and deduplicates lexical plus
-semantic chunks -> user selects chunks -> Attach ON sends only selected chunks to
-chat.
+user searches in Graph mode -> app retrieves Hybrid seed chunks -> app expands
+one hop through SQLite graph entities/relationships -> user sees seed versus
+expanded evidence and graph reasons -> user selects chunks -> Attach ON sends
+only selected visible chunks to chat.
 
-Phase 2G is accepted after owner manual verification.
+Phase 2H is not accepted until owner manual verification passes.
 
 ---
 
@@ -121,13 +123,13 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] answer shows source snippets
 - [ ] works with local model route or synthetic fallback
 
-### Milestone 8 - Real GraphRAG
+### Milestone 8 - Real GraphRAG / Graph Traversal
 
-- [ ] combine text retrieval with graph traversal
+- [x] combine Hybrid seed retrieval with bounded one-hop graph traversal
 - [ ] retrieve chunks by document relevance
-- [ ] retrieve related entities/relationships
-- [ ] generate grounded answers from both
-- [ ] show source evidence
+- [x] retrieve related entities/relationships for one-hop evidence expansion
+- [ ] generate grounded answers from both without explicit user attachment
+- [x] show source evidence and graph reasons
 
 ### Milestone 9 - Product Polish
 
@@ -146,8 +148,8 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] Sidecar command gate enforcement
 - [ ] Browser harness lockdown
 - [ ] Audit hash canonicalization
-- [ ] Full GraphRAG
-- [ ] Graph traversal retrieval
+- [ ] Full multi-hop GraphRAG
+- [x] Bounded one-hop graph traversal retrieval
 - [ ] External vector DB integration
 - [ ] Cloud embeddings
 - [ ] Model auto-pull/download
@@ -430,6 +432,49 @@ Decision:
 Status:
 
 - Accepted by owner manual verification.
+
+---
+
+### Slice: Phase 2H - Real Graph Traversal Retrieval / One-Hop GraphRAG Foundation
+
+Date: 2026-06-17
+
+Commit: `feat: add graph traversal kb retrieval` (exact hash reported after commit)
+
+What changed in the app:
+
+- Added real bounded one-hop Graph retrieval through backend `kb_graphrag_search`.
+- Graph retrieval uses Hybrid SQLite KB retrieval as seed retrieval.
+- Graph query embedding happens once per graph search through local loopback Ollama.
+- Graph expansion traverses Rust-owned SQLite `entities`, `chunk_entities`,
+  `relationships`, active `chunks`, and active `documents`.
+- Graph results distinguish seed evidence from graph-expanded evidence.
+- Graph results include graph role, traversal depth, expansion type, graph
+  reason, graph score, and related entity/relationship metadata.
+- Deleted documents are excluded from seed retrieval, graph expansion, selected
+  context, and prompt attachment.
+- Attach remains OFF by default; Attach ON sends only selected visible chunks.
+- Same-document neighbor traversal is not used for Phase 2H acceptance.
+
+What still does not work:
+
+- Full multi-hop GraphRAG reasoning is not implemented.
+- External vector DB integration is not implemented.
+- Cloud embeddings are not used.
+- Ollama models are not auto-pulled or downloaded by the app.
+- Sidecar community summaries are not the Graph retrieval path.
+- Legacy hash-vector graph filtering is not the Graph retrieval path.
+- Hidden/autonomous retrieval on chat send is not implemented.
+
+Decision:
+
+- [ ] Accepted
+- [ ] Needs fixes
+- [ ] Rejected
+
+Status:
+
+- Pending owner manual verification.
 
 ---
 

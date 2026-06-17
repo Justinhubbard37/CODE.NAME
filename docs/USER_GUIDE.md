@@ -4,8 +4,9 @@ A practical guide to using CODE NAME 2, a local-first agent harness with a
 governed knowledge graph. Cloud models are optional and opt-in.
 
 > Current-state note: this guide describes the early-alpha implementation. Some
-> labels and roadmap terms from earlier docs, such as GraphRAG and vector store,
-> are now treated as planned capabilities unless explicitly described as current.
+> labels and roadmap terms from earlier docs, such as full GraphRAG and vector
+> store, are now treated as planned capabilities unless explicitly described as
+> current.
 
 ## 1. The Workspace At A Glance
 
@@ -17,8 +18,9 @@ The window is split into two panes.
 - **Archive Index:** a tree view of current graph/search stores and planned
   retrieval scaffolds.
 - **Graph / KB Search box** (bottom): filters the current local graph and runs
-  SQLite KB retrieval in the selected Lexical, Semantic, or Hybrid mode. This is
-  not production GraphRAG or graph traversal retrieval.
+  SQLite KB retrieval in the selected Lexical, Semantic, Hybrid, or Graph mode.
+  Graph mode is bounded one-hop graph traversal, not full multi-hop GraphRAG
+  reasoning.
 - **Drop zone:** drag files onto this pane to ingest them.
 - **Task tabs / Environment bar:** isolated work threads and per-tab capabilities.
 
@@ -68,6 +70,9 @@ running the query:
   chunk embeddings.
 - **Hybrid:** real lexical and real semantic SQLite KB retrieval combined into
   one deduplicated result list.
+- **Graph:** Hybrid seed retrieval plus bounded one-hop SQLite graph traversal
+  through stored entities, chunk-entity links, relationships, active chunks, and
+  active documents.
 
 Hybrid SQLite KB retrieval shows why each chunk was selected: lexical score when
 present, semantic cosine score when present, combined rank-fusion score, and a
@@ -75,13 +80,21 @@ match reason of `lexical`, `semantic`, or `both`. Hybrid requires a ready
 semantic index. If the index is empty, stale, missing embeddings, or unavailable,
 Hybrid does not fake results and asks you to build or refresh the semantic index.
 
-Semantic and Hybrid retrieval use local loopback Ollama embeddings only. The app
-does not use OpenAI/Gemini/cloud embeddings, does not auto-pull embedding models,
-and does not use the legacy graph hash-vector scaffold for SQLite KB semantic
-retrieval.
+Graph mode requires the same ready semantic index because it uses Hybrid seed
+retrieval. It marks seed evidence separately from graph-expanded evidence. When
+expanded evidence exists, result cards show graph role, traversal depth,
+expansion type, graph reason, graph score, source document, and chunk number. If
+the seed search finds no graph-expanded evidence, the UI says
+`Seed-only: no graph-expanded evidence found`; seed evidence may still be
+selected and attached, but it remains labelled as seed evidence.
 
-Full GraphRAG, graph traversal retrieval, durable GraphRAG communities, and
-external vector DB integration are still not implemented.
+Semantic, Hybrid, and Graph retrieval use local loopback Ollama embeddings only.
+The app does not use OpenAI/Gemini/cloud embeddings, does not auto-pull embedding
+models, and does not use the legacy graph hash-vector scaffold, sidecar
+community summaries, or an external vector DB for SQLite KB retrieval.
+
+Full multi-hop GraphRAG reasoning, durable GraphRAG communities, sidecar
+GraphRAG, and external vector DB integration are still not implemented.
 
 ## 4. Chatting With A Model
 

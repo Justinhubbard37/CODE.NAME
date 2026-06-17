@@ -2,7 +2,8 @@
 //!
 //! This module is intentionally small and deterministic: local text ingestion,
 //! schema migration, chunk storage, SQLite search, local Ollama chunk embeddings,
-//! semantic vector search, and live stats. It is not full GraphRAG.
+//! semantic vector search, one-hop graph traversal retrieval, and live stats.
+//! This is not full multi-hop GraphRAG reasoning.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
@@ -26,6 +27,11 @@ const HYBRID_RRF_K: f64 = 60.0;
 const HYBRID_MIN_SEMANTIC_SCORE: f64 = 0.25;
 const HYBRID_SEMANTIC_READY_ERROR: &str =
     "Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.";
+const GRAPH_MAX_DEPTH: i64 = 1;
+const GRAPH_RESULT_LIMIT_DEFAULT: i64 = 8;
+const GRAPH_EXPANDED_RESULT_LIMIT: usize = 8;
+const GRAPH_SHARED_ENTITY_WEIGHT: f64 = 0.40;
+const GRAPH_RELATIONSHIP_WEIGHT: f64 = 0.60;
 static RETRIEVAL_EVENT_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,6 +143,39 @@ pub struct KbSearchResult {
     pub semantic_score: Option<f64>,
     pub combined_score: Option<f64>,
     pub match_kind: Option<String>,
+    pub seed_retrieval_kind: Option<String>,
+    pub graph_role: Option<String>,
+    pub seed_result_id: Option<String>,
+    pub seed_chunk_id: Option<String>,
+    pub expansion_type: Option<String>,
+    pub traversal_depth: Option<i64>,
+    pub graph_entities: Option<Vec<KbGraphEntityRef>>,
+    pub graph_relationships: Option<Vec<KbGraphRelationshipRef>>,
+    pub graph_reason: Option<String>,
+    pub graph_score: Option<f64>,
+    pub combined_display_score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbGraphEntityRef {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub confidence: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KbGraphRelationshipRef {
+    pub id: String,
+    pub kind: String,
+    pub source_entity_id: String,
+    pub source_name: String,
+    pub target_entity_id: String,
+    pub target_name: String,
+    pub evidence_chunk_id: Option<String>,
+    pub confidence: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -423,7 +462,10 @@ fn extract_entities(title: &str, text: &str) -> Vec<EntityDraft> {
     let mut counts = BTreeMap::<String, usize>::new();
     for word in &words {
         let term = word.to_lowercase();
-        if term.len() >= 4 && !is_stop_word(&term) && term.chars().any(|ch| ch.is_ascii_alphabetic()) {
+        if term.len() >= 4
+            && !is_stop_word(&term)
+            && term.chars().any(|ch| ch.is_ascii_alphabetic())
+        {
             *counts.entry(term).or_default() += 1;
         }
     }
@@ -1019,15 +1061,16 @@ fn active_chunks_for_embeddings_conn(
             ",
         )
         .map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(params![workspace_id], |row| {
-        Ok(EmbeddingChunk {
-            id: row.get(0)?,
-            workspace_id: row.get(1)?,
-            text: row.get(2)?,
-            content_hash: row.get(3)?,
+    let rows = stmt
+        .query_map(params![workspace_id], |row| {
+            Ok(EmbeddingChunk {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                text: row.get(2)?,
+                content_hash: row.get(3)?,
+            })
         })
-    })
-    .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
 }
@@ -1057,15 +1100,16 @@ fn missing_embedding_chunks_conn(
             ",
         )
         .map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(params![workspace_id, provider, model], |row| {
-        Ok(EmbeddingChunk {
-            id: row.get(0)?,
-            workspace_id: row.get(1)?,
-            text: row.get(2)?,
-            content_hash: row.get(3)?,
+    let rows = stmt
+        .query_map(params![workspace_id, provider, model], |row| {
+            Ok(EmbeddingChunk {
+                id: row.get(0)?,
+                workspace_id: row.get(1)?,
+                text: row.get(2)?,
+                content_hash: row.get(3)?,
+            })
         })
-    })
-    .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())
 }
@@ -1228,7 +1272,10 @@ async fn post_ollama_embed_batch(
         .await
         .map_err(|e| format!("local Ollama embed unavailable: {e}"))?;
     if !response.status().is_success() {
-        return Err(format!("local Ollama embed HTTP {}", response.status().as_u16()));
+        return Err(format!(
+            "local Ollama embed HTTP {}",
+            response.status().as_u16()
+        ));
     }
     let parsed = response
         .json::<OllamaEmbedResponse>()
@@ -1291,7 +1338,8 @@ async fn ollama_embed_texts(
         .map_err(|e| e.to_string())?;
     match post_ollama_embed_batch(&client, &base_url, model, texts).await {
         Ok(embeddings) => Ok(embeddings),
-        Err(primary) => match post_ollama_embeddings_legacy(&client, &base_url, model, texts).await {
+        Err(primary) => match post_ollama_embeddings_legacy(&client, &base_url, model, texts).await
+        {
             Ok(embeddings) => Ok(embeddings),
             Err(secondary) => Err(format!("{primary}; {secondary}")),
         },
@@ -1547,6 +1595,17 @@ fn row_to_search_result(row: &rusqlite::Row<'_>) -> rusqlite::Result<KbSearchRes
         semantic_score: None,
         combined_score: None,
         match_kind: None,
+        seed_retrieval_kind: None,
+        graph_role: None,
+        seed_result_id: None,
+        seed_chunk_id: None,
+        expansion_type: None,
+        traversal_depth: None,
+        graph_entities: None,
+        graph_relationships: None,
+        graph_reason: None,
+        graph_score: None,
+        combined_display_score: None,
     })
 }
 
@@ -1719,6 +1778,17 @@ fn semantic_candidates_with_vector_conn(
                     semantic_score: None,
                     combined_score: None,
                     match_kind: None,
+                    seed_retrieval_kind: None,
+                    graph_role: None,
+                    seed_result_id: None,
+                    seed_chunk_id: None,
+                    expansion_type: None,
+                    traversal_depth: None,
+                    graph_entities: None,
+                    graph_relationships: None,
+                    graph_reason: None,
+                    graph_score: None,
+                    combined_display_score: None,
                 },
                 row.get::<_, Vec<u8>>(11)?,
             ))
@@ -1789,7 +1859,7 @@ fn hybrid_match_priority(match_kind: &str) -> i32 {
     }
 }
 
-fn hybrid_search_with_vector_conn(
+fn hybrid_candidates_with_vector_conn(
     conn: &Connection,
     workspace_id: &str,
     query: &str,
@@ -1883,7 +1953,10 @@ fn hybrid_search_with_vector_conn(
             continue;
         }
 
-        let match_kind = match (candidate.lexical_score.is_some(), candidate.semantic_score.is_some()) {
+        let match_kind = match (
+            candidate.lexical_score.is_some(),
+            candidate.semantic_score.is_some(),
+        ) {
             (true, true) => "both",
             (true, false) => "lexical",
             (false, true) => "semantic",
@@ -1905,18 +1978,13 @@ fn hybrid_search_with_vector_conn(
             .partial_cmp(&left.combined_score.unwrap_or(left.score))
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| {
-                hybrid_match_priority(left.match_kind.as_deref().unwrap_or(""))
-                    .cmp(&hybrid_match_priority(right.match_kind.as_deref().unwrap_or("")))
+                hybrid_match_priority(left.match_kind.as_deref().unwrap_or("")).cmp(
+                    &hybrid_match_priority(right.match_kind.as_deref().unwrap_or("")),
+                )
             })
             .then_with(|| {
-                let left_rank = left
-                    .lexical_score
-                    .map(|_| 0usize)
-                    .unwrap_or(1usize);
-                let right_rank = right
-                    .lexical_score
-                    .map(|_| 0usize)
-                    .unwrap_or(1usize);
+                let left_rank = left.lexical_score.map(|_| 0usize).unwrap_or(1usize);
+                let right_rank = right.lexical_score.map(|_| 0usize).unwrap_or(1usize);
                 left_rank.cmp(&right_rank)
             })
             .then_with(|| left.document_title.cmp(&right.document_title))
@@ -1924,6 +1992,436 @@ fn hybrid_search_with_vector_conn(
             .then_with(|| left.chunk.id.cmp(&right.chunk.id))
     });
     results.truncate(limit as usize);
+    Ok(results)
+}
+
+fn hybrid_search_with_vector_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    query: &str,
+    query_vector: &[f32],
+    limit: i64,
+    provider: &str,
+    model: &str,
+) -> Result<Vec<KbSearchResult>, String> {
+    let workspace_id = workspace_id.trim();
+    let query = query.trim();
+    let results = hybrid_candidates_with_vector_conn(
+        conn,
+        workspace_id,
+        query,
+        query_vector,
+        limit,
+        provider,
+        model,
+    )?;
+    insert_retrieval_event(conn, workspace_id, query, results.len()).map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+#[derive(Debug, Clone)]
+struct GraphExpansionCandidate {
+    result: KbSearchResult,
+    seed_rank: usize,
+    seed_chunk_id: String,
+    expansion_type: String,
+    graph_score: f64,
+    reasons: BTreeSet<String>,
+    entities: BTreeMap<String, KbGraphEntityRef>,
+    relationships: BTreeMap<String, KbGraphRelationshipRef>,
+}
+
+fn graph_expansion_priority(expansion_type: &str) -> i32 {
+    match expansion_type {
+        "relationship_evidence" => 0,
+        "shared_entity" => 1,
+        _ => 2,
+    }
+}
+
+fn active_chunk_result_by_id_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    chunk_id: &str,
+) -> Result<Option<KbSearchResult>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT c.id, c.document_id, c.workspace_id, c.ordinal, c.text,
+                   c.char_start, c.char_end, c.token_estimate, c.content_hash,
+                   d.title, d.source_uri, 0.0 AS score
+            FROM chunks c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.workspace_id = ?1
+              AND c.id = ?2
+              AND d.deleted_at IS NULL
+            LIMIT 1
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(params![workspace_id, chunk_id], row_to_search_result)
+        .optional()
+        .map_err(|e| e.to_string())
+}
+
+fn entities_for_chunk_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    chunk_id: &str,
+) -> Result<Vec<KbGraphEntityRef>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT e.id, e.name, e.kind, e.confidence
+            FROM chunk_entities ce
+            JOIN entities e ON e.id = ce.entity_id
+            JOIN chunks c ON c.id = ce.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.workspace_id = ?1
+              AND ce.chunk_id = ?2
+              AND d.deleted_at IS NULL
+            ORDER BY e.kind ASC, e.name ASC
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(params![workspace_id, chunk_id], |row| {
+            Ok(KbGraphEntityRef {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                kind: row.get(2)?,
+                confidence: Some(row.get(3)?),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+fn shared_entity_chunks_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    entity_id: &str,
+) -> Result<Vec<KbSearchResult>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT c.id, c.document_id, c.workspace_id, c.ordinal, c.text,
+                   c.char_start, c.char_end, c.token_estimate, c.content_hash,
+                   d.title, d.source_uri, 0.0 AS score
+            FROM chunk_entities ce
+            JOIN chunks c ON c.id = ce.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.workspace_id = ?1
+              AND ce.entity_id = ?2
+              AND d.deleted_at IS NULL
+            ORDER BY d.title ASC, c.ordinal ASC, c.id ASC
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(params![workspace_id, entity_id], row_to_search_result)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+fn relationships_for_entity_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    entity_id: &str,
+) -> Result<Vec<KbGraphRelationshipRef>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT r.id, r.kind, r.source_entity_id, se.name,
+                   r.target_entity_id, te.name, r.evidence_chunk_id, r.confidence
+            FROM relationships r
+            JOIN entities se ON se.id = r.source_entity_id
+            JOIN entities te ON te.id = r.target_entity_id
+            JOIN chunks c ON c.id = r.evidence_chunk_id
+            JOIN documents d ON d.id = c.document_id
+            WHERE r.workspace_id = ?1
+              AND (r.source_entity_id = ?2 OR r.target_entity_id = ?2)
+              AND c.workspace_id = ?1
+              AND d.deleted_at IS NULL
+            ORDER BY r.kind ASC, se.name ASC, te.name ASC, r.id ASC
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+    let results = stmt
+        .query_map(params![workspace_id, entity_id], |row| {
+            Ok(KbGraphRelationshipRef {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                source_entity_id: row.get(2)?,
+                source_name: row.get(3)?,
+                target_entity_id: row.get(4)?,
+                target_name: row.get(5)?,
+                evidence_chunk_id: row.get(6)?,
+                confidence: Some(row.get(7)?),
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(results)
+}
+
+fn is_graph_anchor_name_usable(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    if lower == "phase" || lower.starts_with("phase ") || lower.starts_with("phase-") {
+        return false;
+    }
+    if lower.ends_with(".txt") {
+        return false;
+    }
+    name.contains(' ')
+        || name
+            .chars()
+            .any(|ch| ch.is_ascii_digit() || ch == '_' || ch == '-')
+}
+
+fn is_graph_expansion_entity(entity: &KbGraphEntityRef) -> bool {
+    if !is_graph_anchor_name_usable(&entity.name) {
+        return false;
+    }
+    match entity.kind.as_str() {
+        "document_title" | "keyword" => false,
+        "phrase" | "identifier" => true,
+        _ => true,
+    }
+}
+
+fn relationship_counterpart_name<'a>(
+    relationship: &'a KbGraphRelationshipRef,
+    seed_entity_id: &str,
+) -> &'a str {
+    if relationship.source_entity_id == seed_entity_id {
+        &relationship.target_name
+    } else {
+        &relationship.source_name
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_graph_candidate(
+    expanded: &mut BTreeMap<String, GraphExpansionCandidate>,
+    seed_chunk_ids: &BTreeSet<String>,
+    mut result: KbSearchResult,
+    seed_rank: usize,
+    seed_chunk_id: &str,
+    expansion_type: &str,
+    reason: String,
+    score: f64,
+    entity: Option<KbGraphEntityRef>,
+    relationship: Option<KbGraphRelationshipRef>,
+) {
+    if seed_chunk_ids.contains(&result.chunk.id) {
+        return;
+    }
+    result.retrieval_kind = "graph".to_string();
+    let entry =
+        expanded
+            .entry(result.chunk.id.clone())
+            .or_insert_with(|| GraphExpansionCandidate {
+                result,
+                seed_rank,
+                seed_chunk_id: seed_chunk_id.to_string(),
+                expansion_type: expansion_type.to_string(),
+                graph_score: 0.0,
+                reasons: BTreeSet::new(),
+                entities: BTreeMap::new(),
+                relationships: BTreeMap::new(),
+            });
+    entry.graph_score += score;
+    entry.seed_rank = entry.seed_rank.min(seed_rank);
+    if graph_expansion_priority(expansion_type) < graph_expansion_priority(&entry.expansion_type) {
+        entry.expansion_type = expansion_type.to_string();
+        entry.seed_chunk_id = seed_chunk_id.to_string();
+    }
+    entry.reasons.insert(reason);
+    if let Some(entity) = entity {
+        entry.entities.insert(entity.id.clone(), entity);
+    }
+    if let Some(relationship) = relationship {
+        entry
+            .relationships
+            .insert(relationship.id.clone(), relationship);
+    }
+}
+
+fn graph_search_with_vector_conn(
+    conn: &Connection,
+    workspace_id: &str,
+    query: &str,
+    query_vector: &[f32],
+    limit: i64,
+    provider: &str,
+    model: &str,
+    max_depth: Option<i64>,
+) -> Result<Vec<KbSearchResult>, String> {
+    let workspace_id = workspace_id.trim();
+    let query = query.trim();
+    if workspace_id.is_empty() {
+        return Err("workspace_id is required".to_string());
+    }
+    if query.is_empty() {
+        return Err("query is required".to_string());
+    }
+    let depth = max_depth.unwrap_or(GRAPH_MAX_DEPTH);
+    if depth < 1 {
+        return Err("Graph traversal depth must be at least 1 for Phase 2H".to_string());
+    }
+    if depth > GRAPH_MAX_DEPTH {
+        return Err("Graph traversal is bounded to depth 1 for Phase 2H".to_string());
+    }
+
+    let seed_limit = limit.clamp(1, 50);
+    let mut seeds = hybrid_candidates_with_vector_conn(
+        conn,
+        workspace_id,
+        query,
+        query_vector,
+        seed_limit,
+        provider,
+        model,
+    )?;
+    let seed_chunk_ids = seeds
+        .iter()
+        .map(|result| result.chunk.id.clone())
+        .collect::<BTreeSet<_>>();
+    let mut expanded = BTreeMap::<String, GraphExpansionCandidate>::new();
+
+    for (seed_index, seed) in seeds.iter().enumerate() {
+        let seed_rank = seed_index + 1;
+        let seed_weight = 1.0 / seed_rank as f64;
+        let seed_chunk_id = seed.chunk.id.as_str();
+        let seed_entities = entities_for_chunk_conn(conn, workspace_id, seed_chunk_id)?;
+
+        for entity in &seed_entities {
+            if !is_graph_expansion_entity(entity) {
+                continue;
+            }
+            let shared_chunks = shared_entity_chunks_conn(conn, workspace_id, &entity.id)?;
+            for result in shared_chunks {
+                let confidence = entity.confidence.unwrap_or(1.0);
+                let score = GRAPH_SHARED_ENTITY_WEIGHT * seed_weight * confidence;
+                let reason = format!(
+                    "Shared entity {} from seed chunk {}",
+                    entity.name,
+                    seed.chunk.ordinal + 1
+                );
+                merge_graph_candidate(
+                    &mut expanded,
+                    &seed_chunk_ids,
+                    result,
+                    seed_rank,
+                    seed_chunk_id,
+                    "shared_entity",
+                    reason,
+                    score,
+                    Some(entity.clone()),
+                    None,
+                );
+            }
+
+            let relationships = relationships_for_entity_conn(conn, workspace_id, &entity.id)?;
+            for relationship in relationships {
+                if !is_graph_anchor_name_usable(relationship_counterpart_name(
+                    &relationship,
+                    &entity.id,
+                )) {
+                    continue;
+                }
+                let Some(evidence_chunk_id) = relationship.evidence_chunk_id.clone() else {
+                    continue;
+                };
+                let Some(result) =
+                    active_chunk_result_by_id_conn(conn, workspace_id, &evidence_chunk_id)?
+                else {
+                    continue;
+                };
+                let confidence = relationship.confidence.unwrap_or(1.0);
+                let score = GRAPH_RELATIONSHIP_WEIGHT * seed_weight * confidence;
+                let reason = format!(
+                    "Relationship {} connects {} to {} from seed entity {}",
+                    relationship.kind,
+                    relationship.source_name,
+                    relationship.target_name,
+                    entity.name
+                );
+                merge_graph_candidate(
+                    &mut expanded,
+                    &seed_chunk_ids,
+                    result,
+                    seed_rank,
+                    seed_chunk_id,
+                    "relationship_evidence",
+                    reason,
+                    score,
+                    Some(entity.clone()),
+                    Some(relationship),
+                );
+            }
+        }
+    }
+
+    for (seed_index, seed) in seeds.iter_mut().enumerate() {
+        seed.retrieval_kind = "graph".to_string();
+        seed.seed_retrieval_kind = Some("hybrid".to_string());
+        seed.graph_role = Some("seed".to_string());
+        seed.seed_result_id = Some(format!("seed:{}", seed.chunk.id));
+        seed.seed_chunk_id = Some(seed.chunk.id.clone());
+        seed.expansion_type = Some("seed".to_string());
+        seed.traversal_depth = Some(0);
+        seed.graph_reason = Some(format!(
+            "Seed evidence from Hybrid retrieval rank {}",
+            seed_index + 1
+        ));
+        seed.combined_display_score = Some(seed.combined_score.unwrap_or(seed.score));
+    }
+
+    let mut expanded_results = expanded.into_values().collect::<Vec<_>>();
+    expanded_results.sort_by(|left, right| {
+        right
+            .graph_score
+            .partial_cmp(&left.graph_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.seed_rank.cmp(&right.seed_rank))
+            .then_with(|| left.result.document_title.cmp(&right.result.document_title))
+            .then_with(|| left.result.chunk.ordinal.cmp(&right.result.chunk.ordinal))
+            .then_with(|| left.result.chunk.id.cmp(&right.result.chunk.id))
+    });
+    expanded_results.truncate(GRAPH_EXPANDED_RESULT_LIMIT);
+
+    let mut results = seeds;
+    for candidate in expanded_results {
+        let mut result = candidate.result;
+        result.retrieval_kind = "graph".to_string();
+        result.seed_retrieval_kind = Some("hybrid".to_string());
+        result.graph_role = Some("expanded".to_string());
+        result.seed_result_id = Some(format!("seed:{}", candidate.seed_chunk_id));
+        result.seed_chunk_id = Some(candidate.seed_chunk_id);
+        result.expansion_type = Some(candidate.expansion_type);
+        result.traversal_depth = Some(1);
+        let entities = candidate.entities.into_values().collect::<Vec<_>>();
+        if !entities.is_empty() {
+            result.graph_entities = Some(entities);
+        }
+        let relationships = candidate.relationships.into_values().collect::<Vec<_>>();
+        if !relationships.is_empty() {
+            result.graph_relationships = Some(relationships);
+        }
+        result.graph_reason = Some(candidate.reasons.into_iter().collect::<Vec<_>>().join("; "));
+        result.graph_score = Some(candidate.graph_score);
+        result.score = candidate.graph_score;
+        result.combined_display_score = Some(candidate.graph_score);
+        results.push(result);
+    }
+
     insert_retrieval_event(conn, workspace_id, query, results.len()).map_err(|e| e.to_string())?;
     Ok(results)
 }
@@ -2277,7 +2775,10 @@ fn graph_projection_conn(
             node_type: "entity".to_string(),
             label: format!("KB_ENT_{}", sanitize_fragment(&entity.name).to_uppercase()),
             title: Some(entity.name),
-            description: Some(format!("{} · confidence {:.2}", entity.kind, entity.confidence)),
+            description: Some(format!(
+                "{} · confidence {:.2}",
+                entity.kind, entity.confidence
+            )),
             kind: Some(entity.kind),
             ordinal: None,
         });
@@ -2435,7 +2936,10 @@ pub async fn kb_embed_missing(
         });
     }
 
-    let texts = chunks.iter().map(|chunk| chunk.text.clone()).collect::<Vec<_>>();
+    let texts = chunks
+        .iter()
+        .map(|chunk| chunk.text.clone())
+        .collect::<Vec<_>>();
     let embeddings = match ollama_embed_texts(base_url.as_deref(), &model, &texts).await {
         Ok(embeddings) => embeddings,
         Err(error) => {
@@ -2534,6 +3038,42 @@ pub async fn kb_hybrid_search(
         limit.unwrap_or(10),
         &provider,
         &model,
+    )
+}
+
+#[tauri::command]
+pub async fn kb_graphrag_search(
+    app: AppHandle,
+    workspace_id: String,
+    query: String,
+    limit: Option<i64>,
+    provider: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+    max_depth: Option<i64>,
+) -> Result<Vec<KbSearchResult>, String> {
+    let (provider, model) = normalize_embedding_config(provider.as_deref(), model.as_deref())?;
+    {
+        let conn = open_app_db(&app)?;
+        require_ready_semantic_index_conn(&conn, &workspace_id, &provider, &model)?;
+    }
+
+    let query_texts = vec![query.clone()];
+    let query_embedding = ollama_embed_texts(base_url.as_deref(), &model, &query_texts)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "graph query embedding was not returned".to_string())?;
+    let conn = open_app_db(&app)?;
+    graph_search_with_vector_conn(
+        &conn,
+        &workspace_id,
+        &query,
+        &query_embedding,
+        limit.unwrap_or(GRAPH_RESULT_LIMIT_DEFAULT),
+        &provider,
+        &model,
+        max_depth,
     )
 }
 
@@ -2695,8 +3235,9 @@ mod tests {
     #[test]
     fn document_title_becomes_entity() {
         let entities = extract_entities("kb-smoke-test.txt", "plain body");
-        assert!(entities.iter().any(|e| e.name == "kb-smoke-test.txt"
-            && e.kind == "document_title"));
+        assert!(entities
+            .iter()
+            .any(|e| e.name == "kb-smoke-test.txt" && e.kind == "document_title"));
     }
 
     #[test]
@@ -2784,7 +3325,9 @@ mod tests {
         let results = search_conn(&conn, "default", "needle", 2).expect("search");
 
         assert_eq!(results.len(), 2);
-        assert!(results.iter().all(|result| result.chunk.text.contains("needle")));
+        assert!(results
+            .iter()
+            .all(|result| result.chunk.text.contains("needle")));
     }
 
     #[test]
@@ -2922,8 +3465,9 @@ mod tests {
         )
         .expect("ingest");
         let chunk = chunk_for_title(&conn, "Stale Hash");
-        let blob = encode_embedding(&normalize_embedding_vector(vec![1.0, 0.0]).expect("normalize"))
-            .expect("encode");
+        let blob =
+            encode_embedding(&normalize_embedding_vector(vec![1.0, 0.0]).expect("normalize"))
+                .expect("encode");
         conn.execute(
             "
             INSERT INTO chunk_embeddings(
@@ -3011,6 +3555,81 @@ mod tests {
             DEFAULT_EMBEDDING_MODEL,
         )
         .expect("store hybrid fixture embeddings");
+    }
+
+    fn ingest_graph_fixture(conn: &mut Connection) {
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2h-seed-atlas.txt",
+            "Phase 2H seed atlas test. SeedGraphMarker2101 appears beside orbital docking, spacecraft rendezvous, thruster alignment, and station approach planning. Project Atlas coordinates the Aurora Bridge transfer window for the orbital docking team.",
+            None,
+            None,
+            None,
+        )
+        .expect("seed fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2h-entity-neighbor.txt",
+            "Phase 2H shared entity neighbor test. Project Atlas maintains battery logistics, telemetry binders, cargo manifests, and technician shift notes.",
+            None,
+            None,
+            None,
+        )
+        .expect("entity neighbor fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2h-relationship-neighbor.txt",
+            "Phase 2H relationship neighbor test. Aurora Bridge coordinates with Northstar Relay on antenna calibration, relay schedules, and field maintenance reports.",
+            None,
+            None,
+            None,
+        )
+        .expect("relationship neighbor fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2h-nonneighbor.txt",
+            "Phase 2H non-neighbor exclusion test. Cedar Kitchen tracks recipe cards, pantry labels, ceramic bowls, bakery receipts, lunch seating charts, and menu binders.",
+            None,
+            None,
+            None,
+        )
+        .expect("non-neighbor fixture ingest");
+        ingest_text_conn(
+            conn,
+            "default",
+            "phase-2h-delete-target.txt",
+            "Phase 2H deleted graph exclusion test. Project Atlas records DeletionGraphMarker4208 with disposal checklists, archive tags, and retired equipment labels.",
+            None,
+            None,
+            None,
+        )
+        .expect("delete target fixture ingest");
+        let chunks = vec![
+            chunk_for_title(conn, "phase-2h-seed-atlas.txt"),
+            chunk_for_title(conn, "phase-2h-entity-neighbor.txt"),
+            chunk_for_title(conn, "phase-2h-relationship-neighbor.txt"),
+            chunk_for_title(conn, "phase-2h-nonneighbor.txt"),
+            chunk_for_title(conn, "phase-2h-delete-target.txt"),
+        ];
+        let embeddings = vec![
+            vec![1.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 1.0],
+            vec![0.0, 0.0, 1.0],
+            vec![0.0, 1.0, 0.0],
+        ];
+        store_chunk_embeddings_conn(
+            conn,
+            &chunks,
+            &embeddings,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+        )
+        .expect("store graph fixture embeddings");
     }
 
     #[test]
@@ -3136,8 +3755,14 @@ mod tests {
 
         assert_eq!(first.len(), 2);
         assert_eq!(
-            first.iter().map(|result| &result.chunk.id).collect::<Vec<_>>(),
-            second.iter().map(|result| &result.chunk.id).collect::<Vec<_>>()
+            first
+                .iter()
+                .map(|result| &result.chunk.id)
+                .collect::<Vec<_>>(),
+            second
+                .iter()
+                .map(|result| &result.chunk.id)
+                .collect::<Vec<_>>()
         );
         assert_eq!(first[0].document_title, "phase-2g-hybrid-overlap.txt");
     }
@@ -3168,12 +3793,7 @@ mod tests {
         .expect_err("hybrid should fail closed");
 
         assert_eq!(error, HYBRID_SEMANTIC_READY_ERROR);
-        assert_eq!(
-            stats_conn(&conn)
-                .expect("stats")
-                .retrieval_event_count,
-            0
-        );
+        assert_eq!(stats_conn(&conn).expect("stats").retrieval_event_count, 0);
     }
 
     #[test]
@@ -3190,8 +3810,9 @@ mod tests {
         )
         .expect("ingest");
         let chunk = chunk_for_title(&conn, "Hybrid Stale Hash");
-        let blob = encode_embedding(&normalize_embedding_vector(vec![1.0, 0.0]).expect("normalize"))
-            .expect("encode");
+        let blob =
+            encode_embedding(&normalize_embedding_vector(vec![1.0, 0.0]).expect("normalize"))
+                .expect("encode");
         conn.execute(
             "
             INSERT INTO chunk_embeddings(
@@ -3279,6 +3900,185 @@ mod tests {
     }
 
     #[test]
+    fn graph_search_uses_hybrid_seeds_and_expands_through_sqlite_graph() {
+        let mut conn = memory_db();
+        ingest_graph_fixture(&mut conn);
+
+        let results = graph_search_with_vector_conn(
+            &conn,
+            "default",
+            "SeedGraphMarker2101 orbital docking",
+            &[1.0, 0.0, 0.0],
+            4,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+            Some(1),
+        )
+        .expect("graph search");
+
+        let seed = results
+            .iter()
+            .find(|result| result.document_title == "phase-2h-seed-atlas.txt")
+            .expect("seed result");
+        assert_eq!(seed.retrieval_kind, "graph");
+        assert_eq!(seed.seed_retrieval_kind.as_deref(), Some("hybrid"));
+        assert_eq!(seed.graph_role.as_deref(), Some("seed"));
+        assert_eq!(seed.expansion_type.as_deref(), Some("seed"));
+        assert_eq!(seed.traversal_depth, Some(0));
+        assert!(seed.combined_score.is_some());
+        assert!(seed.match_kind.is_some());
+
+        let entity_neighbor = results
+            .iter()
+            .find(|result| result.document_title == "phase-2h-entity-neighbor.txt")
+            .expect("shared entity expanded result");
+        assert_eq!(entity_neighbor.retrieval_kind, "graph");
+        assert_eq!(entity_neighbor.graph_role.as_deref(), Some("expanded"));
+        assert_eq!(entity_neighbor.traversal_depth, Some(1));
+        assert!(entity_neighbor.graph_score.unwrap_or_default() > 0.0);
+        assert!(entity_neighbor
+            .graph_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Project Atlas"));
+        assert!(entity_neighbor
+            .graph_entities
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|entity| entity.name == "Project Atlas"));
+
+        let relationship_neighbor = results
+            .iter()
+            .find(|result| result.document_title == "phase-2h-relationship-neighbor.txt")
+            .expect("relationship expanded result");
+        assert_eq!(
+            relationship_neighbor.graph_role.as_deref(),
+            Some("expanded")
+        );
+        assert_eq!(relationship_neighbor.traversal_depth, Some(1));
+        assert!(relationship_neighbor
+            .graph_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Northstar Relay"));
+        assert!(relationship_neighbor
+            .graph_relationships
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|relationship| {
+                relationship.source_name == "Aurora Bridge"
+                    || relationship.target_name == "Aurora Bridge"
+            }));
+        assert!(
+            results
+                .iter()
+                .all(|result| result.document_title != "phase-2h-nonneighbor.txt"),
+            "unexpected non-neighbor result(s): {:?}",
+            results
+                .iter()
+                .map(|result| (
+                    result.document_title.as_str(),
+                    result.graph_role.as_deref(),
+                    result.graph_reason.as_deref(),
+                ))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| result.chunk.id == seed.chunk.id)
+                .count(),
+            1
+        );
+        assert_eq!(stats_conn(&conn).expect("stats").retrieval_event_count, 1);
+    }
+
+    #[test]
+    fn graph_search_excludes_deleted_documents_from_seed_and_expansion_paths() {
+        let mut conn = memory_db();
+        ingest_graph_fixture(&mut conn);
+        let deleted = conn
+            .query_row(
+                "SELECT id FROM documents WHERE title = ?1",
+                params!["phase-2h-delete-target.txt"],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("deleted document id");
+        delete_document_conn(&conn, &deleted, Some("soft")).expect("delete target");
+
+        let results = graph_search_with_vector_conn(
+            &conn,
+            "default",
+            "DeletionGraphMarker4208 Project Atlas",
+            &[1.0, 0.0, 0.0],
+            4,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+            Some(1),
+        )
+        .expect("graph search");
+
+        assert!(results
+            .iter()
+            .all(|result| result.document_title != "phase-2h-delete-target.txt"));
+        assert!(results
+            .iter()
+            .all(|result| result.chunk.text.contains("DeletionGraphMarker4208") == false));
+    }
+
+    #[test]
+    fn graph_search_is_bounded_to_one_hop_and_fails_closed_when_unavailable() {
+        let mut conn = memory_db();
+        ingest_graph_fixture(&mut conn);
+
+        let depth_error = graph_search_with_vector_conn(
+            &conn,
+            "default",
+            "SeedGraphMarker2101",
+            &[1.0, 0.0, 0.0],
+            4,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+            Some(2),
+        )
+        .expect_err("depth should be bounded");
+        assert_eq!(
+            depth_error,
+            "Graph traversal is bounded to depth 1 for Phase 2H"
+        );
+
+        let mut unindexed = memory_db();
+        ingest_text_conn(
+            &mut unindexed,
+            "default",
+            "Graph Unavailable",
+            "SeedGraphMarker2101 Project Atlas",
+            None,
+            None,
+            None,
+        )
+        .expect("ingest unavailable fixture");
+        let unavailable_error = graph_search_with_vector_conn(
+            &unindexed,
+            "default",
+            "SeedGraphMarker2101",
+            &[1.0, 0.0, 0.0],
+            4,
+            DEFAULT_EMBEDDING_PROVIDER,
+            DEFAULT_EMBEDDING_MODEL,
+            Some(1),
+        )
+        .expect_err("graph search should fail without a ready semantic index");
+        assert_eq!(unavailable_error, HYBRID_SEMANTIC_READY_ERROR);
+        assert_eq!(
+            stats_conn(&unindexed).expect("stats").retrieval_event_count,
+            0
+        );
+    }
+
+    #[test]
     fn ingest_stores_entities_chunk_links_and_relationships() {
         let mut conn = memory_db();
         ingest_text_conn(
@@ -3316,8 +4116,14 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.node_type == "document"));
-        assert!(projection.nodes.iter().any(|node| node.node_type == "chunk"));
-        assert!(projection.nodes.iter().any(|node| node.node_type == "entity"));
+        assert!(projection
+            .nodes
+            .iter()
+            .any(|node| node.node_type == "chunk"));
+        assert!(projection
+            .nodes
+            .iter()
+            .any(|node| node.node_type == "entity"));
         assert!(projection
             .edges
             .iter()
@@ -3370,8 +4176,7 @@ mod tests {
             None,
         )
         .expect("ingest");
-        let deletion =
-            delete_document_conn(&conn, &result.document_id, None).expect("soft delete");
+        let deletion = delete_document_conn(&conn, &result.document_id, None).expect("soft delete");
         assert!(deletion.deleted);
         assert!(deletion.deleted_at > 0);
         let doc = get_document_conn(&conn, &result.document_id, false).expect("document");
@@ -3400,11 +4205,9 @@ mod tests {
             1
         );
         delete_document_conn(&conn, &result.document_id, Some("soft")).expect("delete");
-        assert!(
-            search_conn(&conn, "default", "UniqueDeletedTerm9137", 5)
-                .expect("search after delete")
-                .is_empty()
-        );
+        assert!(search_conn(&conn, "default", "UniqueDeletedTerm9137", 5)
+            .expect("search after delete")
+            .is_empty());
         let projection =
             graph_projection_conn(&conn, "default", Some(&result.document_id)).expect("projection");
         assert!(projection.nodes.is_empty());
@@ -3438,7 +4241,10 @@ mod tests {
         assert!(entities_before >= 2);
         assert!(relationships_before >= 1);
         delete_document_conn(&conn, &result.document_id, None).expect("delete");
-        assert_eq!(count_table(&conn, "chunks").expect("chunks after"), chunks_before);
+        assert_eq!(
+            count_table(&conn, "chunks").expect("chunks after"),
+            chunks_before
+        );
         assert_eq!(
             count_table(&conn, "entities").expect("entities after"),
             entities_before

@@ -48,6 +48,47 @@ function hybridResult(id: string, text: string, matchKind: 'lexical' | 'semantic
   };
 }
 
+function graphResult(
+  id: string,
+  text: string,
+  role: 'seed' | 'expanded',
+  expansionType: 'seed' | 'shared_entity' | 'relationship_evidence' = role === 'seed' ? 'seed' : 'shared_entity',
+): KbSearchResult {
+  return {
+    ...hybridResult(id, text, 'both'),
+    retrievalKind: 'graph',
+    seedRetrievalKind: 'hybrid',
+    graphRole: role,
+    seedResultId: role === 'seed' ? `seed:chunk-${id}` : 'seed:chunk-seed',
+    seedChunkId: role === 'seed' ? `chunk-${id}` : 'chunk-seed',
+    expansionType,
+    traversalDepth: role === 'seed' ? 0 : 1,
+    graphReason:
+      role === 'seed'
+        ? 'Seed evidence from Hybrid retrieval rank 1'
+        : 'Shared entity Project Atlas from seed chunk 1',
+    graphScore: role === 'seed' ? undefined : 0.4,
+    combinedDisplayScore: role === 'seed' ? 0.03 : 0.4,
+    graphEntities: role === 'expanded'
+      ? [{ id: 'entity-project-atlas', name: 'Project Atlas', kind: 'phrase', confidence: 0.82 }]
+      : undefined,
+    graphRelationships: expansionType === 'relationship_evidence'
+      ? [
+          {
+            id: 'rel-1',
+            kind: 'co_occurrence',
+            sourceEntityId: 'entity-aurora',
+            sourceName: 'Aurora Bridge',
+            targetEntityId: 'entity-northstar',
+            targetName: 'Northstar Relay',
+            evidenceChunkId: `chunk-${id}`,
+            confidence: 0.72,
+          },
+        ]
+      : undefined,
+  };
+}
+
 describe('retrieval context helpers', () => {
   it('formats source labels and one-based citation labels', () => {
     const item = result('a', 'alpha chunk', 2);
@@ -56,7 +97,9 @@ describe('retrieval context helpers', () => {
     expect(retrievalCitationLabel(item, 0)).toBe('KB1');
     expect(retrievalModeLabel('semantic')).toBe('semantic');
     expect(retrievalModeLabel('hybrid')).toBe('hybrid');
+    expect(retrievalModeLabel('graph')).toBe('graph traversal');
     expect(retrievalMatchKindLabel(hybridResult('h', 'hybrid chunk', 'both'))).toBe('both');
+    expect(retrievalMatchKindLabel(graphResult('g', 'graph chunk', 'expanded'))).toBe('shared entity');
   });
 
   it('clips retrieval snippets for compact UI display', () => {
@@ -86,6 +129,24 @@ describe('retrieval context helpers', () => {
     expect(context).toContain('lexical: -1.25');
     expect(context).toContain('semantic: 0.88');
     expect(context).toContain('combined: 0.03');
+  });
+
+  it('formats graph context with role, depth, expansion, reason, and graph metadata', () => {
+    const context = formatRetrievedContextBlock([
+      graphResult('seed', 'seed evidence', 'seed'),
+      graphResult('expanded', 'expanded evidence', 'expanded', 'relationship_evidence'),
+    ]);
+
+    expect(context).toContain('graph role: seed');
+    expect(context).toContain('depth: 0');
+    expect(context).toContain('expansion: seed');
+    expect(context).toContain('graph role: expanded');
+    expect(context).toContain('depth: 1');
+    expect(context).toContain('expansion: relationship evidence');
+    expect(context).toContain('graph reason: Shared entity Project Atlas from seed chunk 1');
+    expect(context).toContain('graph score: 0.40');
+    expect(context).toContain('graph entities: Project Atlas (phrase)');
+    expect(context).toContain('graph relationships: Aurora Bridge -co_occurrence-> Northstar Relay');
   });
 
   it('clips long chunk text and total context size', () => {
@@ -161,6 +222,26 @@ describe('retrieval context helpers', () => {
     expect(prompt).not.toContain('Doc a');
   });
 
+  it('attaches only selected graph evidence when attach is on', () => {
+    const items = [
+      graphResult('seed', 'seed evidence', 'seed'),
+      graphResult('expanded', 'expanded evidence', 'expanded'),
+    ];
+    const selected = selectedRetrievalResults(items, ['chunk-expanded']);
+    const prompt = buildOptionalChatPromptWithRetrievedContext(
+      'List attached graph sources.',
+      selected,
+      true,
+      'graph',
+    );
+
+    expect(prompt).toContain('Local SQLite KB context - graph traversal:');
+    expect(prompt).toContain('Doc expanded');
+    expect(prompt).toContain('graph role: expanded');
+    expect(prompt).toContain('graph reason: Shared entity Project Atlas from seed chunk 1');
+    expect(prompt).not.toContain('Doc seed');
+  });
+
   it('sends the raw user message when attach is off even if chunks are selected', () => {
     const selected = selectedRetrievalResults([result('a', 'alpha text')], ['chunk-a']);
     const prompt = buildOptionalChatPromptWithRetrievedContext('Plain question', selected, false, 'hybrid');
@@ -231,6 +312,28 @@ describe('retrieval context helpers', () => {
     expect(state).toEqual(clearRetrievedContextState('semantic'));
     expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled, state.mode))
       .toBe('question');
+  });
+
+  it('removes deleted graph results and selected IDs from attachable state', () => {
+    const state = retrievedContextAfterDocumentDelete(
+      {
+        query: 'SeedGraphMarker2101',
+        results: [
+          graphResult('seed', 'seed evidence', 'seed'),
+          graphResult('expanded', 'expanded evidence', 'expanded'),
+        ],
+        selectedChunkIds: ['chunk-seed', 'chunk-expanded'],
+        attachEnabled: true,
+        mode: 'graph',
+      },
+      'doc-expanded',
+    );
+
+    expect(state.results.map((item) => item.chunk.id)).toEqual(['chunk-seed']);
+    expect(state.selectedChunkIds).toEqual(['chunk-seed']);
+    expect(state.attachEnabled).toBe(true);
+    expect(buildOptionalChatPromptWithRetrievedContext('question', state.results, state.attachEnabled, state.mode))
+      .not.toContain('Doc expanded');
   });
 
   it('filters selected IDs when a deleted document is removed', () => {

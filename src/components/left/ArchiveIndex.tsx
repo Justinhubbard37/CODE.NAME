@@ -112,21 +112,33 @@ export function ArchiveIndex() {
     }
   };
   const retrievalAccent =
-    retrievalMode === 'semantic' ? 'cyan' : retrievalMode === 'hybrid' ? 'amber' : 'emerald';
+    retrievalMode === 'graph'
+      ? 'violet'
+      : retrievalMode === 'semantic'
+        ? 'cyan'
+        : retrievalMode === 'hybrid'
+          ? 'amber'
+          : 'emerald';
   const retrievalBorder =
-    retrievalAccent === 'cyan'
+    retrievalAccent === 'violet'
+      ? 'border-violet-500/20 bg-violet-500/5'
+      : retrievalAccent === 'cyan'
       ? 'border-cyan-500/20 bg-cyan-500/5'
       : retrievalAccent === 'amber'
         ? 'border-amber-500/20 bg-amber-500/5'
         : 'border-emerald-500/20 bg-emerald-500/5';
   const retrievalText =
-    retrievalAccent === 'cyan'
+    retrievalAccent === 'violet'
+      ? 'text-violet-300/80'
+      : retrievalAccent === 'cyan'
       ? 'text-cyan-300/80'
       : retrievalAccent === 'amber'
         ? 'text-amber-300/80'
         : 'text-emerald-400/80';
   const retrievalTitle =
-    retrievalMode === 'hybrid'
+    retrievalMode === 'graph'
+      ? 'Graph KB Results'
+      : retrievalMode === 'hybrid'
       ? 'Hybrid KB Results'
       : retrievalMode === 'semantic'
         ? 'Semantic KB Results'
@@ -257,6 +269,11 @@ export function ArchiveIndex() {
                         : `score ${retrievalScoreLabel(r.score)}`}{' '}
                       - {retrievalSource(r)}
                     </div>
+                    {r.graphRole && (
+                      <div className="truncate text-violet-300/70">
+                        {r.graphRole} depth {r.traversalDepth ?? 'n/a'} - {r.graphReason ?? 'graph traversal'}
+                      </div>
+                    )}
                     <div className="line-clamp-2">{retrievalSnippet(r)}</div>
                   </div>
                 ))}

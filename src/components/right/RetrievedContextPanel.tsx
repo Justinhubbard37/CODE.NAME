@@ -26,11 +26,36 @@ export function RetrievedContextPanel() {
   const hasResults = retrievalResults.length > 0;
   const selectedSet = new Set(retrievalSelectedChunkIds);
   const selectedCount = retrievalResults.filter((result) => selectedSet.has(result.chunk.id)).length;
-  const accent = retrievalMode === 'semantic' ? 'cyan' : retrievalMode === 'hybrid' ? 'amber' : 'emerald';
+  const seedCount = retrievalResults.filter((result) => result.graphRole === 'seed').length;
+  const expandedCount = retrievalResults.filter((result) => result.graphRole === 'expanded').length;
+  const accent =
+    retrievalMode === 'graph'
+      ? 'violet'
+      : retrievalMode === 'semantic'
+        ? 'cyan'
+        : retrievalMode === 'hybrid'
+          ? 'amber'
+          : 'emerald';
   const accentText =
-    accent === 'cyan' ? 'text-cyan-300' : accent === 'amber' ? 'text-amber-300' : 'text-emerald-300';
+    accent === 'violet'
+      ? 'text-violet-300'
+      : accent === 'cyan'
+        ? 'text-cyan-300'
+        : accent === 'amber'
+          ? 'text-amber-300'
+          : 'text-emerald-300';
   const accentBorder =
-    accent === 'cyan' ? 'border-cyan-500/50' : accent === 'amber' ? 'border-amber-500/50' : 'border-emerald-500/50';
+    accent === 'violet'
+      ? 'border-violet-500/50'
+      : accent === 'cyan'
+        ? 'border-cyan-500/50'
+        : accent === 'amber'
+          ? 'border-amber-500/50'
+          : 'border-emerald-500/50';
+  const panelLabel =
+    retrievalMode === 'graph'
+      ? 'Local KB context - graph traversal'
+      : `Local KB context - ${retrievalMode}`;
 
   return (
     <div className="shrink-0 border-t border-neutral-800 bg-neutral-950 px-3 py-2 font-mono">
@@ -39,11 +64,16 @@ export function RetrievedContextPanel() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider">
             <span className={accentText}>
-              Local KB context - {retrievalMode}
+              {panelLabel}
             </span>
             <span className="text-neutral-600">
               {hasResults ? `${retrievalResults.length} chunk${retrievalResults.length === 1 ? '' : 's'}` : 'no matches'}
             </span>
+            {retrievalMode === 'graph' && hasResults && (
+              <span className="text-neutral-500">
+                seeds {seedCount} expanded {expandedCount}
+              </span>
+            )}
             {hasResults && (
               <span className="text-neutral-500">
                 selected {selectedCount}/{Math.min(retrievalResults.length, RETRIEVAL_CHAT_RESULT_LIMIT)}
@@ -53,6 +83,11 @@ export function RetrievedContextPanel() {
           {retrievalQuery && (
             <div className="truncate text-[8px] text-neutral-600" title={retrievalQuery}>
               query: {retrievalQuery}
+            </div>
+          )}
+          {retrievalMode === 'graph' && hasResults && expandedCount === 0 && (
+            <div className="text-[8px] text-amber-300">
+              Seed-only: no graph-expanded evidence found
             </div>
           )}
         </div>
@@ -115,10 +150,34 @@ export function RetrievedContextPanel() {
                 ) : (
                   <span>score {retrievalScoreLabel(result.score)}</span>
                 )}
+                {result.graphRole && <span>role {result.graphRole}</span>}
+                {Number.isFinite(result.traversalDepth) && <span>depth {result.traversalDepth}</span>}
+                {result.expansionType && <span>expansion {result.expansionType.replace(/_/g, ' ')}</span>}
+                {Number.isFinite(result.graphScore) && (
+                  <span>graph {retrievalScoreLabel(result.graphScore!)}</span>
+                )}
               </div>
               <div className="mt-0.5 truncate text-[8px] text-neutral-600" title={retrievalSource(result)}>
                 source: {retrievalSource(result)}
               </div>
+              {result.graphReason && (
+                <div className="mt-0.5 line-clamp-2 text-[8px] leading-snug text-violet-300/75">
+                  reason: {result.graphReason}
+                </div>
+              )}
+              {result.graphEntities?.length ? (
+                <div className="mt-0.5 truncate text-[8px] text-neutral-600">
+                  entities: {result.graphEntities.map((entity) => entity.name).join(', ')}
+                </div>
+              ) : null}
+              {result.graphRelationships?.length ? (
+                <div className="mt-0.5 truncate text-[8px] text-neutral-600">
+                  relationships:{' '}
+                  {result.graphRelationships
+                    .map((relationship) => `${relationship.sourceName} -> ${relationship.targetName}`)
+                    .join('; ')}
+                </div>
+              ) : null}
               <div className="mt-1 line-clamp-2 text-[9px] leading-snug text-neutral-400">
                 {retrievalSnippet(result, 220)}
               </div>

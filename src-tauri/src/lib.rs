@@ -1,10 +1,10 @@
-mod model;
+mod crash;
 mod kb;
+mod logging;
+mod model;
 mod policy;
 mod secrets;
 mod sidecar;
-mod crash;
-mod logging;
 use sidecar::SidecarManager;
 use tauri::Manager;
 
@@ -41,6 +41,7 @@ pub fn run() {
             kb::kb_embed_missing,
             kb::kb_semantic_search,
             kb::kb_hybrid_search,
+            kb::kb_graphrag_search,
             kb::kb_get_document,
             kb::kb_list_documents,
             kb::kb_delete_document,
