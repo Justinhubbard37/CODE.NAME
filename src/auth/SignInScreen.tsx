@@ -47,8 +47,8 @@ export function SignInScreen() {
       <div className="w-80 flex flex-col gap-4">
         {/* Header */}
         <div className="text-center mb-2">
-          <div className="text-xs tracking-[0.3em] uppercase text-neutral-500 mb-1">CODE NAME</div>
-          <div className="text-neutral-400 text-sm">Sign in to continue</div>
+          <div className="type-heading tracking-[0.3em] uppercase text-neutral-500 mb-1">CODE NAME</div>
+          <div className="text-neutral-400 type-body">Sign in to continue</div>
         </div>
 
         {!creating ? (
@@ -59,14 +59,14 @@ export function SignInScreen() {
                 <button
                   key={u.id}
                   onClick={() => { setSelected(u.id); setError(''); setPin(''); }}
-                  className={`flex items-center gap-3 px-3 py-2 rounded text-left text-sm transition-colors ${
+                  className={`flex items-center gap-3 px-3 py-2 rounded text-left type-body transition-colors ${
                     selected === u.id
                       ? 'bg-neutral-800 border border-neutral-600 text-neutral-100'
                       : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:border-neutral-600'
                   }`}
                 >
                   <span className="flex-1 font-mono">{u.name}</span>
-                  <span className="text-xs text-neutral-600">{ROLE_LABELS[u.role]}</span>
+                  <span className="type-meta text-neutral-600">{ROLE_LABELS[u.role]}</span>
                 </button>
               ))}
             </div>
@@ -79,25 +79,25 @@ export function SignInScreen() {
                 value={pin}
                 onChange={(e) => { setPin(e.target.value); setError(''); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleSignIn()}
-                className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-sm font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
+                className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 type-control font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
                 maxLength={16}
                 autoFocus
               />
             )}
 
-            {error && <div className="text-red-400 text-xs font-mono">{error}</div>}
+            {error && <div className="text-red-400 type-meta font-mono">{error}</div>}
 
             <button
               onClick={handleSignIn}
               disabled={!selected}
-              className="bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-600 rounded px-4 py-2 text-sm font-mono transition-colors"
+              className="bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-600 rounded px-4 py-2 type-control font-mono transition-colors"
             >
               Sign in
             </button>
 
             <button
               onClick={() => setCreating(true)}
-              className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors text-center"
+              className="type-meta text-neutral-600 hover:text-neutral-400 transition-colors text-center"
             >
               + Add account
             </button>
@@ -109,13 +109,13 @@ export function SignInScreen() {
               placeholder="Name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-sm font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
+              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 type-control font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
               autoFocus
             />
             <select
               value={newRole}
               onChange={(e) => setNewRole(e.target.value as Role)}
-              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-sm font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
+              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 type-control font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
             >
               <option value="admin">Admin</option>
               <option value="editor">Editor</option>
@@ -126,20 +126,20 @@ export function SignInScreen() {
               placeholder="PIN (optional)"
               value={newPin}
               onChange={(e) => setNewPin(e.target.value)}
-              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 text-sm font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
+              className="bg-neutral-900 border border-neutral-700 rounded px-3 py-1.5 type-control font-mono text-neutral-200 focus:outline-none focus:border-neutral-500"
               maxLength={16}
             />
             <div className="flex gap-2">
               <button
                 onClick={handleCreate}
                 disabled={!newName.trim()}
-                className="flex-1 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-600 rounded px-3 py-1.5 text-sm font-mono transition-colors"
+                className="flex-1 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-600 rounded px-3 py-1.5 type-control font-mono transition-colors"
               >
                 Create
               </button>
               <button
                 onClick={() => setCreating(false)}
-                className="flex-1 border border-neutral-700 rounded px-3 py-1.5 text-sm font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
+                className="flex-1 border border-neutral-700 rounded px-3 py-1.5 type-control font-mono text-neutral-500 hover:text-neutral-300 transition-colors"
               >
                 Cancel
               </button>

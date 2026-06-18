@@ -14,7 +14,7 @@ export function TaskTabs() {
   const [menu, setMenu] = useState(false);
 
   return (
-    <div className="relative flex items-stretch h-8 bg-neutral-950 border-b border-neutral-800 text-[10px] font-mono select-none">
+    <div className="relative flex items-stretch h-8 bg-neutral-950 border-b border-neutral-800 type-control font-mono select-none">
       <div className="flex items-stretch overflow-x-auto no-scrollbar">
         {tasks.map((t) => {
           const Icon = KIND_ICON[t.kind];

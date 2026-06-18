@@ -18,11 +18,11 @@ export function SecurityGates() {
 
   return (
     <div className="space-y-2">
-      <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+      <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
         Capability Gates
       </div>
       {!isAdmin && (
-        <div className="flex items-center gap-1.5 text-[8px] font-mono text-amber-600/70 px-1">
+        <div className="flex items-center gap-1.5 type-meta font-mono text-amber-600/70 px-1">
           <ShieldOff className="w-3 h-3 shrink-0" />
           <span>Read-only — gate changes require admin role</span>
         </div>
@@ -52,13 +52,13 @@ export function SecurityGates() {
             >
               <Icon className={`w-4 h-4 shrink-0 ${on ? 'text-emerald-400' : 'text-red-400'}`} />
               <div className="flex-1 min-w-0">
-                <div className={`text-[10px] font-mono tracking-wider ${on ? 'text-neutral-200' : 'text-neutral-400'}`}>
+                <div className={`type-control font-mono tracking-wider ${on ? 'text-neutral-200' : 'text-neutral-400'}`}>
                   {label}
                 </div>
-                <div className="text-[8px] text-neutral-600 font-mono truncate">{desc}</div>
+                <div className="type-meta text-neutral-600 font-mono truncate">{desc}</div>
               </div>
               <span
-                className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded-full ${
+                className={`flex items-center gap-1 type-meta font-mono px-1.5 py-0.5 rounded-full ${
                   on ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'
                 }`}
               >
@@ -91,7 +91,7 @@ export function SecurityGates() {
         );
       })}
       {isAdmin && (
-        <div className="text-[7px] font-mono text-neutral-700 px-1">
+        <div className="type-meta font-mono text-neutral-700 px-1">
           Lock icon → admin policy ceiling (forces gate closed for all users)
         </div>
       )}

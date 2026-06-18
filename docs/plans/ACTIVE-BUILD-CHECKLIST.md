@@ -1,5 +1,65 @@
 ## Active Product Milestone
 
+# Phase 2J - Typographic Readability Calibration
+
+Goal: improve readability through typography scale, font weight, and line-height
+across existing UI surfaces without changing brand colors, UI layout, component
+structure, interaction design, retrieval behavior, indexing behavior, database
+schema, or graph behavior.
+
+Status: IMPLEMENTED - READY FOR OWNER REVIEW
+
+Definition of done:
+
+- [x] add centralized typography tokens for readable headings, body text,
+  controls, labels, and metadata
+- [x] improve typography scale, font weight, and line-height across existing UI
+  surfaces
+- [x] preserve every existing brand color and theme value
+- [x] preserve UI layout, component structure, and interaction design
+- [x] preserve retrieval behavior
+- [x] preserve semantic indexing behavior
+- [x] preserve database schema
+- [x] preserve graph behavior
+- [x] keep graph visual-polish work in backlog
+- [ ] owner manual verification accepted
+
+Target commit:
+
+`feat: improve global readability hierarchy`
+
+Explicitly not changed in Phase 2J:
+
+- brand colors or theme values
+- UI layout, component structure, or interaction design
+- retrieval behavior
+- semantic indexing behavior
+- database schema
+- graph behavior
+- graph visual-polish backlog items
+
+Graph visual-polish work remains backlog, including zoom-level label overlap /
+hover-overlay clustering artifacts in dense graph areas.
+
+---
+
+## Owner Review - Phase 2J
+
+Status: READY FOR OWNER REVIEW
+
+Required visible result:
+
+existing UI surfaces keep their current placement, colors, controls, and
+behavior while headings, body text, snippets, source filenames, route traces,
+status information, Attach state, chat text, and operator-facing metadata are
+easier to read at normal desktop scale.
+
+Phase 2J is not accepted until owner manual verification is completed.
+
+---
+
+## Prior Accepted Milestone
+
 # Phase 2I-A - Auto Retrieval Router + Simplified Mode UX
 
 Goal: make Auto the default user-facing retrieval mode, keep manual
@@ -83,7 +143,7 @@ Explicitly not implemented in Phase 2I-A:
 
 ---
 
-## Next Slice
+## Prior Owner Review
 
 ## Owner Review - Phase 2I-A
 

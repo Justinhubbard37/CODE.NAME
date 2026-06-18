@@ -35,7 +35,7 @@ function Section({
 }) {
   return (
     <section className="px-5 py-4 border-b border-neutral-900">
-      <h3 className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-neutral-500 mb-3">
+      <h3 className="flex items-center gap-2 type-section font-mono uppercase tracking-widest text-neutral-500 mb-3">
         <Icon className="w-3 h-3 text-emerald-500/70" aria-hidden="true" />
         {title}
       </h3>
@@ -87,10 +87,10 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 px-5 py-4 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800">
           <div>
-            <h2 id="settings-title" className="text-sm font-mono font-bold tracking-widest text-neutral-100 uppercase">
+            <h2 id="settings-title" className="type-heading font-mono tracking-widest text-neutral-100 uppercase">
               {t('settings.title')}
             </h2>
-            <p className="text-[10px] font-mono text-neutral-500 mt-1">{t('settings.subtitle')}</p>
+            <p className="type-meta font-mono text-neutral-500 mt-1">{t('settings.subtitle')}</p>
           </div>
           <button
             ref={closeRef}
@@ -105,11 +105,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         {/* Models & routing */}
         <Section icon={Cpu} title={t('settings.section.models')}>
           <label className="block">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.preset')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.preset')}</span>
             <select
               value={activeProfileId}
               onChange={(e) => setActiveProfileId(e.target.value)}
-              className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[11px] font-mono p-1.5 outline-none focus:border-neutral-600"
+              className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             >
               {profiles.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -118,11 +118,11 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </label>
 
           <label className="block">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.endpoint')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.endpoint')}</span>
             <select
               value={activeProfile.endpointId}
               onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
-              className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[11px] font-mono p-1.5 outline-none focus:border-neutral-600"
+              className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             >
               {endpoints.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -133,19 +133,19 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </label>
 
           <label className="block">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.model')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.model')}</span>
             {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
               <select
                 value={activeEndpoint.model}
                 onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
-                className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[11px] font-mono p-1.5 outline-none focus:border-neutral-600"
+                className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
               >
                 {activeEndpoint.models.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
               </select>
             ) : (
-              <p className="mt-1 text-[10px] font-mono text-neutral-600 border border-neutral-800 p-2 leading-relaxed">
+              <p className="mt-1 type-meta font-mono text-neutral-600 border border-neutral-800 p-2">
                 {t('settings.models.noModels')}
               </p>
             )}
@@ -170,7 +170,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         {/* Language */}
         <Section icon={Languages} title={t('settings.section.language')}>
           <fieldset>
-            <legend className="text-[9px] font-mono uppercase tracking-wider text-neutral-500 mb-2">
+            <legend className="type-label font-mono uppercase tracking-wider text-neutral-500 mb-2">
               {t('settings.language.label')}
             </legend>
             <div className="flex flex-wrap gap-2">
@@ -179,7 +179,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
                   key={l.code}
                   onClick={() => setLang(l.code)}
                   aria-pressed={lang === l.code}
-                  className={`px-3 py-1.5 text-[11px] font-mono border rounded transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${
+                  className={`px-3 py-1.5 type-control font-mono border rounded transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${
                     lang === l.code
                       ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300'
                       : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'
@@ -189,7 +189,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
-            <p className="text-[10px] font-mono text-neutral-600 mt-2">{t('settings.language.help')}</p>
+            <p className="type-meta font-mono text-neutral-600 mt-2">{t('settings.language.help')}</p>
           </fieldset>
         </Section>
 
@@ -199,34 +199,34 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             <div>
               <button
                 onClick={openLogs}
-                className="text-[11px] font-mono text-neutral-300 hover:text-neutral-100 border border-neutral-700 hover:border-neutral-500 px-3 py-1.5 rounded transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                className="type-control font-mono text-neutral-300 hover:text-neutral-100 border border-neutral-700 hover:border-neutral-500 px-3 py-1.5 rounded transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
               >
                 {t('settings.logs.view')}
               </button>
-              <p className="text-[10px] font-mono text-neutral-600 mt-2">{t('settings.logs.help')}</p>
+              <p className="type-meta font-mono text-neutral-600 mt-2">{t('settings.logs.help')}</p>
             </div>
           ) : (
-            <p className="text-[10px] font-mono text-neutral-600">{t('settings.logs.desktopOnly')}</p>
+            <p className="type-meta font-mono text-neutral-600">{t('settings.logs.desktopOnly')}</p>
           )}
         </Section>
 
         {/* Help & docs (Phase 12, Slice 12.5) */}
         <Section icon={Info} title="Help & docs">
-          <ul className="text-[11px] font-mono text-neutral-400 space-y-1.5">
+          <ul className="type-body font-mono text-neutral-400 space-y-1.5">
             <li><span className="text-neutral-200">User Guide</span> — ingest, search, chat, tools, audit <span className="text-neutral-600">· docs/USER_GUIDE.md</span></li>
             <li><span className="text-neutral-200">Admin Guide</span> — roles, policy, SSO, SIEM, audit <span className="text-neutral-600">· docs/ADMIN_GUIDE.md</span></li>
             <li><span className="text-neutral-200">Troubleshooting</span> — common fixes <span className="text-neutral-600">· docs/TROUBLESHOOTING.md</span></li>
           </ul>
-          <p className="text-[10px] font-mono text-neutral-600">Full guides ship in the docs/ folder. Use Logs (above) for diagnostics.</p>
+          <p className="type-meta font-mono text-neutral-600">Full guides ship in the docs/ folder. Use Logs (above) for diagnostics.</p>
         </Section>
 
         {/* About */}
         <Section icon={Info} title={t('settings.section.about')}>
-          <div className="text-[11px] font-mono text-neutral-300">
+          <div className="type-body-strong font-mono text-neutral-300">
             <span className="text-neutral-100 font-bold tracking-widest">{t('app.name')}</span>
             <span className="text-neutral-600"> · {t('settings.about.version')} {APP_VERSION}</span>
           </div>
-          <p className="text-[10px] font-mono text-neutral-500 leading-relaxed">{t('settings.about.desc')}</p>
+          <p className="type-body font-mono text-neutral-500">{t('settings.about.desc')}</p>
         </Section>
       </div>
     </div>

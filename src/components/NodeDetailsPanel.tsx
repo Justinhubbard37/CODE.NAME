@@ -104,15 +104,15 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         title="Drag to move out of the way"
         className="flex justify-between items-center bg-neutral-950 p-3 border-b border-neutral-800 cursor-move select-none"
       >
-        <div className="text-xs font-bold text-neutral-300 flex items-center gap-2">
-          {node.data.label} <span className="text-[10px] text-neutral-500 bg-neutral-800 px-1 rounded">v{node.data.currentVersion || 1}</span>
+        <div className="type-section text-neutral-300 flex items-center gap-2">
+          {node.data.label} <span className="type-meta text-neutral-500 bg-neutral-800 px-1 rounded">v{node.data.currentVersion || 1}</span>
         </div>
         <button onClick={onClose} aria-label="Close inspector" className="text-neutral-500 hover:text-white transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500">
           <X className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
 
-      <div role="tablist" aria-label="Inspector sections" className="flex border-b border-neutral-800 text-[10px]">
+      <div role="tablist" aria-label="Inspector sections" className="flex border-b border-neutral-800 type-control">
         <button 
           role="tab"
           aria-selected={tab === 'PROPS'}
@@ -131,11 +131,11 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         </button>
       </div>
 
-      <div className="p-4 overflow-y-auto flex-1 text-xs">
+      <div className="p-4 overflow-y-auto flex-1 type-body">
         {tab === 'PROPS' ? (
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">TITLE</label>
+              <label className="type-label text-neutral-500 uppercase tracking-widest">TITLE</label>
               <input 
                 type="text" 
                 value={editData.title || ''} 
@@ -145,7 +145,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">CLASSIFICATION</label>
+              <label className="type-label text-neutral-500 uppercase tracking-widest">CLASSIFICATION</label>
               <input 
                 type="text" 
                 value={editData.class || ''} 
@@ -155,20 +155,20 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest">CONTENT / EXTRACT</label>
+              <label className="type-label text-neutral-500 uppercase tracking-widest">CONTENT / EXTRACT</label>
               <textarea 
                 value={editData.description || ''} 
                 onChange={(e) => handleChange('description', e.target.value)}
                 aria-label="Content / extract"
                 rows={6}
-                className="w-full bg-neutral-950 border border-neutral-800 text-neutral-400 p-2 focus:outline-none focus:border-neutral-500 font-mono text-[10px]"
+                className="w-full bg-neutral-950 border border-neutral-800 text-neutral-400 p-2 focus:outline-none focus:border-neutral-500 font-mono type-body"
                 placeholder="No extracted content..."
               />
             </div>
             
             <button 
               onClick={handleSave}
-              className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[10px] font-bold tracking-widest mt-4 flex items-center justify-center gap-2 border border-neutral-600"
+              className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 type-control tracking-widest mt-4 flex items-center justify-center gap-2 border border-neutral-600"
             >
               <Save className="w-3 h-3" aria-hidden="true" /> SAVE CHANGES
             </button>
@@ -176,20 +176,20 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         ) : (
           <div className="space-y-3">
             {versions.length === 0 ? (
-              <div className="text-neutral-500 italic text-[10px]">No version history found. Save this node to begin tracking versions.</div>
+              <div className="text-neutral-500 italic type-meta">No version history found. Save this node to begin tracking versions.</div>
             ) : (
               versions.map((ver, idx) => (
                 <div key={idx} className="bg-neutral-950 border border-neutral-800 p-3 relative group">
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-bold text-neutral-300">v{ver.version}</span>
-                    <span className="text-[9px] text-neutral-600 font-mono">{new Date(ver.timestamp).toLocaleString()}</span>
+                    <span className="type-meta text-neutral-600 font-mono">{new Date(ver.timestamp).toLocaleString()}</span>
                   </div>
-                  <div className="text-[10px] text-neutral-400 mb-2">{ver.changes}</div>
+                  <div className="type-meta text-neutral-400 mb-2">{ver.changes}</div>
                   
                   {ver.version !== node.data.currentVersion && (
                     <button 
                       onClick={() => handleRevert(ver)}
-                      className="text-[9px] text-neutral-300 bg-neutral-800 px-2 py-1 flex items-center gap-1 hover:bg-neutral-700 transition w-full justify-center"
+                      className="type-control text-neutral-300 bg-neutral-800 px-2 py-1 flex items-center gap-1 hover:bg-neutral-700 transition w-full justify-center"
                     >
                       <RotateCcw className="w-3 h-3" aria-hidden="true" /> REVERT TO THIS
                     </button>

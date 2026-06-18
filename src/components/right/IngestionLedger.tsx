@@ -25,37 +25,37 @@ function Row({ item }: { item: QuarantineItem }) {
 
   return (
     <div className="border border-neutral-800 bg-neutral-950/60 px-2 py-1.5">
-      <div className="flex items-center gap-2 text-[10px] font-mono">
+      <div className="flex items-center gap-2 type-control font-mono">
         <Icon aria-hidden="true" className={`w-3.5 h-3.5 shrink-0 ${m.c} ${item.status === 'checking' ? 'animate-spin' : ''}`} />
         <span className="text-neutral-300 truncate flex-1">{item.name}</span>
         <span className={`shrink-0 ${m.c}`}>{m.label}</span>
       </div>
-      <div className="flex items-center gap-2 mt-0.5 text-[8px] text-neutral-600 font-mono pl-5">
+      <div className="flex items-center gap-2 mt-0.5 type-meta text-neutral-600 font-mono pl-5">
         <span className="truncate">{item.hash}</span>
         {item.size > 0 && <span>· {item.size}B</span>}
       </div>
 
       {item.status === 'conflict' && (
         <div className="mt-2 pl-5">
-          <div className="text-[8px] text-red-300/80 font-mono mb-1">
+          <div className="type-meta text-red-300/80 font-mono mb-1">
             redundant with {target?.data.label ?? item.conflictWith}
           </div>
           <div className="flex gap-1">
             <button
               onClick={() => resolveConflict(item.id, 'overwrite')}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-mono border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+              className="flex items-center gap-1 px-1.5 py-0.5 type-control font-mono border border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
             >
               <RotateCw className="w-2.5 h-2.5" aria-hidden="true" /> OVERWRITE
             </button>
             <button
               onClick={() => resolveConflict(item.id, 'skip')}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-mono border border-neutral-600 text-neutral-400 hover:bg-neutral-800"
+              className="flex items-center gap-1 px-1.5 py-0.5 type-control font-mono border border-neutral-600 text-neutral-400 hover:bg-neutral-800"
             >
               <Ban className="w-2.5 h-2.5" aria-hidden="true" /> SKIP
             </button>
             <button
               onClick={() => resolveConflict(item.id, 'fork')}
-              className="flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-mono border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+              className="flex items-center gap-1 px-1.5 py-0.5 type-control font-mono border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
             >
               <GitFork className="w-2.5 h-2.5" aria-hidden="true" /> KEEP BOTH
             </button>
@@ -74,7 +74,7 @@ export function IngestionLedger() {
 
   return (
     <div role="region" aria-label="Ingestion ledger" className="shrink-0 border-b border-neutral-800 bg-neutral-900/40">
-      <div className="flex items-center justify-between px-3 py-1.5 text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-500">
         <span>
           Ingestion Ledger
           {conflicts > 0 && <span className="ml-2 text-red-400">{conflicts} conflict(s)</span>}

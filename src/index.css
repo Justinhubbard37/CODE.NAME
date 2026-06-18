@@ -30,6 +30,14 @@
   --space-snug: 0.75rem;
   --space-roomy: 1.25rem;
   --radius: 2px;
+  --type-heading-size: 1rem;
+  --type-section-size: 0.9375rem;
+  --type-body-size: 0.9375rem;
+  --type-control-size: 0.8125rem;
+  --type-meta-size: 0.75rem;
+  --type-line-heading: 1.35;
+  --type-line-body: 1.5;
+  --type-line-compact: 1.4;
   color-scheme: dark;
 }
 
@@ -37,6 +45,49 @@ body {
   margin: 0;
   background-color: var(--surface-base);
   overflow: hidden;
+}
+
+/* Typography calibration: shared readable scale without changing palette/layout. */
+.type-heading {
+  font-size: var(--type-heading-size);
+  line-height: var(--type-line-heading);
+  font-weight: 600;
+}
+
+.type-section {
+  font-size: var(--type-section-size);
+  line-height: var(--type-line-heading);
+  font-weight: 600;
+}
+
+.type-body {
+  font-size: var(--type-body-size);
+  line-height: var(--type-line-body);
+  font-weight: 400;
+}
+
+.type-body-strong {
+  font-size: var(--type-body-size);
+  line-height: var(--type-line-body);
+  font-weight: 500;
+}
+
+.type-control {
+  font-size: var(--type-control-size);
+  line-height: var(--type-line-compact);
+  font-weight: 600;
+}
+
+.type-label {
+  font-size: var(--type-control-size);
+  line-height: var(--type-line-compact);
+  font-weight: 600;
+}
+
+.type-meta {
+  font-size: var(--type-meta-size);
+  line-height: var(--type-line-compact);
+  font-weight: 500;
 }
 
 /* Accessibility (Slice 10.2 groundwork): a visible, consistent keyboard-focus

@@ -50,7 +50,7 @@ export function StatusModule() {
   };
 
   return (
-    <div ref={ref} className="relative font-mono text-[10px]">
+    <div ref={ref} className="relative font-mono type-control">
       <div className="flex items-center gap-1">
         <button
           onClick={() => setOpen((v) => !v)}
@@ -77,7 +77,7 @@ export function StatusModule() {
 
       {open && (
         <div role="menu" aria-label="Endpoint matrix" className="absolute top-8 right-0 z-50 w-72 bg-neutral-900 border border-neutral-700 shadow-2xl p-1">
-          <div className="px-2 py-1 text-neutral-500 uppercase tracking-wider border-b border-neutral-800">
+          <div className="px-2 py-1 type-label text-neutral-500 uppercase tracking-wider border-b border-neutral-800">
             Endpoint Matrix · click to route · ✎ to edit
           </div>
           {endpoints.map((e) => {
@@ -101,9 +101,9 @@ export function StatusModule() {
                   <div className="min-w-0">
                     <div className="text-neutral-300 truncate">
                       {e.label}
-                      {active && <span className="ml-1 text-[8px] text-emerald-400">ACTIVE</span>}
+                      {active && <span className="ml-1 type-meta text-emerald-400">ACTIVE</span>}
                     </div>
-                    <div className="text-[8px] text-neutral-600 truncate">
+                    <div className="type-meta text-neutral-600 truncate">
                       {e.model} · {e.detail ?? e.status}
                       {reachesNetwork(e) ? ' · CLOUD' : ' · LOCAL'}
                     </div>

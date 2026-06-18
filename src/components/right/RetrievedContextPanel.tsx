@@ -65,7 +65,7 @@ export function RetrievedContextPanel() {
       <div className="flex items-center gap-2">
         <Database className={`h-3.5 w-3.5 shrink-0 ${accentText}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider">
+          <div className="flex items-center gap-2 type-label uppercase tracking-wider">
             <span className={accentText}>{panelLabel}</span>
             <span className="text-neutral-600">
               {hasResults ? `${retrievalResults.length} chunk${retrievalResults.length === 1 ? '' : 's'}` : 'no matches'}
@@ -82,18 +82,18 @@ export function RetrievedContextPanel() {
             )}
           </div>
           {retrievalQuery && (
-            <div className="truncate text-[8px] text-neutral-600" title={retrievalQuery}>
+            <div className="truncate type-meta text-neutral-600" title={retrievalQuery}>
               query: {retrievalQuery}
             </div>
           )}
           {traceSummary && (
-            <div className="text-[8px] text-neutral-400">{traceSummary}</div>
+            <div className="type-meta break-words text-neutral-400">{traceSummary}</div>
           )}
           {retrievalRouteTrace?.warningMessage && (
-            <div className="text-[8px] text-amber-300">{retrievalRouteTrace.warningMessage}</div>
+            <div className="type-meta break-words text-amber-300">{retrievalRouteTrace.warningMessage}</div>
           )}
           {retrievalRouteTrace && (
-            <details className="mt-0.5 text-[8px] text-neutral-600">
+            <details className="mt-0.5 type-meta text-neutral-600">
               <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Route trace</summary>
               <div className="mt-0.5 grid grid-cols-2 gap-x-2 gap-y-0.5">
                 <span>Requested</span><span className="text-neutral-400">{retrievalRouteTrace.requestedMode}</span>
@@ -116,7 +116,7 @@ export function RetrievedContextPanel() {
         <button
           onClick={() => setRetrievalEnabledForChat(!retrievalEnabledForChat)}
           disabled={!hasResults || selectedCount === 0}
-          className={`shrink-0 border px-1.5 py-0.5 text-[8px] uppercase tracking-wider disabled:opacity-40 ${
+          className={`shrink-0 border px-1.5 py-0.5 type-control uppercase tracking-wider disabled:opacity-40 ${
             retrievalEnabledForChat
               ? `${accentBorder} ${accentText}`
               : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'
@@ -143,7 +143,7 @@ export function RetrievedContextPanel() {
             const selectionDisabled = !selected && selectedCount >= RETRIEVAL_CHAT_RESULT_LIMIT;
             return (
               <div key={result.chunk.id} className="border border-neutral-800 bg-black/30 p-1.5">
-                <div className="flex items-center gap-1 text-[8px] uppercase tracking-wider">
+                <div className="flex items-center gap-1 type-label uppercase tracking-wider">
                   <input
                     type="checkbox"
                     checked={selected}
@@ -159,21 +159,21 @@ export function RetrievedContextPanel() {
                   </span>
                   <span className="text-neutral-600">chunk {result.chunk.ordinal + 1}</span>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[8px] uppercase tracking-wider text-neutral-600">
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 type-meta uppercase tracking-wider text-neutral-600">
                   <span className={accentText}>match {retrievalMatchKindLabel(result)}</span>
                   {result.graphRole && <span>role {result.graphRole}</span>}
                   {Number.isFinite(result.traversalDepth) && <span>depth {result.traversalDepth}</span>}
                   {result.expansionType && <span>expansion {result.expansionType.replace(/_/g, ' ')}</span>}
                 </div>
-                <div className="mt-0.5 truncate text-[8px] text-neutral-600" title={retrievalSource(result)}>
+                <div className="mt-0.5 truncate type-meta text-neutral-600" title={retrievalSource(result)}>
                   source: {retrievalSource(result)}
                 </div>
                 {result.graphReason && (
-                  <div className="mt-0.5 line-clamp-2 text-[8px] leading-snug text-violet-300/75">
+                  <div className="mt-0.5 line-clamp-2 type-meta break-words text-violet-300/75">
                     reason: {result.graphReason}
                   </div>
                 )}
-                <details className="mt-0.5 text-[8px] text-neutral-600">
+                <details className="mt-0.5 type-meta text-neutral-600">
                   <summary className="cursor-pointer hover:text-neutral-300">Scores and graph details</summary>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 uppercase tracking-wider">
                     {Number.isFinite(result.lexicalScore) && <span>lexical {retrievalScoreLabel(result.lexicalScore!)}</span>}
@@ -199,7 +199,7 @@ export function RetrievedContextPanel() {
                     </div>
                   ) : null}
                 </details>
-                <div className="mt-1 line-clamp-2 text-[9px] leading-snug text-neutral-400">
+                <div className="mt-1 line-clamp-2 type-body break-words text-neutral-400">
                   {retrievalSnippet(result, 220)}
                 </div>
               </div>

@@ -99,8 +99,8 @@ export function TelemetryConsole() {
   ];
 
   return (
-    <div className="absolute bottom-10 left-2 z-20 w-44 pointer-events-auto text-[9px] font-mono">
-      <div className="text-neutral-500 font-bold uppercase tracking-wider mb-1">Telemetry</div>
+    <div className="absolute bottom-10 left-2 z-20 w-44 pointer-events-auto type-meta font-mono">
+      <div className="type-label text-neutral-500 uppercase tracking-wider mb-1">Telemetry</div>
       <div className="bg-neutral-950/80 border border-neutral-800 backdrop-blur-sm p-2 grid grid-cols-2 gap-y-1">
         {rows.map(([k, v, colour]) => (
           <div key={k} className="contents">

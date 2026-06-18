@@ -51,7 +51,7 @@ export function AuditLedger() {
 
   return (
     <div className="shrink-0 border-b border-neutral-800 bg-neutral-950">
-      <div className="flex items-center justify-between px-3 py-1 text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1 type-label font-mono uppercase tracking-wider text-neutral-500">
         <button
           onClick={() => setOpen((v) => !v)}
           className="flex items-center gap-1 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
@@ -73,7 +73,7 @@ export function AuditLedger() {
               aria-label="Verify tamper-evident hash chain"
             >
               <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-              <span className="text-[8px]">{verifying ? 'checking…' : 'verify'}</span>
+              <span className="type-meta">{verifying ? 'checking…' : 'verify'}</span>
             </button>
             <button onClick={load} className="text-neutral-600 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500" title="Refresh audit ledger" aria-label="Refresh audit ledger">
               <RefreshCw className="w-3 h-3" aria-hidden="true" />
@@ -85,7 +85,7 @@ export function AuditLedger() {
       {/* Verification result banner */}
       {open && verifyResult !== null && (
         <div
-          className={`mx-3 mb-1 px-2 py-1 text-[8px] font-mono flex items-center gap-1.5 ${
+          className={`mx-3 mb-1 px-2 py-1 type-meta font-mono flex items-center gap-1.5 ${
             verifyResult.ok
               ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-800/40'
               : 'bg-red-950/50 text-red-400 border border-red-800/40'
@@ -106,7 +106,7 @@ export function AuditLedger() {
       )}
 
       {open && (
-        <div className="max-h-40 overflow-y-auto px-3 pb-2 font-mono text-[9px] leading-relaxed">
+        <div className="max-h-40 overflow-y-auto px-3 pb-2 font-mono type-meta">
           {rows.length === 0 ? (
             <div className="text-neutral-600 italic">// no audited writes yet</div>
           ) : (

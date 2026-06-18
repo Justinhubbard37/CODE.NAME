@@ -53,7 +53,7 @@ export function Dropzone({ children }: { children: ReactNode }) {
             }`}
           />
           <div
-            className={`flex flex-col items-center gap-2 font-mono text-xs px-6 py-4 border bg-neutral-950/90 ${
+            className={`flex flex-col items-center gap-2 font-mono type-body px-6 py-4 border bg-neutral-950/90 ${
               gates.filesystem
                 ? 'border-emerald-500/50 text-emerald-300'
                 : 'border-red-500/50 text-red-300'
@@ -63,13 +63,13 @@ export function Dropzone({ children }: { children: ReactNode }) {
               <>
                 <DownloadCloud className="w-6 h-6" />
                 <span className="tracking-widest uppercase">Release to quarantine + index</span>
-                <span className="text-[9px] text-neutral-500">hash · structure check · gated ingest</span>
+                <span className="type-meta text-neutral-500">hash · structure check · gated ingest</span>
               </>
             ) : (
               <>
                 <ShieldAlert className="w-6 h-6" />
                 <span className="tracking-widest uppercase">Filesystem gate closed</span>
-                <span className="text-[9px] text-neutral-500">re-open the FS gate to ingest</span>
+                <span className="type-meta text-neutral-500">re-open the FS gate to ingest</span>
               </>
             )}
           </div>

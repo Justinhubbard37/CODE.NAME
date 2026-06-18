@@ -41,7 +41,7 @@ export function AgentUIPanel() {
 
   return (
     <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/40 max-h-64 overflow-y-auto">
-      <div className="flex items-center justify-between px-3 py-1.5 text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-500">
         <span className="flex items-center gap-1">
           <Layout className="w-3 h-3" aria-hidden="true" /> Agent UI · A2UI
         </span>

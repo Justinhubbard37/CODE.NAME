@@ -8,13 +8,13 @@ import type { Endpoint, EndpointKind, EndpointNetworkClass } from '../../types';
 
 const KINDS: EndpointKind[] = ['ollama', 'lmstudio', 'openai', 'custom', 'gemini', 'a2a'];
 const inputCls =
-  'w-full bg-neutral-950 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 font-mono text-[10px]';
-const roCls = 'w-full bg-neutral-900/60 border border-neutral-800 text-neutral-500 p-1.5 font-mono text-[10px]';
+  'w-full bg-neutral-950 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 font-mono type-control';
+const roCls = 'w-full bg-neutral-900/60 border border-neutral-800 text-neutral-500 p-1.5 font-mono type-control';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1">
-      <div className="text-[9px] text-neutral-500 uppercase tracking-wider">{label}</div>
+      <div className="type-label text-neutral-500 uppercase tracking-wider">{label}</div>
       {children}
     </div>
   );
@@ -121,7 +121,7 @@ export function EndpointEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-3 py-2 border-b border-neutral-800">
-          <span id="endpoint-editor-title" className="text-[10px] font-mono uppercase tracking-widest text-emerald-400/80">
+          <span id="endpoint-editor-title" className="type-section font-mono uppercase tracking-widest text-emerald-400/80">
             {locked ? 'Provider' : 'Edit Endpoint'}
           </span>
           <button onClick={onClose} aria-label="Close endpoint editor" className="text-neutral-500 hover:text-white focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500">
@@ -131,7 +131,7 @@ export function EndpointEditor({
 
         <div className="p-3 space-y-3">
           {locked && (
-            <div className="text-[8px] font-mono text-neutral-500 border border-neutral-800 bg-neutral-950 p-1.5 leading-relaxed">
+            <div className="type-meta font-mono text-neutral-500 border border-neutral-800 bg-neutral-950 p-1.5">
               Built-in provider — its address and type are fixed so local and cloud can't be
               confused. You can set the API key (if cloud) and pick the model.
             </div>
@@ -196,7 +196,7 @@ export function EndpointEditor({
           )}
 
           {!locked && (
-            <label className="flex items-center gap-2 text-[10px] font-mono text-neutral-400">
+            <label className="flex items-center gap-2 type-control font-mono text-neutral-400">
               <input
                 type="checkbox"
                 checked={classification.runsLocalOnly}
@@ -208,14 +208,14 @@ export function EndpointEditor({
           )}
 
           {!locked && classification.cloudCapable && (
-            <div className="text-[8px] font-mono text-amber-400/80 leading-relaxed border border-amber-500/20 bg-amber-500/5 p-1.5">
+            <div className="type-meta font-mono text-amber-400/80 border border-amber-500/20 bg-amber-500/5 p-1.5">
               Custom and proxy endpoints are treated as cloud-capable unless explicitly marked
               local-only.
             </div>
           )}
 
           {needsKey && (
-            <div className="text-[8px] font-mono text-neutral-600 leading-relaxed">
+            <div className="type-meta font-mono text-neutral-600">
               Stored in your OS keychain and only ever read inside the Rust shell when making a
               request — never shown on screen or written to a file.
             </div>
@@ -224,13 +224,13 @@ export function EndpointEditor({
           <div className="flex gap-2 pt-1">
             <button
               onClick={save}
-              className="flex-1 py-1.5 text-[10px] font-mono border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+              className="flex-1 py-1.5 type-control font-mono border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
             >
               SAVE
             </button>
             <button
               onClick={onClose}
-              className="flex-1 py-1.5 text-[10px] font-mono border border-neutral-700 text-neutral-400 hover:bg-neutral-800"
+              className="flex-1 py-1.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:bg-neutral-800"
             >
               CANCEL
             </button>

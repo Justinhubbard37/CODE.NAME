@@ -149,7 +149,7 @@ export function StealthDrawer() {
       <button
         ref={triggerRef}
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-0 left-0 z-[60] w-6 h-7 flex items-center justify-center bg-neutral-900 border-t border-r border-neutral-700 text-emerald-500 font-mono text-sm hover:bg-neutral-800"
+        className="fixed bottom-0 left-0 z-[60] w-6 h-7 flex items-center justify-center bg-neutral-900 border-t border-r border-neutral-700 text-emerald-500 font-mono type-section hover:bg-neutral-800"
         title="Configuration tray"
       >
         {open ? '<' : '>'}
@@ -164,21 +164,21 @@ export function StealthDrawer() {
         style={{ maxHeight: '85vh', overflowY: 'auto' }}
       >
         <div className="p-3 pl-7 space-y-4">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-emerald-400/80 border-b border-neutral-800 pb-2">
+          <div className="type-control font-mono uppercase tracking-widest text-emerald-400/80 border-b border-neutral-800 pb-2">
             Parameter Tray
           </div>
 
           {/* Presets (saved parameter sets) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+              <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
                 Presets
               </div>
               <div className="flex gap-1">
                 <button
                   onClick={addProfile}
                   title="New preset (copies the current one)"
-                  className="flex items-center gap-0.5 px-1 py-0.5 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300"
+                  className="flex items-center gap-0.5 px-1 py-0.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300"
                 >
                   <Plus className="w-2.5 h-2.5" /> NEW
                 </button>
@@ -186,7 +186,7 @@ export function StealthDrawer() {
                   onClick={() => deleteProfile(activeProfileId)}
                   disabled={profiles.length <= 1}
                   title="Delete the current preset"
-                  className="flex items-center gap-0.5 px-1 py-0.5 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-red-500/50 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex items-center gap-0.5 px-1 py-0.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-red-500/50 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                   <Trash2 className="w-2.5 h-2.5" /> DEL
                 </button>
@@ -197,7 +197,7 @@ export function StealthDrawer() {
                 <button
                   key={p.id}
                   onClick={() => setActiveProfileId(p.id)}
-                  className={`px-1.5 py-1 text-[9px] font-mono border ${
+                  className={`px-1.5 py-1 type-label font-mono border ${
                     p.id === activeProfileId
                       ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
                       : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'
@@ -211,19 +211,19 @@ export function StealthDrawer() {
               value={activeProfile.name}
               onChange={(e) => updateProfile(activeProfile.id, { name: e.target.value })}
               placeholder="preset name"
-              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[10px] font-mono p-1.5 outline-none focus:border-neutral-600"
+              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             />
           </div>
 
           {/* Endpoint binding for the active preset */}
           <div className="space-y-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
               Routed Endpoint
             </div>
             <select
               value={activeProfile.endpointId}
               onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
-              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[10px] font-mono p-1.5 outline-none focus:border-neutral-600"
+              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             >
               {endpoints.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -235,14 +235,14 @@ export function StealthDrawer() {
 
           {/* Model picker for the routed endpoint */}
           <div className="space-y-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
               Model
             </div>
             {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
               <select
                 value={activeEndpoint.model}
                 onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
-                className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 text-[10px] font-mono p-1.5 outline-none focus:border-neutral-600"
+                className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
               >
                 {activeEndpoint.models.map((m) => (
                   <option key={m} value={m}>
@@ -251,7 +251,7 @@ export function StealthDrawer() {
                 ))}
               </select>
             ) : (
-              <div className="text-[9px] font-mono text-neutral-600 border border-neutral-800 p-1.5 leading-relaxed">
+              <div className="type-label font-mono text-neutral-600 border border-neutral-800 p-1.5 leading-relaxed">
                 {activeEndpoint.model}
                 <br />
                 no installed models detected — start the model server, then press the ⟳ button on
@@ -269,10 +269,10 @@ export function StealthDrawer() {
           {/* Workspaces (Phase 8.3) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
             <div className="flex items-center justify-between">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">Workspaces</div>
+              <div className="type-label font-mono uppercase tracking-wider text-neutral-500">Workspaces</div>
               <button
                 onClick={signOut}
-                className="text-[8px] font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
+                className="type-control font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
               >
                 {currentUser?.name} · sign out
               </button>
@@ -282,7 +282,7 @@ export function StealthDrawer() {
                 <div key={ws.id} className="flex items-center gap-1">
                   <button
                     onClick={() => handleSwitchWorkspace(ws.id)}
-                    className={`flex-1 text-left px-2 py-1 text-[9px] font-mono border transition-colors ${
+                    className={`flex-1 text-left px-2 py-1 type-label font-mono border transition-colors ${
                       ws.id === activeWsId
                         ? 'border-violet-500/50 text-violet-300 bg-violet-500/5'
                         : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
@@ -310,7 +310,7 @@ export function StealthDrawer() {
                   onChange={(e) => setNewWsName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateWorkspace()}
                   placeholder="New workspace…"
-                  className="flex-1 bg-neutral-900 border border-neutral-700 px-2 py-1 text-[9px] font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
+                  className="flex-1 bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
                 />
                 <button
                   onClick={handleCreateWorkspace}
@@ -329,24 +329,24 @@ export function StealthDrawer() {
 
           {/* Data safety — backup / restore / export (Phase 7) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
               Data
             </div>
 
             {/* Encrypted workspace backup */}
             <div className="space-y-1">
-              <div className="text-[8px] font-mono text-neutral-600 uppercase tracking-wide">Workspace backup</div>
+              <div className="type-control font-mono text-neutral-600 uppercase tracking-wide">Workspace backup</div>
               <div className="flex gap-1">
                 <button
                   onClick={() => { setDataOp('export-pw'); setPassphrase(''); setDataMsg(''); }}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300"
                   title="Export encrypted workspace (.codename)"
                 >
                   <Download className="w-2.5 h-2.5" /> Export
                 </button>
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-amber-500/50 hover:text-amber-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-amber-500/50 hover:text-amber-300"
                   title="Import workspace from .codename file"
                 >
                   <Upload className="w-2.5 h-2.5" /> Import
@@ -374,7 +374,7 @@ export function StealthDrawer() {
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
                     onKeyDown={(e) => e.key === 'Escape' && setDataOp('idle')}
-                    className="w-full bg-neutral-900 border border-neutral-700 text-neutral-300 text-[9px] font-mono p-1 outline-none focus:border-emerald-600"
+                    className="w-full bg-neutral-900 border border-neutral-700 text-neutral-300 type-label font-mono p-1 outline-none focus:border-emerald-600"
                   />
                   <div className="flex gap-1">
                     <button
@@ -388,9 +388,9 @@ export function StealthDrawer() {
                           setDataMsg(`✗ ${String(e)}`);
                         }
                       }}
-                      className="px-2 py-0.5 text-[8px] font-mono border border-emerald-700 text-emerald-400 hover:bg-emerald-950/40 disabled:opacity-30"
+                      className="px-2 py-0.5 type-control font-mono border border-emerald-700 text-emerald-400 hover:bg-emerald-950/40 disabled:opacity-30"
                     >OK</button>
-                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 text-[8px] font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
+                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
                   </div>
                 </div>
               )}
@@ -398,7 +398,7 @@ export function StealthDrawer() {
               {/* Passphrase prompt for import */}
               {dataOp === 'import-pw' && pendingFile && (
                 <div className="space-y-1 mt-1">
-                  <div className="text-[8px] font-mono text-amber-400/80 truncate">{pendingFile.name}</div>
+                  <div className="type-control font-mono text-amber-400/80 truncate">{pendingFile.name}</div>
                   <input
                     autoFocus
                     type="password"
@@ -406,7 +406,7 @@ export function StealthDrawer() {
                     value={passphrase}
                     onChange={(e) => setPassphrase(e.target.value)}
                     onKeyDown={(e) => e.key === 'Escape' && setDataOp('idle')}
-                    className="w-full bg-neutral-900 border border-neutral-700 text-neutral-300 text-[9px] font-mono p-1 outline-none focus:border-amber-600"
+                    className="w-full bg-neutral-900 border border-neutral-700 text-neutral-300 type-label font-mono p-1 outline-none focus:border-amber-600"
                   />
                   <div className="flex gap-1">
                     <button
@@ -432,15 +432,15 @@ This will OVERWRITE all current data. ` +
                           setDataMsg(`✗ ${String(e)}`);
                         }
                       }}
-                      className="px-2 py-0.5 text-[8px] font-mono border border-amber-700 text-amber-400 hover:bg-amber-950/40 disabled:opacity-30"
+                      className="px-2 py-0.5 type-control font-mono border border-amber-700 text-amber-400 hover:bg-amber-950/40 disabled:opacity-30"
                     >Import</button>
-                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 text-[8px] font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
+                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
                   </div>
                 </div>
               )}
 
               {dataMsg && (
-                <div className={`text-[8px] font-mono ${dataMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
+                <div className={`type-control font-mono ${dataMsg.startsWith('✓') ? 'text-emerald-400' : 'text-red-400'}`}>
                   {dataMsg}
                 </div>
               )}
@@ -448,32 +448,32 @@ This will OVERWRITE all current data. ` +
 
             {/* Open-format exports */}
             <div className="space-y-1">
-              <div className="text-[8px] font-mono text-neutral-600 uppercase tracking-wide">Open export</div>
+              <div className="type-control font-mono text-neutral-600 uppercase tracking-wide">Open export</div>
               <div className="flex flex-wrap gap-1">
                 <button
                   onClick={() => exportGraphJSON().catch(() => {})}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-sky-500/50 hover:text-sky-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-sky-500/50 hover:text-sky-300"
                   title="Export graph as JSON"
                 >
                   <FileJson className="w-2.5 h-2.5" /> Graph JSON
                 </button>
                 <button
                   onClick={() => exportGraphCSV().catch(() => {})}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-sky-500/50 hover:text-sky-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-sky-500/50 hover:text-sky-300"
                   title="Export graph as CSV"
                 >
                   <FileText className="w-2.5 h-2.5" /> Graph CSV
                 </button>
                 <button
                   onClick={() => exportAuditJSON().catch(() => {})}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-violet-500/50 hover:text-violet-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-violet-500/50 hover:text-violet-300"
                   title="Export audit log as JSON"
                 >
                   <FileJson className="w-2.5 h-2.5" /> Audit JSON
                 </button>
                 <button
                   onClick={() => exportAuditCSV().catch(() => {})}
-                  className="flex items-center gap-0.5 px-1.5 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-violet-500/50 hover:text-violet-300"
+                  className="flex items-center gap-0.5 px-1.5 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-violet-500/50 hover:text-violet-300"
                   title="Export audit log as CSV"
                 >
                   <FileText className="w-2.5 h-2.5" /> Audit CSV
@@ -484,21 +484,21 @@ This will OVERWRITE all current data. ` +
 
           {/* SIEM endpoint (Phase 8.6) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
               SIEM Forwarding
             </div>
             {!canSiem ? (
-              <div className="text-[8px] font-mono text-neutral-600 px-1">Admin role required to configure SIEM.</div>
+              <div className="type-control font-mono text-neutral-600 px-1">Admin role required to configure SIEM.</div>
             ) : (
               <div className="space-y-1.5">
-                <div className="text-[8px] font-mono text-neutral-600">
+                <div className="type-control font-mono text-neutral-600">
                   POST audit events to an HTTP endpoint (requires Network gate open).
                 </div>
                 <input
                   value={siemUrl}
                   onChange={(e) => setSiemUrl(e.target.value)}
                   placeholder="https://siem.corp/ingest"
-                  className="w-full bg-neutral-900 border border-neutral-700 px-2 py-1 text-[9px] font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
+                  className="w-full bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
                 />
                 <div className="flex gap-1 items-center">
                   <button
@@ -506,19 +506,19 @@ This will OVERWRITE all current data. ` +
                       if (!siemUrl.trim()) { setSiemConfig(null); return; }
                       setSiemConfig({ url: siemUrl.trim(), enabled: true });
                     }}
-                    className="px-2 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300 transition-colors"
+                    className="px-2 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-emerald-500/50 hover:text-emerald-300 transition-colors"
                   >
                     Save &amp; Enable
                   </button>
                   {siemConfig?.enabled && (
                     <button
                       onClick={() => setSiemConfig({ ...siemConfig, enabled: false })}
-                      className="px-2 py-1 text-[8px] font-mono border border-neutral-700 text-neutral-400 hover:border-red-500/50 hover:text-red-300 transition-colors"
+                      className="px-2 py-1 type-control font-mono border border-neutral-700 text-neutral-400 hover:border-red-500/50 hover:text-red-300 transition-colors"
                     >
                       Disable
                     </button>
                   )}
-                  <span className={`ml-auto text-[8px] font-mono ${siemConfig?.enabled ? 'text-emerald-400' : 'text-neutral-600'}`}>
+                  <span className={`ml-auto type-control font-mono ${siemConfig?.enabled ? 'text-emerald-400' : 'text-neutral-600'}`}>
                     {siemConfig?.enabled ? '● active' : '○ off'}
                   </span>
                 </div>
@@ -529,10 +529,10 @@ This will OVERWRITE all current data. ` +
           {/* Crash Reporting (Phase 9.3) */}
           <div className="border-t border-neutral-800 pt-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-[8px] font-mono font-bold tracking-widest text-neutral-500 uppercase">Crash Reports</div>
+              <div className="type-control font-mono font-bold tracking-widest text-neutral-500 uppercase">Crash Reports</div>
               <button
                 onClick={toggleCrashConsent}
-                className={`text-[8px] font-mono px-2 py-0.5 rounded border transition-colors ${
+                className={`type-control font-mono px-2 py-0.5 rounded border transition-colors ${
                   crashConsent
                     ? 'border-amber-700 text-amber-400 hover:border-amber-500'
                     : 'border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:border-neutral-500'
@@ -542,21 +542,21 @@ This will OVERWRITE all current data. ` +
               </button>
             </div>
             {crashConsent && (
-              <div className="text-[8px] font-mono text-neutral-600 mb-2">
+              <div className="type-control font-mono text-neutral-600 mb-2">
                 Panic and JS errors are written locally — never transmitted.
               </div>
             )}
             {crashReports.length > 0 && (
               <div className="flex flex-col gap-1 mb-2">
                 {crashReports.slice(0, 5).map((r) => (
-                  <div key={r} className="text-[8px] font-mono text-neutral-500 truncate">{r}</div>
+                  <div key={r} className="type-control font-mono text-neutral-500 truncate">{r}</div>
                 ))}
                 {crashReports.length > 5 && (
-                  <div className="text-[8px] font-mono text-neutral-600">…and {crashReports.length - 5} more</div>
+                  <div className="type-control font-mono text-neutral-600">…and {crashReports.length - 5} more</div>
                 )}
                 <button
                   onClick={clearCrashReports}
-                  className="text-[8px] font-mono text-red-500/60 hover:text-red-400 text-left mt-1"
+                  className="type-control font-mono text-red-500/60 hover:text-red-400 text-left mt-1"
                 >
                   Clear all reports
                 </button>
@@ -566,19 +566,19 @@ This will OVERWRITE all current data. ` +
 
           {/* View Logs (Phase 9.1) */}
           <div className="border-t border-neutral-800 pt-3">
-            <div className="text-[8px] font-mono font-bold tracking-widest text-neutral-500 uppercase mb-2">Logs</div>
+            <div className="type-control font-mono font-bold tracking-widest text-neutral-500 uppercase mb-2">Logs</div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
                   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
                   import('@tauri-apps/api/core').then(({ invoke }) => invoke('open_log_dir')).catch(() => {});
                 }}
-                className="text-[9px] font-mono text-neutral-400 hover:text-neutral-200 border border-neutral-700 hover:border-neutral-500 px-2 py-1 rounded transition-colors"
+                className="type-label font-mono text-neutral-400 hover:text-neutral-200 border border-neutral-700 hover:border-neutral-500 px-2 py-1 rounded transition-colors"
               >
                 View Logs
               </button>
               {logDir && (
-                <span className="text-[8px] font-mono text-neutral-600 truncate max-w-[160px]" title={logDir}>
+                <span className="type-control font-mono text-neutral-600 truncate max-w-[160px]" title={logDir}>
                   {logDir}
                 </span>
               )}

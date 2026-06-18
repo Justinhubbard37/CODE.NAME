@@ -41,7 +41,7 @@ function TextField({
         setVal(e.target.value);
         formRef.current?.set(id, e.target.value);
       }}
-      className="w-full bg-neutral-950 border border-neutral-800 text-neutral-300 text-xs px-2 py-1 font-mono focus:outline-none focus:border-neutral-600"
+      className="w-full bg-neutral-950 border border-neutral-800 text-neutral-300 type-control px-2 py-1 font-mono focus:outline-none focus:border-neutral-600"
     />
   );
 }
@@ -99,12 +99,12 @@ function Node({
     case 'row':
       return <div className="flex flex-row gap-2 items-center flex-wrap">{kids}</div>;
     case 'heading':
-      return <div className="text-neutral-100 font-bold text-sm tracking-wide">{str(p.text)}</div>;
+      return <div className="text-neutral-100 type-section tracking-wide">{str(p.text)}</div>;
     case 'text':
-      return <div className="text-neutral-300 text-xs whitespace-pre-wrap">{str(p.text)}</div>;
+      return <div className="text-neutral-300 type-body whitespace-pre-wrap">{str(p.text)}</div>;
     case 'badge':
       return (
-        <span className="inline-block px-1.5 py-0.5 text-[9px] font-mono border border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
+        <span className="inline-block px-1.5 py-0.5 type-meta font-mono border border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
           {str(p.text)}
         </span>
       );
@@ -130,7 +130,7 @@ function Node({
               values: Object.fromEntries(formRef.current ?? []),
             })
           }
-          className="px-2 py-1 text-[10px] font-mono border border-neutral-600 text-neutral-200 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="px-2 py-1 type-control font-mono border border-neutral-600 text-neutral-200 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
         >
           {str(p.label, 'Action')}
         </button>

@@ -35,6 +35,15 @@ The window is split into two panes.
   allowed into chat context, and explicitly turn Attach on or off.
 - **Chat thread + composer:** talk to the selected model or the offline synthetic fallback.
 
+## 1.1. Readability Calibration
+
+Phase 2J improves readability through typography scale, font weight, and
+line-height across existing UI surfaces. No brand colors or theme values
+changed, no UI layout, component structure, or interaction design changed, no
+retrieval behavior changed, no semantic indexing behavior changed, no database
+schema changed, and no graph behavior changed. Graph visual-polish work remains
+backlog.
+
 ## 2. Ingesting Documents
 
 Drag one or more files onto the left pane. Each file is:

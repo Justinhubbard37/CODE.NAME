@@ -51,7 +51,7 @@ export function StateBlock({
       <div
         role={role}
         aria-live={live}
-        className={`flex items-center gap-2 font-mono text-[9px] text-neutral-600 ${className ?? ''}`}
+        className={`flex items-center gap-2 font-mono type-meta text-neutral-600 ${className ?? ''}`}
       >
         <Icon className={`w-3 h-3 shrink-0 ${accent} ${kind === 'loading' ? 'animate-spin' : ''}`} aria-hidden="true" />
         <span className="uppercase tracking-wider">{title}</span>
@@ -69,8 +69,8 @@ export function StateBlock({
         className={`w-6 h-6 ${accent} ${kind === 'loading' ? 'animate-spin' : ''}`}
         aria-hidden="true"
       />
-      <div className="text-[11px] uppercase tracking-widest text-neutral-400">{title}</div>
-      {hint && <div className="text-[10px] text-neutral-600 max-w-xs leading-relaxed">{hint}</div>}
+      <div className="type-section uppercase tracking-widest text-neutral-400">{title}</div>
+      {hint && <div className="type-body text-neutral-600 max-w-xs">{hint}</div>}
     </div>
   );
 }

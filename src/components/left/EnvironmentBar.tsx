@@ -22,7 +22,7 @@ export function EnvironmentBar() {
   const caps = activeTask.session.caps;
 
   return (
-    <div className="shrink-0 flex items-center gap-2 px-3 h-7 bg-neutral-950 border-b border-neutral-900 text-[9px] font-mono overflow-x-auto no-scrollbar">
+    <div className="shrink-0 flex items-center gap-2 px-3 h-7 bg-neutral-950 border-b border-neutral-900 type-meta font-mono overflow-x-auto no-scrollbar">
       <span className="text-neutral-600 uppercase tracking-wider shrink-0">ENV {activeTask.session.id}</span>
       <span className="text-neutral-800 shrink-0">|</span>
       {CAPS.map(([k, label]) => {

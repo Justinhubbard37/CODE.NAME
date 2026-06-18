@@ -22,9 +22,9 @@ function ToolBubble({ m }: { m: ChatMessage }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[90%] border border-neutral-800 bg-neutral-950/80 text-[10px] font-mono">
+      <div className="max-w-[90%] border border-neutral-800 bg-neutral-950/80 type-meta font-mono">
         <div className="flex items-center gap-2 px-2 py-1 border-b border-neutral-800 text-amber-500/80">
-          <span className="uppercase tracking-widest text-[9px]">tool</span>
+          <span className="uppercase tracking-widest type-label">tool</span>
           <span className="text-amber-400">{payload?.name ?? '?'}</span>
           {pending && (
             <span className="ml-auto flex items-center gap-1 text-neutral-600">
@@ -61,7 +61,7 @@ function Bubble({ m }: { m: ChatMessage }) {
 
   if (m.role === 'system') {
     return (
-      <div className="text-[10px] font-mono text-neutral-600 italic border-l-2 border-neutral-800 pl-2 py-1">
+      <div className="type-meta font-mono text-neutral-600 italic border-l-2 border-neutral-800 pl-2 py-1">
         {m.content}
       </div>
     );
@@ -70,14 +70,14 @@ function Bubble({ m }: { m: ChatMessage }) {
   return (
     <div className={`flex ${user ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] px-3 py-2 text-xs whitespace-pre-wrap break-words border ${
+        className={`max-w-[85%] px-3 py-2 type-body whitespace-pre-wrap break-words border ${
           user
             ? 'bg-neutral-800/80 border-neutral-700 text-neutral-100'
             : 'bg-neutral-900/60 border-neutral-800 text-neutral-300 font-mono'
         }`}
       >
         {!user && (
-          <div className="text-[8px] text-emerald-500/70 font-mono uppercase tracking-widest mb-1">
+          <div className="type-meta text-emerald-500/70 font-mono uppercase tracking-widest mb-1">
             response
           </div>
         )}
@@ -94,7 +94,7 @@ function Bubble({ m }: { m: ChatMessage }) {
 function ThinkingBubble({ label }: { label: string }) {
   return (
     <div className="flex justify-start" role="status" aria-live="polite">
-      <div className="flex items-center gap-2 max-w-[85%] px-3 py-2 text-[10px] font-mono border border-neutral-800 bg-neutral-900/60 text-neutral-500">
+      <div className="flex items-center gap-2 max-w-[85%] px-3 py-2 type-meta font-mono border border-neutral-800 bg-neutral-900/60 text-neutral-500">
         <span className="flex gap-1" aria-hidden="true">
           <span className="w-1 h-1 rounded-full bg-emerald-400/80 animate-pulse" />
           <span className="w-1 h-1 rounded-full bg-emerald-400/60 animate-pulse [animation-delay:150ms]" />

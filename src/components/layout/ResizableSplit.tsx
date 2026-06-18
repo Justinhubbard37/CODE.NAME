@@ -90,7 +90,7 @@ export function ResizableSplit({ left, right }: Props) {
           ))}
         </div>
         {dragging && (
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[9px] font-mono text-emerald-400 bg-neutral-950 px-1.5 py-0.5 border border-emerald-500/40 whitespace-nowrap">
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 type-meta font-mono text-emerald-400 bg-neutral-950 px-1.5 py-0.5 border border-emerald-500/40 whitespace-nowrap">
             {pct} / {100 - pct}
           </div>
         )}

@@ -75,6 +75,12 @@ fallback is not proof that a real model/provider is ready.
 
 ## Current Stabilization Notes
 
+- Phase 2J improves readability through typography scale, font weight, and
+  line-height across existing UI surfaces. No brand colors or theme values
+  changed, no UI layout, component structure, or interaction design changed, no
+  retrieval behavior changed, no semantic indexing behavior changed, no database
+  schema changed, and no graph behavior changed. Graph visual-polish work remains
+  backlog.
 - Auto retrieval is frontend-only in this phase. It visibly reports requested
   mode, resolved mode, route reason, semantic readiness, graph expansion counts,
   fallback reason, local-only status, Attach state, and selected result count.

@@ -117,10 +117,10 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-2">
             <Meta.icon className="w-4 h-4 text-emerald-500/80" aria-hidden="true" />
             <div>
-              <h2 id="onboarding-title" className="text-sm font-mono font-bold tracking-widest text-neutral-100 uppercase">
+              <h2 id="onboarding-title" className="type-heading font-mono tracking-widest text-neutral-100 uppercase">
                 {Meta.title}
               </h2>
-              <p className="text-[10px] font-mono text-neutral-500 mt-0.5">
+              <p className="type-meta font-mono text-neutral-500 mt-0.5">
                 Step {stepIdx + 1} of {STEPS.length} · CODE NAME setup
               </p>
             </div>
@@ -143,7 +143,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Body */}
-        <div className="px-5 py-5 min-h-[15rem] text-[11px] font-mono text-neutral-300 leading-relaxed space-y-4">
+        <div className="px-5 py-5 min-h-[15rem] type-body font-mono text-neutral-300 space-y-4">
           {step === 'welcome' && (
             <div className="space-y-3">
               <p className="text-neutral-200">A local-first agent harness with a governed knowledge graph.</p>
@@ -163,7 +163,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'model' && (
             <div className="space-y-3">
               <label className="block">
-                <span className="text-[9px] uppercase tracking-wider text-neutral-500">Endpoint</span>
+                <span className="type-label uppercase tracking-wider text-neutral-500">Endpoint</span>
                 <select
                   value={activeProfile.endpointId}
                   onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
@@ -178,7 +178,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
               </label>
 
               <label className="block">
-                <span className="text-[9px] uppercase tracking-wider text-neutral-500">Model</span>
+                <span className="type-label uppercase tracking-wider text-neutral-500">Model</span>
                 {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
                   <select
                     value={activeEndpoint.model}
@@ -198,20 +198,20 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
               </label>
 
               <div className="flex items-center justify-between gap-2 pt-1">
-                <span className="text-[10px] text-neutral-500">
+                <span className="type-meta text-neutral-500">
                   Status: <span className={activeEndpoint.status === 'ready' ? 'text-emerald-400' : 'text-neutral-400'}>{activeEndpoint.status}</span>
                   {activeEndpoint.detail ? ` · ${activeEndpoint.detail}` : ''}
                 </span>
                 <button
                   onClick={probe}
                   disabled={probing}
-                  className="flex items-center gap-1 text-[10px] border border-neutral-700 hover:border-neutral-500 text-neutral-300 px-2 py-1 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                  className="flex items-center gap-1 type-control border border-neutral-700 hover:border-neutral-500 text-neutral-300 px-2 py-1 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
                 >
                   {probing ? <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3 h-3" aria-hidden="true" />}
                   Detect installed models
                 </button>
               </div>
-              <p className="text-[10px] text-neutral-600">
+              <p className="type-meta text-neutral-600">
                 Tip: install <span className="text-neutral-400">Ollama</span> and pull a model (e.g. <span className="text-neutral-400">ollama pull llama3.1</span>) for a fully local, offline assistant.
               </p>
             </div>
@@ -238,18 +238,18 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                       <button
                         onClick={saveKey}
                         disabled={!keyValue.trim()}
-                        className="text-[10px] border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 px-3 py-1.5 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                        className="type-control border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 px-3 py-1.5 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
                       >
                         Save key
                       </button>
                     </div>
                   ) : (
-                    <p className="text-[10px] text-neutral-600 border border-neutral-800 p-2">
+                    <p className="type-meta text-neutral-600 border border-neutral-800 p-2">
                       Keychain storage is available in the desktop app. In the browser preview you can skip this.
                     </p>
                   )}
                   {keySaved && (
-                    <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                    <p className="type-meta text-emerald-400 flex items-center gap-1">
                       <Check className="w-3 h-3" aria-hidden="true" /> Saved to keychain.
                     </p>
                   )}
@@ -275,7 +275,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                 <div key={g.key} className="flex items-start justify-between gap-3 border border-neutral-800 px-3 py-2">
                   <div>
                     <div className="text-neutral-200">{g.label}</div>
-                    <div className="text-[10px] text-neutral-600">{g.help}</div>
+                    <div className="type-meta text-neutral-600">{g.help}</div>
                   </div>
                   <button
                     onClick={() => toggleGate(g.key)}
@@ -302,7 +302,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                 <button
                   onClick={runChecks}
                   disabled={checking}
-                  className="flex items-center gap-1 text-[10px] border border-neutral-700 hover:border-neutral-500 text-neutral-300 px-2 py-1 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                  className="flex items-center gap-1 type-control border border-neutral-700 hover:border-neutral-500 text-neutral-300 px-2 py-1 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
                 >
                   {checking ? <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3 h-3" aria-hidden="true" />}
                   Re-run
@@ -316,7 +316,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                       ? <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
                       : <CircleAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />}
                     <span className="text-neutral-300 w-24 shrink-0">{c.name}</span>
-                    <span className="text-[10px] text-neutral-500 truncate">{c.detail}</span>
+                    <span className="type-meta text-neutral-500 truncate">{c.detail}</span>
                   </div>
                 ))}
               </div>
@@ -332,13 +332,13 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
               <div className="border-t border-neutral-900 pt-3">
-                <div className="text-[9px] uppercase tracking-wider text-neutral-500 mb-2">Docs &amp; help</div>
+                <div className="type-label uppercase tracking-wider text-neutral-500 mb-2">Docs &amp; help</div>
                 <ul className="space-y-1 text-neutral-400">
                   <li>· <span className="text-neutral-200">User Guide</span> — ingestion, search, chat, audit (docs/USER_GUIDE.md)</li>
                   <li>· <span className="text-neutral-200">Admin Guide</span> — roles, policy, SSO, SIEM (docs/ADMIN_GUIDE.md)</li>
                   <li>· <span className="text-neutral-200">Troubleshooting</span> — common fixes (docs/TROUBLESHOOTING.md)</li>
                 </ul>
-                <p className="text-[10px] text-neutral-600 mt-2">Open Settings (Ctrl+,) any time to change models, keys, gates, and language.</p>
+                <p className="type-meta text-neutral-600 mt-2">Open Settings (Ctrl+,) any time to change models, keys, gates, and language.</p>
               </div>
             </div>
           )}
@@ -349,14 +349,14 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           <button
             onClick={() => go(-1)}
             disabled={stepIdx === 0}
-            className="flex items-center gap-1 text-[11px] text-neutral-400 hover:text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+            className="flex items-center gap-1 type-control text-neutral-400 hover:text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           >
             <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" /> Back
           </button>
 
           <button
             onClick={onClose}
-            className="text-[10px] font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="type-meta font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
           >
             {step === 'done' ? '' : 'Skip setup'}
           </button>
@@ -364,14 +364,14 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'done' ? (
             <button
               onClick={onClose}
-              className="flex items-center gap-1 text-[11px] bg-emerald-500/10 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              className="flex items-center gap-1 type-control bg-emerald-500/10 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
             >
               <Check className="w-3.5 h-3.5" aria-hidden="true" /> Finish
             </button>
           ) : (
             <button
               onClick={() => go(1)}
-              className="flex items-center gap-1 text-[11px] bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-100 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              className="flex items-center gap-1 type-control bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 text-neutral-100 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
             >
               Next <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>

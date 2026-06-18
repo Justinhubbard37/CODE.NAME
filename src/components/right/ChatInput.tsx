@@ -59,13 +59,13 @@ export function ChatInput() {
           id="chat-input"
           aria-label="Message the agent"
           placeholder={`Message ${activeEndpoint.model}… (Enter to send, Shift+Enter newline)`}
-          className="flex-1 resize-none bg-neutral-900 border border-neutral-800 focus:border-neutral-600 outline-none text-xs text-neutral-200 placeholder-neutral-600 px-3 py-2 font-mono max-h-32"
+          className="flex-1 resize-none bg-neutral-900 border border-neutral-800 focus:border-neutral-600 outline-none type-body text-neutral-200 placeholder-neutral-600 px-3 py-2 font-mono max-h-32"
         />
         {sending ? (
           <button
             onClick={abort}
             aria-label="Stop generation"
-            className="h-9 px-3 flex items-center gap-1 bg-red-500/10 border border-red-500/50 text-red-300 hover:bg-red-500/20 text-[10px] font-mono"
+            className="h-9 px-3 flex items-center gap-1 bg-red-500/10 border border-red-500/50 text-red-300 hover:bg-red-500/20 type-control font-mono"
             title="Abort generation"
           >
             <Square className="w-3 h-3" aria-hidden="true" /> STOP
@@ -75,13 +75,13 @@ export function ChatInput() {
             onClick={fire}
             disabled={!text.trim()}
             aria-label="Send message"
-            className="h-9 px-3 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-30 disabled:cursor-not-allowed text-[10px] font-mono"
+            className="h-9 px-3 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-30 disabled:cursor-not-allowed type-control font-mono"
           >
             <Send className="w-3 h-3" aria-hidden="true" /> SEND
           </button>
         )}
       </div>
-      <div className="flex justify-between mt-1 text-[8px] font-mono text-neutral-600">
+      <div className="flex justify-between mt-1 type-meta font-mono text-neutral-600">
         <span>
           PROFILE {activeProfile.name} · T{activeProfile.temperature} · CTX{activeProfile.contextWindow}
         </span>

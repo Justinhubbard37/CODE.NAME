@@ -132,8 +132,8 @@ export function ArchiveIndex() {
   const traceSummary = retrievalTraceSummary(retrievalRouteTrace);
 
   return (
-    <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto text-[10px] font-mono">
-      <div className="flex items-center justify-between mb-1 text-neutral-500 font-bold uppercase tracking-wider">
+    <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto type-label font-mono">
+      <div className="flex items-center justify-between mb-1 type-section text-neutral-500 uppercase tracking-wider">
         <span>Archive Index</span>
         <button
           onClick={() => setCollapsed((value) => !value)}
@@ -148,23 +148,23 @@ export function ArchiveIndex() {
       {!collapsed && (
         <div className="bg-neutral-950/80 border border-neutral-800 backdrop-blur-sm p-2 max-h-[40vh] overflow-y-auto">
           <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
-            <div className="flex items-center justify-between text-[9px] uppercase tracking-wider">
+            <div className="flex items-center justify-between type-label uppercase tracking-wider">
               <span className="text-neutral-500">Knowledge</span>
               <span className={statusText}>{status.label}</span>
             </div>
-            <div className="mt-1 text-[8px] leading-snug text-neutral-500">{status.detail}</div>
-            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-neutral-500">
+            <div className="mt-1 type-meta text-neutral-500">{status.detail}</div>
+            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-500">
               <span>Documents</span><span className="text-neutral-300 text-right">{kbStats.documentCount}</span>
               <span>Chunks</span><span className="text-neutral-300 text-right">{kbStats.chunkCount}</span>
             </div>
-            {traceSummary && <div className="mt-1 text-[8px] leading-snug text-neutral-400">{traceSummary}</div>}
+            {traceSummary && <div className="mt-1 type-meta text-neutral-400">{traceSummary}</div>}
           </div>
 
           <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
             <button
               type="button"
               onClick={() => setAdvancedOpen((value) => !value)}
-              className="flex w-full items-center justify-between text-[9px] uppercase tracking-wider text-neutral-500 hover:text-neutral-300"
+              className="flex w-full items-center justify-between type-label uppercase tracking-wider text-neutral-500 hover:text-neutral-300"
               aria-expanded={advancedOpen}
             >
               <span>Advanced KB details</span>
@@ -172,7 +172,7 @@ export function ArchiveIndex() {
             </button>
             {advancedOpen && (
               <div className="mt-1">
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] text-neutral-500">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-500">
                   <span>Deleted</span><span className="text-neutral-300 text-right">{kbStats.deletedDocumentCount}</span>
                   <span>Entities</span><span className="text-neutral-300 text-right">{kbStats.entityCount}</span>
                   <span>Relationships</span><span className="text-neutral-300 text-right">{kbStats.relationshipCount}</span>
@@ -184,14 +184,14 @@ export function ArchiveIndex() {
                   <span>Dimension</span><span className="text-neutral-300 text-right">{semanticStatus.dimension ?? 'n/a'}</span>
                 </div>
                 {semanticError && (
-                  <div className="mt-1 text-[8px] text-amber-300 leading-snug">{semanticError}</div>
+                  <div className="mt-1 type-meta text-amber-300">{semanticError}</div>
                 )}
                 <div className="mt-1 flex gap-1">
                   <button
                     type="button"
                     onClick={buildSemanticIndex}
                     disabled={semanticIndexing || semanticStatus.activeChunkCount === 0}
-                    className="flex-1 border border-cyan-500/30 bg-cyan-500/10 px-1 py-0.5 text-[8px] uppercase tracking-wider text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="flex-1 border border-cyan-500/30 bg-cyan-500/10 px-1 py-0.5 type-control uppercase tracking-wider text-cyan-100 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {semanticIndexing ? 'Indexing...' : 'Build / Refresh'}
                   </button>
@@ -205,7 +205,7 @@ export function ArchiveIndex() {
                     <RefreshCw className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="mt-1 text-[8px] text-neutral-600">
+                <div className="mt-1 type-meta text-neutral-600">
                   Local Ollama only; models are not auto-pulled.
                 </div>
               </div>
@@ -214,7 +214,7 @@ export function ArchiveIndex() {
 
           {kbDocuments.length > 0 && (
             <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
-              <div className="text-[9px] uppercase tracking-wider text-neutral-500 mb-1">
+              <div className="type-label uppercase tracking-wider text-neutral-500 mb-1">
                 KB Documents
               </div>
               <div className="space-y-1">
@@ -222,8 +222,8 @@ export function ArchiveIndex() {
                   <div key={doc.id} className="border border-neutral-900 bg-neutral-950/60 p-1">
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[9px] text-neutral-200">{doc.title}</div>
-                        <div className="text-[8px] text-neutral-600">
+                        <div className="truncate type-control text-neutral-200">{doc.title}</div>
+                        <div className="type-meta text-neutral-600">
                           {doc.chunkCount} chunk{doc.chunkCount === 1 ? '' : 's'} -{' '}
                           {new Date(doc.updatedAt).toLocaleDateString()}
                         </div>
@@ -246,13 +246,13 @@ export function ArchiveIndex() {
 
           {retrievalResults.length > 0 && (
             <div className="mb-2 border border-emerald-500/20 bg-emerald-500/5 p-1.5">
-              <div className="text-[9px] uppercase tracking-wider mb-1 text-emerald-300/80">
+              <div className="type-label uppercase tracking-wider mb-1 text-emerald-300/80">
                 {retrievalTitle}
               </div>
               <div className="space-y-1">
                 {retrievalResults.slice(0, 3).map((result, index) => (
-                  <div key={result.chunk.id} className="text-[8px] text-neutral-400 leading-snug">
-                    <div className="truncate text-neutral-200">
+                  <div key={result.chunk.id} className="type-meta text-neutral-400">
+                    <div className="truncate type-control text-neutral-200">
                       #{index + 1} {result.documentTitle} - chunk {result.chunk.ordinal + 1}
                     </div>
                     <div className="truncate text-neutral-600">
@@ -263,7 +263,7 @@ export function ArchiveIndex() {
                         {result.graphRole} depth {result.traversalDepth ?? 'n/a'} - {result.graphReason ?? 'graph traversal'}
                       </div>
                     )}
-                    <div className="line-clamp-2">{retrievalSnippet(result)}</div>
+                    <div className="line-clamp-2 type-body break-words">{retrievalSnippet(result)}</div>
                   </div>
                 ))}
               </div>

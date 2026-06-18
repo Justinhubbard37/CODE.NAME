@@ -32,3 +32,12 @@ Start here.
   links to these guides.
 - **Settings -> Help & docs** lists the guides; **Settings -> Logs** opens your
   log folder for diagnostics. Open Settings any time with **Ctrl/Cmd + ,**.
+
+## Current UI note
+
+- Phase 2J improves readability through typography scale, font weight, and
+  line-height across existing UI surfaces. No brand colors or theme values
+  changed, no UI layout, component structure, or interaction design changed, no
+  retrieval behavior changed, no semantic indexing behavior changed, no database
+  schema changed, and no graph behavior changed. Graph visual-polish work remains
+  backlog.

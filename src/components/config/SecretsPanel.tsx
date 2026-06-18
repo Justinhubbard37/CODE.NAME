@@ -45,12 +45,12 @@ export function SecretsPanel() {
 
   return (
     <div className="space-y-2">
-      <div className="text-[9px] font-mono uppercase tracking-wider text-neutral-500">
+      <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
         Secrets · OS keychain
       </div>
       {SECRETS.map((s) => (
         <div key={s.name} className="space-y-1">
-          <div className="flex items-center justify-between text-[9px] font-mono">
+          <div className="flex items-center justify-between type-label font-mono">
             <span className="text-neutral-500">{s.label}</span>
             <span className={present[s.name] ? 'text-emerald-400' : 'text-neutral-600'}>
               {present[s.name] ? 'set' : 'not set'}
@@ -63,12 +63,12 @@ export function SecretsPanel() {
               onChange={(e) => setDrafts((d) => ({ ...d, [s.name]: e.target.value }))}
               aria-label={s.label}
               placeholder={present[s.name] ? '•••••••• stored' : 'paste key'}
-              className="flex-1 min-w-0 bg-neutral-900 border border-neutral-800 text-neutral-300 text-[10px] font-mono p-1.5 outline-none focus:border-neutral-600"
+              className="flex-1 min-w-0 bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             />
             <button
               onClick={() => save(s.name)}
               aria-label={`Save ${s.label}`}
-              className="px-1.5 text-[9px] font-mono border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              className="px-1.5 type-control font-mono border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
             >
               SAVE
             </button>
@@ -76,7 +76,7 @@ export function SecretsPanel() {
               <button
                 onClick={() => clear(s.name)}
                 aria-label={`Clear ${s.label}`}
-                className="px-1.5 text-[9px] font-mono border border-neutral-700 text-neutral-400 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                className="px-1.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
               >
                 CLEAR
               </button>
@@ -84,7 +84,7 @@ export function SecretsPanel() {
           </div>
         </div>
       ))}
-      <div className="text-[8px] font-mono text-neutral-600 leading-relaxed">
+      <div className="type-meta font-mono text-neutral-600">
         Stored in your OS keychain, not in a plain-text file. Secret values are
         not readable from the webview after saving.
       </div>
