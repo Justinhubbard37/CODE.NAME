@@ -4,11 +4,11 @@
 
 Goal: improve readability through typography scale, font weight, line-height,
 readable secondary foreground mapping, right-pane section ergonomics, and
-Knowledge Search status flow across existing UI surfaces without changing brand
+compact Knowledge Search header layout across existing UI surfaces without changing brand
 palette values, retrieval behavior, indexing behavior, database schema, graph
 behavior, or attachment behavior.
 
-Status: IMPLEMENTED WITH CORRECTIVE UPDATE - READY FOR OWNER REVIEW
+Status: IMPLEMENTED WITH SEARCH HEADER FIX - READY FOR OWNER REVIEW
 
 Definition of done:
 
@@ -21,8 +21,12 @@ Definition of done:
 - [x] add persisted manual vertical resizing for the expanded Logic and Audit
   Ledger right-pane boundaries
 - [x] keep expanded Logic and Audit Ledger sections scrolled to newest activity
-- [x] keep Knowledge Search status in normal flow immediately above the search
-  input
+- [x] use a compact `KB Search` header row with `KB Search` left aligned and
+  Auto, Advanced, and OCR right aligned on the same row
+- [x] keep Advanced manual retrieval controls directly below the header only
+  while Advanced is expanded
+- [x] remove the redundant visible lower-left search status and route block that
+  caused overlap and clutter
 - [x] remap readable low-contrast muted text to existing brighter brand text
   foreground values without changing palette values
 - [x] preserve retrieval behavior
@@ -40,6 +44,10 @@ Target commit:
 Corrective commit:
 
 `fix: correct workbench layout and text contrast`
+
+Search header fix commit:
+
+`fix: simplify kb search header layout`
 
 Explicitly not changed in Phase 2J:
 
@@ -67,8 +75,10 @@ existing UI surfaces keep their current placement, palette, controls, and
 behavior while headings, body text, snippets, source filenames, route traces,
 status information, Attach state, chat text, and operator-facing metadata are
 easier to read at normal desktop scale. The expanded Logic and Audit Ledger
-sections can be manually resized and reveal newest activity; Knowledge Search
-status remains directly above the search input; readable secondary text uses
+sections can be manually resized and reveal newest activity; the lower-left
+search surface uses a compact `KB Search` header with Auto, Advanced, and OCR on
+the same row, Advanced manual controls appear below only while expanded, and the
+redundant visible search status block is removed; readable secondary text uses
 existing brighter brand foreground values.
 
 Phase 2J is not accepted until owner manual verification is completed.

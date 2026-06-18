@@ -17,7 +17,7 @@ The window is split into two panes.
 - **Knowledge graph (3D):** documents, entities, and links between them.
 - **Archive Index:** a tree view of current graph/search stores and planned
   retrieval scaffolds.
-- **Knowledge Search box** (bottom): filters the current local graph and runs
+- **KB Search box** (bottom): filters the current local graph and runs
   SQLite KB retrieval. Auto is the default mode and chooses Lexical, Hybrid, or
   Graph traversal with deterministic local rules. Manual Lexical, Semantic,
   Hybrid, and Graph modes remain available under Advanced. Graph mode is bounded
@@ -47,10 +47,14 @@ backlog.
 The corrective Phase 2J update adds manual vertical resizing for the expanded
 Logic activity and Audit Ledger sections in the existing right pane. Expanded
 Logic and Audit Ledger sections automatically reveal the newest activity, and
-new entries remain visible as they arrive. The Knowledge Search status now stays
-in normal flow immediately above the search input, including when Advanced mode
-controls are expanded. Readable secondary text uses existing brand palette
-foreground values with corrected semantic mapping; no palette values changed.
+new entries remain visible as they arrive. The lower-left search surface now
+uses a compact `KB Search` header row: `KB Search` remains left aligned, Auto,
+Advanced, and OCR remain right aligned on the same row, and Advanced manual
+controls appear below that header only while expanded. The redundant visible
+search status block was removed to prevent overlap and clutter. Readable
+secondary text uses existing brand palette foreground values with corrected
+semantic mapping; no palette values changed. Retrieval, indexing, graph,
+database, attachment, visual-palette, and interaction behavior did not change.
 
 ## 2. Ingesting Documents
 
@@ -76,7 +80,7 @@ rejected and the reason is shown.
 
 ## 3. Searching The Graph And SQLite KB
 
-Type in the **Knowledge Search** box and press **Enter**. The graph view still
+Type in the **KB Search** box and press **Enter**. The graph view still
 uses local graph filtering so matching nodes stay highlighted and non-matches are
 dimmed. Clear the box and press Enter to show everything again.
 

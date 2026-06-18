@@ -2,14 +2,12 @@ import { useState, type FormEvent, type ChangeEvent } from 'react';
 import { ChevronDown, ScanLine } from 'lucide-react';
 import Tesseract from 'tesseract.js';
 import { useApp } from '../../state/AppState';
-import { knowledgeStatusSummary } from '../../lib/knowledgeStatus';
 import {
   resolvedRetrievalKindForDisplay,
   retrievalContextDisplayLabel,
   retrievalMatchKindLabel,
   retrievalSnippet,
   retrievalSource,
-  retrievalTraceSummary,
 } from '../../lib/retrievalContext';
 import type { KbRetrievalMode } from '../../lib/kb';
 
@@ -28,14 +26,10 @@ export function GraphQueryInput() {
     runGraphQuery,
     ingestFiles,
     gates,
-    kbStats,
     retrievalResults,
     retrievalMode,
     retrievalRouteTrace,
     setRetrievalMode,
-    semanticStatus,
-    semanticError,
-    semanticIndexing,
   } = useApp();
   const [ocr, setOcr] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -98,57 +92,39 @@ export function GraphQueryInput() {
         : accent === 'amber'
           ? 'border-amber-500/20'
           : 'border-emerald-500/20';
-  const status = knowledgeStatusSummary({
-    kbStats,
-    semanticStatus,
-    semanticIndexing,
-    semanticError,
-  });
-  const statusText =
-    status.tone === 'ready'
-      ? 'text-emerald-300'
-      : status.tone === 'working'
-        ? 'text-cyan-300'
-        : status.tone === 'empty'
-          ? 'text-neutral-400'
-          : 'text-amber-300';
-  const traceText = retrievalTraceSummary(retrievalRouteTrace);
-  const semanticDependentWarning =
-    retrievalMode === 'graph' && !semanticStatus.ready
-      ? 'Graph retrieval requires a ready semantic index because it uses Hybrid seed retrieval.'
-      : retrievalMode === 'hybrid' && !semanticStatus.ready
-        ? 'Hybrid retrieval requires a ready semantic index. Build / Refresh semantic index first.'
-        : retrievalRouteTrace?.warningMessage ?? semanticError;
   const expandedResultCount = retrievalResults.filter((result) => result.graphRole === 'expanded').length;
 
   return (
     <div className="absolute bottom-2 left-1/2 z-20 w-[min(86%,21.5rem)] -translate-x-1/2 pointer-events-auto type-label font-mono">
       <div className="mb-1 flex flex-col gap-1">
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            onClick={() => setRetrievalMode('auto')}
-            className={`border px-2 py-0.5 type-control uppercase tracking-wider ${
-              retrievalMode === 'auto'
-                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
-                : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-300'
-            }`}
-          >
-            Auto
-          </button>
-          <button
-            type="button"
-            onClick={() => setAdvancedOpen((value) => !value)}
-            aria-expanded={advancedOpen}
-            className="flex items-center gap-1 border border-neutral-700 bg-neutral-900 px-2 py-0.5 type-control uppercase tracking-wider text-neutral-400 hover:text-neutral-300"
-          >
-            Advanced
-            <ChevronDown className={`h-3 w-3 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
-          </button>
-          <label className="cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-neutral-200 px-2 py-0.5 flex items-center gap-1 type-control tracking-wider">
-            <ScanLine className="w-3 h-3" aria-hidden="true" /> OCR
-            <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
-          </label>
+        <div className="flex items-center justify-between gap-2">
+          <div className="type-label text-neutral-400 uppercase tracking-wider">KB Search</div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setRetrievalMode('auto')}
+              className={`border px-2 py-0.5 type-control uppercase tracking-wider ${
+                retrievalMode === 'auto'
+                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                  : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-300'
+              }`}
+            >
+              Auto
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((value) => !value)}
+              aria-expanded={advancedOpen}
+              className="flex items-center gap-1 border border-neutral-700 bg-neutral-900 px-2 py-0.5 type-control uppercase tracking-wider text-neutral-400 hover:text-neutral-300"
+            >
+              Advanced
+              <ChevronDown className={`h-3 w-3 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            <label className="cursor-pointer bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-neutral-200 px-2 py-0.5 flex items-center gap-1 type-control tracking-wider">
+              <ScanLine className="w-3 h-3" aria-hidden="true" /> OCR
+              <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
+            </label>
+          </div>
         </div>
         {advancedOpen && (
           <div className="flex flex-wrap justify-end gap-1">
@@ -168,14 +144,6 @@ export function GraphQueryInput() {
             ))}
           </div>
         )}
-        <div className="bg-neutral-950/85 border border-neutral-800 px-2 py-1 type-meta tracking-wide text-neutral-400">
-          <div className="type-label text-neutral-400 uppercase tracking-wider">Knowledge Search</div>
-          <span className={statusText}>{status.label}</span>
-          <span className="text-neutral-400"> - </span>
-          <span>{retrievalMode === 'auto' ? 'Auto uses deterministic local rules.' : `${modeTitle(retrievalMode)} mode selected.`}</span>
-          {traceText && <span className="block break-words text-neutral-400">{traceText}</span>}
-          {semanticDependentWarning ? <span className="block break-words text-amber-300">{semanticDependentWarning}</span> : null}
-        </div>
       </div>
       <form
         onSubmit={submit}
