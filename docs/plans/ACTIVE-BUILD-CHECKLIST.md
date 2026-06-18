@@ -7,7 +7,7 @@ Lexical/Semantic/Hybrid/Graph verification modes under Advanced controls, and
 show a visible route trace for every Auto decision without adding hidden context
 injection or changing backend retrieval commands.
 
-Status: IMPLEMENTED - VERIFICATION BLOCKED PENDING `npm test` RERUN
+Status: ACCEPTED
 
 Definition of done:
 
@@ -28,11 +28,46 @@ Definition of done:
 - [x] remove deleted documents from Auto results, manual results, selected context, graph expansion, and prompt attachment through existing active-document filters and frontend cleanup
 - [x] document that Auto uses deterministic local rules, not a model router
 - [x] document that automatic semantic indexing remains future Phase 2I-B
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
 Target commit:
 
 `feat: add auto retrieval router ux`
+
+Owner manual verification results:
+
+- Phase 2I-A Auto Retrieval Router + Simplified Mode UX is accepted.
+- Implementation commit verified: `309d277 feat: add auto retrieval router ux`.
+- `npm test` passed: 15 test files passed and 154 tests passed.
+- Expected stderr from the teardown-failure test in `src/lib/pools.test.ts`
+  appeared, but the test suite passed.
+- Prior implementation checks passed:
+  - `cargo test --all-features --locked`: 73 passed.
+  - `npm run lint`: passed.
+  - `git diff --check`: passed, with LF-to-CRLF warnings only.
+- Auto is the default retrieval mode.
+- Advanced retains manual Lexical, Semantic, Hybrid, and Graph modes.
+- Auto exact-marker routing to Lexical passed.
+- Auto semantic-not-ready fallback to Lexical passed visibly and honestly.
+- Manual Build / Refresh successfully created the local semantic index with 8
+  active documents, 8 active chunks, 8 embedded chunks, 0 missing chunks, and
+  embedding dimension 768.
+- Auto Hybrid routing passed with `phase-2i-semantic-orchard.txt` ranked first.
+- Auto Graph routing passed with 4 chunks, seeds 1, and expanded 3.
+- Manual Lexical, Semantic, Hybrid, and Graph retrieval modes all passed.
+- Attach OFF prevented any KB context or source-filename leakage.
+- Attach ON included only selected visible context.
+- Deleted-document exclusion passed for Auto retrieval, manual Lexical
+  retrieval, manual Graph traversal, and attachment eligibility.
+- App cleanup passed: 0 active documents, 0 active chunks, and empty semantic
+  index.
+- Desktop Phase 2I test files were removed.
+- Auto remains frontend-only deterministic routing over existing backend
+  retrieval commands.
+- Graph visual polish remains non-blocking: zoom-level label overlap /
+  hover-overlay clustering artifact in dense graph areas did not affect
+  ingestion, retrieval, indexing, deletion, attachment behavior, or Auto
+  routing.
 
 Explicitly not implemented in Phase 2I-A:
 
@@ -52,7 +87,7 @@ Explicitly not implemented in Phase 2I-A:
 
 ## Owner Review - Phase 2I-A
 
-Status: VERIFICATION BLOCKED
+Status: ACCEPTED
 
 Required visible result:
 
@@ -60,8 +95,7 @@ user searches in Auto mode -> app resolves Lexical/Hybrid/Graph through
 deterministic frontend rules -> user sees the route trace -> user selects chunks
 -> Attach ON sends only selected visible chunks to chat.
 
-Phase 2I-A is not ready for owner review until the sandbox-blocked `npm test`
-rerun passes and owner manual verification is completed.
+Phase 2I-A passed owner manual verification and is accepted.
 
 ---
 
@@ -149,7 +183,7 @@ Status: ACCEPTED AFTER CORRECTION
 
 - [ ] improve ingestion UX
 - [ ] improve KB search UX
-- [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, and improved cluster spacing
+- [ ] graph readability polish: edge-density filtering, long-edge reduction, focus mode, selected-document view, improved cluster spacing, and zoom-level label overlap / hover-overlay clustering artifact in dense graph areas
 - [ ] retrieval polish: citations in generated answers, selected-context controls, and better source cards
 - [x] Auto retrieval router
 - [x] hide retrieval modes behind Advanced/debug controls
