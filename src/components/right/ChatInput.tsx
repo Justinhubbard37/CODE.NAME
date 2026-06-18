@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent } from 'react';
 import { Send, Square } from 'lucide-react';
 import { useApp } from '../../state/AppState';
-import { reachesNetwork } from '../../lib/llm';
+import { executionClassLabel, reachesNetwork } from '../../lib/llm';
 import {
   resolvedRetrievalKindForDisplay,
   retrievalContextDisplayLabel,
@@ -14,6 +14,12 @@ export function ChatInput() {
     abort,
     activeEndpoint,
     activeProfile,
+    activeModel,
+    activeRuntimeLabel,
+    effectiveTemperature,
+    effectiveContextWindow,
+    canSend,
+    cannotSendReason,
     retrievalResults,
     retrievalMode,
     retrievalRouteTrace,
@@ -36,7 +42,7 @@ export function ChatInput() {
   const retrievalContextLabel = retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace);
 
   const fire = () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || !canSend) return;
     sendMessage(text);
     setText('');
   };
@@ -58,7 +64,7 @@ export function ChatInput() {
           rows={1}
           id="chat-input"
           aria-label="Message the agent"
-          placeholder={`Message ${activeEndpoint.model}… (Enter to send, Shift+Enter newline)`}
+          placeholder={`Message ${activeModel?.displayName ?? activeRuntimeLabel}... (Enter to send, Shift+Enter newline)`}
           className="flex-1 resize-none bg-neutral-900 border border-neutral-800 focus:border-neutral-600 outline-none type-body text-neutral-200 placeholder-neutral-400 px-3 py-2 font-mono max-h-32"
         />
         {sending ? (
@@ -73,8 +79,9 @@ export function ChatInput() {
         ) : (
           <button
             onClick={fire}
-            disabled={!text.trim()}
             aria-label="Send message"
+            title={!canSend ? cannotSendReason : 'Send message'}
+            disabled={!text.trim() || !canSend}
             className="h-9 px-3 flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-30 disabled:cursor-not-allowed type-control font-mono"
           >
             <Send className="w-3 h-3" aria-hidden="true" /> SEND
@@ -83,7 +90,8 @@ export function ChatInput() {
       </div>
       <div className="flex justify-between mt-1 type-meta font-mono text-neutral-400">
         <span>
-          PROFILE {activeProfile.name} · T{activeProfile.temperature} · CTX{activeProfile.contextWindow}
+          PROFILE {activeProfile.label} · T{effectiveTemperature} · CTX{effectiveContextWindow}
+          {!canSend ? ` · ${cannotSendReason}` : ''}
         </span>
         <div className="flex items-center gap-2">
           {retrievalResults.length > 0 && (
@@ -103,7 +111,10 @@ export function ChatInput() {
               {retrievalContextLabel} KB context {retrievalEnabledForChat ? 'ON' : 'OFF'} ({selectedRetrievalCount})
             </button>
           )}
-          <span>{reachesNetwork(activeEndpoint) ? 'CLOUD-CAPABLE' : 'LOCAL-FIRST'}</span>
+          <span>
+            {executionClassLabel(activeModel?.executionClass ?? 'unknown')}
+            {reachesNetwork(activeEndpoint, activeModel?.id) ? ' · NETWORK' : ' · LOCAL-FIRST'}
+          </span>
         </div>
       </div>
     </div>

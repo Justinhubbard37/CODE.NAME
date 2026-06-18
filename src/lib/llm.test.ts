@@ -1,6 +1,16 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
-import { classifyEndpoint, pingEndpoint, reachesNetwork, streamChat } from './llm';
-import type { Endpoint } from '../types';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  budgetConversationTurns,
+  canSendWithRuntime,
+  classifyProviderFailure,
+  discoverProviderModels,
+  executionClassForModel,
+  isOllamaCloudModel,
+  modelEntryForSelection,
+  reachesNetwork,
+  streamChat,
+} from './llm';
+import type { ProviderConnection, RuntimeRequestSnapshot } from '../types';
 
 vi.mock('./secrets', () => ({
   secretPresent: vi.fn(),
@@ -19,20 +29,48 @@ import { invoke } from '@tauri-apps/api/core';
 const mockedSecretPresent = vi.mocked(secretPresent);
 const mockedInvoke = vi.mocked(invoke);
 
-function ep(partial: Partial<Endpoint>): Endpoint {
+function provider(partial: Partial<ProviderConnection> = {}): ProviderConnection {
   return {
-    id: 'x',
-    label: 'x',
-    kind: 'ollama',
-    baseUrl: 'http://localhost:11434',
-    model: 'llama3.1',
-    isLocal: true,
-    status: 'offline',
+    id: 'ollama',
+    label: 'Ollama',
+    providerKind: 'ollama',
+    baseUrl: 'http://127.0.0.1:11434',
+    requiresNetwork: false,
+    requiresSecret: false,
+    secretRequirement: 'none',
+    status: 'unknown',
+    detail: 'not refreshed',
+    models: [],
     ...partial,
   };
 }
 
-describe('reachesNetwork (what the Network gate governs)', () => {
+function snapshot(providerInfo: ProviderConnection, modelId: string): RuntimeRequestSnapshot {
+  return {
+    providerId: providerInfo.id,
+    providerLabel: providerInfo.label,
+    modelId,
+    modelLabel: modelId,
+    executionClass: executionClassForModel(providerInfo, modelId),
+    requestStartedAt: 1,
+    outcome: 'success',
+    temperature: 0.4,
+    contextWindow: 4096,
+    providerBaseUrl: providerInfo.baseUrl,
+    providerKind: providerInfo.providerKind,
+  };
+}
+
+function stream(body: string): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(body));
+      controller.close();
+    },
+  });
+}
+
+describe('canonical runtime transport', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     mockedSecretPresent.mockReset();
@@ -40,147 +78,205 @@ describe('reachesNetwork (what the Network gate governs)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('local Ollama classifies as local-only by default', () => {
-    const c = classifyEndpoint(ep({ kind: 'ollama', isLocal: true, model: 'gemma4:26b' }));
-    expect(c.networkClass).toBe('local-only');
-    expect(c.runsLocalOnly).toBe(true);
-    expect(reachesNetwork(ep({ kind: 'ollama', isLocal: true, model: 'gemma4:26b' }))).toBe(false);
+  it('classifies Ollama cloud suffixes while keeping ordinary Ollama local', () => {
+    const ollama = provider();
+    expect(isOllamaCloudModel('gpt-oss:120b-cloud')).toBe(true);
+    expect(isOllamaCloudModel('gpt-oss:120b:cloud')).toBe(true);
+    expect(executionClassForModel(ollama, 'llama3.1')).toBe('local');
+    expect(executionClassForModel(ollama, 'gpt-oss:120b-cloud')).toBe('cloud');
+    expect(reachesNetwork(ollama, 'llama3.1')).toBe(false);
+    expect(reachesNetwork(ollama, 'gpt-oss:120b-cloud')).toBe(true);
   });
 
-  it('local LM Studio classifies as local-only by default', () => {
-    const c = classifyEndpoint(ep({ kind: 'lmstudio', isLocal: true, model: 'local-model' }));
-    expect(c.networkClass).toBe('local-only');
-    expect(c.requiresNetwork).toBe(false);
+  it('keeps selected unavailable models visible and disables send', () => {
+    const p = provider({
+      models: [
+        {
+          id: 'llama3.1',
+          displayName: 'llama3.1',
+          executionClass: 'local',
+          availability: 'available',
+          source: 'ollama',
+          discoveredAt: 1,
+          capabilities: [],
+        },
+      ],
+    });
+    const selected = modelEntryForSelection(p, 'missing-model');
+    expect(selected?.availability).toBe('unavailable');
+    expect(canSendWithRuntime(p, selected).ok).toBe(false);
   });
 
-  it('Gemini classifies as cloud even if marked local', () => {
-    const c = classifyEndpoint(
-      ep({
-        kind: 'gemini',
-        isLocal: true,
-        networkClass: 'local-only',
-        runsLocalOnly: true,
-        model: 'gemini-2.0-flash',
-      }),
-    );
-    expect(c.networkClass).toBe('cloud');
-    expect(c.requiresNetwork).toBe(true);
-    expect(c.secretRequirement).toBe('keychain');
-  });
-
-  it('custom endpoint defaults cloud-capable even on localhost', () => {
-    const c = classifyEndpoint(ep({ kind: 'custom', isLocal: true, baseUrl: 'http://localhost:8000' }));
-    expect(c.networkClass).toBe('cloud-capable');
-    expect(c.requiresNetwork).toBe(true);
-  });
-
-  it('explicit local-only custom endpoint is supported only when configured', () => {
-    const c = classifyEndpoint(
-      ep({
-        kind: 'custom',
-        isLocal: true,
-        networkClass: 'local-only',
-        runsLocalOnly: true,
-        baseUrl: 'http://localhost:8000',
-      }),
-    );
-    expect(c.networkClass).toBe('local-only');
-    expect(c.requiresNetwork).toBe(false);
-  });
-
-  it('an Ollama cloud model on the local daemon classifies as cloud-capable', () => {
-    const c = classifyEndpoint(
-      ep({ kind: 'ollama', isLocal: true, networkClass: 'local-only', model: 'gpt-oss:120b-cloud' }),
-    );
-    expect(c.networkClass).toBe('cloud-capable');
-    expect(c.requiresNetwork).toBe(true);
-  });
-
-  it('an explicit usesCloud flag reaches the network even when marked local', () => {
-    expect(reachesNetwork(ep({ isLocal: true, usesCloud: true }))).toBe(true);
-  });
-
-  it('does not treat frontend VITE API key values as runtime secret fallback', async () => {
-    mockedSecretPresent.mockResolvedValue(false);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-
-    const status = await pingEndpoint(ep({
-      kind: 'gemini',
-      isLocal: false,
-      apiKeyEnv: 'GEMINI_API_KEY',
+  it('discovers Ollama models from the local daemon and tags cloud suffix models as cloud', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{ name: 'llama3.1' }, { name: 'gpt-oss:120b-cloud' }] }),
     }));
-
-    expect(status).toEqual({ ok: false, detail: 'no API key' });
-    expect(mockedSecretPresent).toHaveBeenCalledWith('GEMINI_API_KEY');
-    expect(fetchSpy).not.toHaveBeenCalled();
+    const result = await discoverProviderModels(provider(), true);
+    expect(result.status).toBe('available');
+    expect(result.models.map((model) => [model.id, model.executionClass])).toEqual([
+      ['llama3.1', 'local'],
+      ['gpt-oss:120b-cloud', 'cloud'],
+    ]);
   });
 
-  it('marks Gemini cloud execution as deferred instead of using a frontend key', async () => {
-    mockedSecretPresent.mockResolvedValue(true);
-    const tokens: string[] = [];
-    const activity: string[] = [];
-
-    const text = await streamChat(
-      ep({ kind: 'gemini', isLocal: false, apiKeyEnv: 'GEMINI_API_KEY', model: 'gemini-2.0-flash' }),
-      { id: 'p', name: 'p', endpointId: 'x', temperature: 0.2, contextWindow: 1024 },
-      [{ role: 'user', content: 'hello' }],
-      {
-        onToken: (tok) => tokens.push(tok),
-        onActivity: (_kind, msg) => activity.push(msg),
-      },
-    );
-
-    expect(text).toContain('[LOCAL SYNTHETIC NODE]');
-    expect(text).toContain('Gemini cloud routing remains deferred to Rust provider implementation');
-    expect(tokens.join('')).toBe(text);
-    expect(activity.some((msg) => msg.includes('Gemini cloud routing remains deferred'))).toBe(true);
+  it('Gemini without a key does not make a discovery network request', async () => {
+    mockedSecretPresent.mockResolvedValue(false);
+    const result = await discoverProviderModels(provider({
+      id: 'gemini',
+      label: 'Gemini',
+      providerKind: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    }), true);
+    expect(result.status).toBe('requires_api_key');
+    expect(mockedInvoke).not.toHaveBeenCalled();
   });
 
-  it('cloud path routes through Rust without frontend raw fallback secrets', async () => {
+  it('Gemini discovery uses the Rust command and filters generateContent models', async () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
-    mockedInvoke.mockResolvedValue('served-model');
-    const tokens: string[] = [];
+    mockedSecretPresent.mockResolvedValue(true);
+    mockedInvoke.mockResolvedValue([
+      {
+        id: 'models/gemini-2.5-pro',
+        displayName: 'Gemini 2.5 Pro',
+        inputTokenLimit: 1000,
+        outputTokenLimit: 2000,
+        maxTemperature: 1,
+        thinkingSupported: true,
+        supportedGenerationMethods: ['generateContent'],
+      },
+      {
+        id: 'models/embed',
+        displayName: 'Embed',
+        supportedGenerationMethods: ['embedContent'],
+      },
+    ]);
+    const result = await discoverProviderModels(provider({
+      id: 'gemini',
+      label: 'Gemini',
+      providerKind: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    }), true);
+    expect(mockedInvoke).toHaveBeenCalledWith('gemini_model_list', { keyName: 'GEMINI_API_KEY' });
+    expect(result.models).toHaveLength(1);
+    expect(JSON.stringify(mockedInvoke.mock.calls)).not.toContain('sk-');
+  });
 
-    await streamChat(
-      ep({
-        kind: 'custom',
-        isLocal: false,
-        networkClass: 'cloud-capable',
-        apiKeyEnv: 'CUSTOM_API_KEY',
-      }),
-      { id: 'p', name: 'p', endpointId: 'x', temperature: 0.2, contextWindow: 1024 },
+  it('parses LM Studio and custom OpenAI-compatible inventories through /v1/models', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: 'local-model' }] }),
+    }));
+    const lm = await discoverProviderModels(provider({
+      id: 'lmstudio',
+      label: 'LM Studio',
+      providerKind: 'lmstudio',
+      baseUrl: 'http://localhost:1234',
+    }), true);
+    expect(lm.models[0].source).toBe('lmstudio');
+
+    const custom = await discoverProviderModels(provider({
+      id: 'custom-openai',
+      label: 'Custom',
+      providerKind: 'openai-compatible',
+      baseUrl: 'http://localhost:8000',
+    }), true);
+    expect(custom.models[0].source).toBe('openai-compatible');
+  });
+
+  it('sends Ollama cloud-tagged models to the configured local daemon', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      body: stream('{"model":"gpt-oss:120b-cloud","message":{"content":"hi"}}\n'),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const p = provider();
+    const text = await streamChat(
+      p,
+      snapshot(p, 'gpt-oss:120b-cloud'),
       [{ role: 'user', content: 'hello' }],
-      { onToken: (tok) => tokens.push(tok) },
+      { onToken: () => {} },
     );
+    expect(text).toBe('hi');
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://127.0.0.1:11434/api/chat');
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).model).toBe('gpt-oss:120b-cloud');
+  });
 
+  it('routes Gemini generation through Rust without frontend key material', async () => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
+    mockedInvoke.mockResolvedValue('models/gemini-2.5-pro');
+    const p = provider({
+      id: 'gemini',
+      label: 'Gemini',
+      providerKind: 'gemini',
+      baseUrl: 'https://generativelanguage.googleapis.com',
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
+    await streamChat(p, snapshot(p, 'models/gemini-2.5-pro'), [{ role: 'user', content: 'hello' }], {
+      onToken: () => {},
+    });
     expect(mockedInvoke).toHaveBeenCalledWith(
       'model_stream',
       expect.objectContaining({
         req: expect.objectContaining({
-          keyName: 'CUSTOM_API_KEY',
-          networkClass: 'cloud-capable',
-          runsLocalOnly: false,
-          usesCloud: false,
+          kind: 'gemini',
+          keyName: 'GEMINI_API_KEY',
+          model: 'models/gemini-2.5-pro',
         }),
       }),
     );
-    const payload = mockedInvoke.mock.calls[0]?.[1] as { req?: Record<string, unknown> };
-    expect(payload.req).not.toHaveProperty('fallbackKey');
-    expect(payload.req).not.toHaveProperty('fallback_key');
-    expect(JSON.stringify(payload)).not.toContain('sk-test');
+    expect(JSON.stringify(mockedInvoke.mock.calls)).not.toContain('AIza');
   });
 
-  it('synthetic fallback remains distinct', async () => {
-    mockedSecretPresent.mockResolvedValue(true);
-    const tokens: string[] = [];
-    const text = await streamChat(
-      ep({ kind: 'gemini', isLocal: false, apiKeyEnv: 'GEMINI_API_KEY' }),
-      { id: 'p', name: 'p', endpointId: 'x', temperature: 0.2, contextWindow: 1024 },
-      [{ role: 'user', content: 'hello' }],
-      { onToken: (tok) => tokens.push(tok) },
-    );
+  it('does not synthesize fallback text after provider failure', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection refused')));
+    await expect(
+      streamChat(provider(), snapshot(provider(), 'llama3.1'), [{ role: 'user', content: 'hello' }], {
+        onToken: () => {},
+      }),
+    ).rejects.toMatchObject({
+      failure: expect.objectContaining({ category: 'endpoint_unreachable' }),
+    });
+  });
 
-    expect(text).toContain('[LOCAL SYNTHETIC NODE]');
-    expect(tokens.join('')).toBe(text);
+  it('classifies structured provider failures', () => {
+    const gemini = provider({
+      id: 'gemini',
+      label: 'Gemini',
+      providerKind: 'gemini',
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+    });
+    expect(classifyProviderFailure(new Error('api_key_missing'), gemini, 'm', 'cloud').category).toBe('api_key_missing');
+    expect(classifyProviderFailure(new Error('HTTP 401'), gemini, 'm', 'cloud').category).toBe('authentication_failed');
+    expect(classifyProviderFailure(new Error('HTTP 403'), gemini, 'm', 'cloud').category).toBe('permission_denied');
+    expect(classifyProviderFailure(new Error('HTTP 429'), gemini, 'm', 'cloud').category).toBe('quota_exhausted');
+    expect(classifyProviderFailure(new Error('HTTP 400'), gemini, 'm', 'cloud').category).toBe('request_invalid');
+    expect(classifyProviderFailure(new Error('invalid stream'), gemini, 'm', 'cloud').category).toBe('stream_error');
+  });
+
+  it('applies context window as an application-side history budget', () => {
+    const turns = [
+      { role: 'system' as const, content: 'system' },
+      { role: 'user' as const, content: 'a'.repeat(200) },
+      { role: 'assistant' as const, content: 'b'.repeat(200) },
+      { role: 'user' as const, content: 'latest' },
+    ];
+    const budgeted = budgetConversationTurns(turns, 16);
+    expect(budgeted[0].role).toBe('system');
+    expect(budgeted.at(-1)?.content).toBe('latest');
+    expect(budgeted.length).toBeLessThan(turns.length);
   });
 });

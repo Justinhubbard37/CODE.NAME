@@ -44,46 +44,133 @@ export type AppNode = Node<
 export type { Edge };
 
 /* ------------------------------------------------------------------ */
-/* Model-agnostic endpoint registry                                    */
+/* Canonical runtime/provider registry                                 */
 /* ------------------------------------------------------------------ */
 
-export type EndpointKind = 'ollama' | 'openai' | 'lmstudio' | 'gemini' | 'custom' | 'a2a';
-export type ProviderKind =
+export type ProviderKind = 'ollama' | 'lmstudio' | 'openai-compatible' | 'gemini' | 'custom';
+export type ExecutionClass = 'local' | 'cloud' | 'sidecar' | 'unknown';
+export type SecretRequirement = 'none' | 'optional' | 'keychain';
+export type ProviderStatus =
+  | 'ready'
+  | 'available'
+  | 'requires_api_key'
+  | 'requires_sign_in'
+  | 'server_offline'
+  | 'unavailable'
+  | 'unknown'
+  | 'configuring';
+export type ModelAvailability =
+  | 'available'
+  | 'ready'
+  | 'requires_api_key'
+  | 'requires_sign_in'
+  | 'server_offline'
+  | 'unavailable'
+  | 'unknown';
+export type ModelInventorySource =
   | 'ollama'
   | 'lmstudio'
-  | 'openai-compatible'
   | 'gemini'
+  | 'openai-compatible'
   | 'custom'
-  | 'synthetic'
-  | 'a2a';
-export type EndpointNetworkClass = 'local-only' | 'cloud' | 'cloud-capable' | 'unknown';
-export type SecretRequirement = 'none' | 'optional' | 'keychain';
-export type EndpointStatus = 'offline' | 'configuring' | 'ready' | 'error';
+  | 'migration'
+  | 'configured';
+export type ProviderFailureCategory =
+  | 'api_key_missing'
+  | 'sign_in_required'
+  | 'authentication_failed'
+  | 'permission_denied'
+  | 'quota_exhausted'
+  | 'model_unavailable'
+  | 'endpoint_unreachable'
+  | 'request_invalid'
+  | 'timeout'
+  | 'stream_error'
+  | 'provider_error'
+  | 'unknown';
+export type RuntimeOutcome = 'success' | 'error' | 'cancelled';
 
-export interface Endpoint {
+export interface ModelInventoryEntry {
+  id: string;
+  displayName: string;
+  executionClass: ExecutionClass;
+  availability: ModelAvailability;
+  source: ModelInventorySource;
+  discoveredAt: number;
+  capabilities: string[];
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+  maxTemperature?: number;
+  thinkingSupported?: boolean;
+}
+
+export interface ProviderFailure {
+  category: ProviderFailureCategory;
+  safeMessage: string;
+  httpStatus?: number;
+  retryable: boolean;
+  providerId: string;
+  modelId: string;
+  executionClass: ExecutionClass;
+  nextStep?: string;
+}
+
+export interface ProviderConnection {
   id: string;
   label: string;
-  kind: EndpointKind;
-  providerKind?: ProviderKind;
+  providerKind: ProviderKind;
   baseUrl: string;
-  model: string;
-  isLocal: boolean;
-  networkClass?: EndpointNetworkClass;
-  runsLocalOnly?: boolean;
-  cloudCapable?: boolean;
-  requiresNetwork?: boolean;
-  requiresSecret?: boolean;
-  secretRequirement?: SecretRequirement;
-  /** true if this endpoint reaches the internet even when isLocal — e.g. an
-   *  Ollama "-cloud" model offloaded through the local daemon. Network-gated. */
-  usesCloud?: boolean;
-  /** name of the env var holding an API key, for cloud endpoints */
-  apiKeyEnv?: string;
-  status: EndpointStatus;
+  requiresNetwork: boolean;
+  requiresSecret: boolean;
+  secretRequirement: SecretRequirement;
+  status: ProviderStatus;
   detail?: string;
-  /** models actually available at this endpoint (filled by a live probe) */
-  models?: string[];
+  models: ModelInventoryEntry[];
+  apiKeyEnv?: string;
+  userEditable?: boolean;
+  lastFailure?: ProviderFailure;
 }
+
+export interface RuntimeProfile {
+  id: string;
+  label: string;
+  providerId: string;
+  modelId: string;
+  defaultTemperature: number;
+  /** context window in tokens */
+  defaultContextWindow: number;
+}
+
+export interface RuntimeOverrides {
+  temperature?: number;
+  contextWindow?: number;
+}
+
+export interface RuntimeProvenance {
+  providerId: string;
+  providerLabel: string;
+  modelId: string;
+  modelLabel: string;
+  executionClass: ExecutionClass;
+  requestStartedAt: number;
+  requestCompletedAt?: number;
+  outcome: RuntimeOutcome;
+}
+
+export interface RuntimeRequestSnapshot extends RuntimeProvenance {
+  temperature: number;
+  contextWindow: number;
+  providerBaseUrl: string;
+  providerKind: ProviderKind;
+}
+
+/* Compatibility names for older imports while the runtime UI uses the
+ * canonical provider/profile shapes above. */
+export type Endpoint = ProviderConnection;
+export type ConfigProfile = RuntimeProfile;
+export type EndpointKind = ProviderKind | 'openai' | 'a2a';
+export type EndpointStatus = ProviderStatus;
+export type EndpointNetworkClass = 'local-only' | 'cloud' | 'cloud-capable' | 'unknown';
 
 /* ------------------------------------------------------------------ */
 /* Capability governance                                               */
@@ -98,15 +185,6 @@ export interface SecurityGates {
 export interface EffectiveGateState extends SecurityGates {
   changedByPolicy: boolean;
   lockedGates: { gate: string; reason: string }[];
-}
-
-export interface ConfigProfile {
-  id: string;
-  name: string;
-  endpointId: string;
-  temperature: number;
-  /** context window in tokens */
-  contextWindow: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -126,6 +204,8 @@ export interface ChatMessage {
   content: string;
   ts: number;
   streaming?: boolean;
+  runtime?: RuntimeProvenance;
+  failure?: ProviderFailure;
 }
 
 export type ActivityKind = 'tool' | 'reasoning' | 'query' | 'system' | 'network';
@@ -164,6 +244,7 @@ export interface WorkTask {
   messages: ChatMessage[];
   activity: ActivityEvent[];
   session: TabSession;
+  runtimeOverrides?: RuntimeOverrides;
 }
 
 /* ------------------------------------------------------------------ */

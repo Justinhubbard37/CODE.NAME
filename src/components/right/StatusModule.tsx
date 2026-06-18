@@ -1,39 +1,54 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, Pencil } from 'lucide-react';
+import { ChevronDown, Pencil, Wrench } from 'lucide-react';
 import { useApp } from '../../state/AppState';
-import { EndpointEditor } from '../config/EndpointEditor';
-import { reachesNetwork } from '../../lib/llm';
-import type { Endpoint, EndpointStatus } from '../../types';
+import {
+  executionClassLabel,
+  isModelSelectable,
+  modelAvailabilityLabel,
+  providerStatusLabel,
+} from '../../lib/llm';
 
-const COLOR: Record<EndpointStatus, string> = {
-  offline: 'text-neutral-400 border-neutral-700 bg-neutral-800/40',
-  configuring: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
+const STATUS_CLASS: Record<string, string> = {
   ready: 'text-emerald-300 border-emerald-500/50 bg-emerald-500/10',
-  error: 'text-red-300 border-red-500/50 bg-red-500/10',
+  available: 'text-emerald-300 border-emerald-500/50 bg-emerald-500/10',
+  requires_api_key: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
+  requires_sign_in: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
+  server_offline: 'text-red-300 border-red-500/50 bg-red-500/10',
+  unavailable: 'text-red-300 border-red-500/50 bg-red-500/10',
+  unknown: 'text-neutral-300 border-neutral-700 bg-neutral-800/40',
+  configuring: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
 };
-const DOT: Record<EndpointStatus, string> = {
-  offline: 'bg-neutral-500',
-  configuring: 'bg-amber-400 animate-pulse',
-  ready: 'bg-emerald-400',
-  error: 'bg-red-400',
-};
+
+function openProviderManager() {
+  window.dispatchEvent(new CustomEvent('codename:open-settings'));
+}
 
 export function StatusModule() {
-  const { endpoints, activeEndpoint, refreshEndpoints, activeProfile, updateProfile, updateEndpoint } =
-    useApp();
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<Endpoint | null>(null);
+  const {
+    endpoints,
+    activeEndpoint,
+    activeModel,
+    activeProfile,
+    setActiveProvider,
+    setActiveModel,
+  } = useApp();
+  const [providerOpen, setProviderOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const st = activeEndpoint.status;
 
-  // Close the matrix when clicking anywhere outside it, or on Escape.
   useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    if (!providerOpen && !modelOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setProviderOpen(false);
+        setModelOpen(false);
+      }
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProviderOpen(false);
+        setModelOpen(false);
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -41,98 +56,147 @@ export function StatusModule() {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [providerOpen, modelOpen]);
 
-  // Route the active profile to the chosen endpoint, then close.
-  const selectEndpoint = (id: string) => {
-    updateProfile(activeProfile.id, { endpointId: id });
-    setOpen(false);
-  };
+  const providerClass = STATUS_CLASS[activeEndpoint.status] ?? STATUS_CLASS.unknown;
+  const modelLabel = activeModel?.displayName ?? (activeProfile.modelId || 'Select model');
+  const modelState = activeModel ? modelAvailabilityLabel(activeModel.availability) : 'Unavailable';
 
   return (
-    <div ref={ref} className="relative font-mono type-control">
-      <div className="flex items-center gap-1">
+    <div ref={ref} className="relative flex items-center gap-1 font-mono type-control">
+      <div className="relative">
         <button
-          onClick={() => setOpen((v) => !v)}
-          className={`flex items-center gap-1.5 px-2 py-1 border rounded-full transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${COLOR[st]}`}
-          title="Endpoint connectivity — click to choose where chat routes"
-          aria-label={`Endpoint ${activeEndpoint.label}: ${st}. Choose where chat routes`}
+          onClick={() => {
+            setModelOpen((open) => !open);
+            setProviderOpen(false);
+          }}
+          className="flex items-center gap-1.5 max-w-[220px] px-2 py-1 border border-neutral-700 bg-neutral-900/70 text-neutral-300 hover:border-neutral-500 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           aria-haspopup="menu"
-          aria-expanded={open}
+          aria-expanded={modelOpen}
+          title={`${modelLabel} · ${modelState}`}
         >
-          <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${DOT[st]}`} />
-          <span className="uppercase tracking-wider">{st}</span>
-          <span className="text-neutral-400">·</span>
-          <span className="text-neutral-400 normal-case">{activeEndpoint.label}</span>
+          <span className="truncate">{modelLabel}</span>
+          <ChevronDown className="w-3 h-3 shrink-0" aria-hidden="true" />
         </button>
-        <button
-          onClick={() => refreshEndpoints()}
-          className="p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-          title="Probe all endpoints"
-          aria-label="Probe all endpoints"
-        >
-          <RefreshCw className="w-3 h-3" aria-hidden="true" />
-        </button>
-      </div>
-
-      {open && (
-        <div role="menu" aria-label="Endpoint matrix" className="absolute top-8 right-0 z-50 w-72 bg-neutral-900 border border-neutral-700 shadow-2xl p-1">
-          <div className="px-2 py-1 type-label text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
-            Endpoint Matrix · click to route · ✎ to edit
-          </div>
-          {endpoints.map((e) => {
-            const active = e.id === activeEndpoint.id;
-            return (
-              <div
-                key={e.id}
-                className={`flex items-center justify-between gap-2 px-1 transition-colors hover:bg-neutral-800 ${
-                  active ? 'bg-neutral-800/60' : ''
-                }`}
-              >
-                <button
-                  onClick={() => selectEndpoint(e.id)}
-                  title={`Route chat to ${e.label}`}
-                  aria-label={`Route chat to ${e.label}${active ? ' (active)' : ''}`}
-                  role="menuitemradio"
-                  aria-checked={active}
-                  className="flex items-center gap-1.5 min-w-0 flex-1 text-left py-1.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-                >
-                  <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full shrink-0 ${DOT[e.status]}`} />
-                  <div className="min-w-0">
-                    <div className="text-neutral-300 truncate">
-                      {e.label}
-                      {active && <span className="ml-1 type-meta text-emerald-400">ACTIVE</span>}
+        {modelOpen && (
+          <div role="menu" aria-label="Model selector" className="absolute top-8 right-0 z-50 w-80 bg-neutral-900 border border-neutral-700 shadow-2xl p-1">
+            <div className="px-2 py-1 type-label text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
+              {activeEndpoint.label} models
+            </div>
+            {activeModel && !activeEndpoint.models.some((model) => model.id === activeModel.id) && (
+              <div className="px-2 py-1.5 border-b border-neutral-800 text-red-300">
+                <div className="truncate">{activeModel.displayName}</div>
+                <div className="type-meta text-red-300/80">Unavailable · select an available model</div>
+              </div>
+            )}
+            {activeEndpoint.models.length === 0 ? (
+              <div className="px-2 py-2 type-meta text-neutral-400">
+                No models available. Refresh inventory in Provider Manager.
+              </div>
+            ) : (
+              activeEndpoint.models.map((model) => {
+                const selected = model.id === activeProfile.modelId;
+                const selectable = isModelSelectable(model);
+                return (
+                  <button
+                    key={model.id}
+                    onClick={() => {
+                      if (!selectable) return;
+                      setActiveModel(model.id);
+                      setModelOpen(false);
+                    }}
+                    disabled={!selectable}
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    className={`w-full text-left px-2 py-1.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${
+                      selected ? 'bg-neutral-800 text-emerald-300' : 'text-neutral-300 hover:bg-neutral-800'
+                    } disabled:text-neutral-500 disabled:hover:bg-transparent`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{model.displayName}</span>
+                      <span className="type-meta text-neutral-400 shrink-0">{executionClassLabel(model.executionClass)}</span>
                     </div>
                     <div className="type-meta text-neutral-400 truncate">
-                      {e.model} · {e.detail ?? e.status}
-                      {reachesNetwork(e) ? ' · CLOUD' : ' · LOCAL'}
+                      {modelAvailabilityLabel(model.availability)}
+                      {model.inputTokenLimit ? ` · ${Math.round(model.inputTokenLimit / 1000)}K input` : ''}
+                      {model.thinkingSupported ? ' · thinking' : ''}
                     </div>
-                  </div>
-                </button>
-                <button
-                  onClick={() => {
-                    setEditing(e);
-                    setOpen(false);
-                  }}
-                  title="Edit this endpoint"
-                  aria-label={`Edit endpoint ${e.label}`}
-                  className="shrink-0 p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-                >
-                  <Pencil className="w-3 h-3" aria-hidden="true" />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
 
-      {editing && (
-        <EndpointEditor
-          endpoint={editing}
-          onClose={() => setEditing(null)}
-          onSave={updateEndpoint}
-        />
-      )}
+      <div className="relative">
+        <button
+          onClick={() => {
+            setProviderOpen((open) => !open);
+            setModelOpen(false);
+          }}
+          className={`flex items-center gap-1.5 max-w-[220px] px-2 py-1 border rounded-full transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${providerClass}`}
+          aria-haspopup="menu"
+          aria-expanded={providerOpen}
+          title={`${activeEndpoint.label} · ${providerStatusLabel(activeEndpoint.status)}`}
+        >
+          <span className="truncate">{activeEndpoint.label}</span>
+          <span className="type-meta text-neutral-400">{providerStatusLabel(activeEndpoint.status)}</span>
+          <ChevronDown className="w-3 h-3 shrink-0" aria-hidden="true" />
+        </button>
+        {providerOpen && (
+          <div role="menu" aria-label="Provider selector" className="absolute top-8 right-0 z-50 w-80 bg-neutral-900 border border-neutral-700 shadow-2xl p-1">
+            <div className="px-2 py-1 type-label text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
+              Providers
+            </div>
+            {endpoints.map((provider) => {
+              const active = provider.id === activeEndpoint.id;
+              return (
+                <button
+                  key={provider.id}
+                  onClick={async () => {
+                    await setActiveProvider(provider.id);
+                    setProviderOpen(false);
+                  }}
+                  role="menuitemradio"
+                  aria-checked={active}
+                  className={`w-full text-left px-2 py-1.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${
+                    active ? 'bg-neutral-800 text-emerald-300' : 'text-neutral-300 hover:bg-neutral-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{provider.label}</span>
+                    <span className="type-meta text-neutral-400">{providerStatusLabel(provider.status)}</span>
+                  </div>
+                  <div className="type-meta text-neutral-400 truncate">{provider.detail ?? 'No inventory refresh yet.'}</div>
+                </button>
+              );
+            })}
+            <button
+              onClick={() => {
+                setProviderOpen(false);
+                openProviderManager();
+              }}
+              role="menuitem"
+              className="w-full flex items-center gap-2 px-2 py-1.5 border-t border-neutral-800 text-neutral-300 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+            >
+              <Wrench className="w-3 h-3" aria-hidden="true" />
+              Set Up Agent Sidecar
+            </button>
+            <button
+              onClick={() => {
+                setProviderOpen(false);
+                openProviderManager();
+              }}
+              role="menuitem"
+              className="w-full flex items-center gap-2 px-2 py-1.5 border-t border-neutral-800 text-neutral-300 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+            >
+              <Pencil className="w-3 h-3" aria-hidden="true" />
+              Provider Manager
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

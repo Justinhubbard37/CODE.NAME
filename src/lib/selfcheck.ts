@@ -30,7 +30,7 @@ export async function runSelfCheck(): Promise<CheckResult[]> {
     out.push({ name: 'retrieval', ok: false, detail: 'retriever error' });
   }
 
-  out.push({ name: 'model', ok: true, detail: 'synthetic offline fallback present' });
+  out.push({ name: 'model', ok: true, detail: 'provider failures render as structured errors' });
 
   const hasMcp = typeof document !== 'undefined' && !!(document as unknown as { modelContext?: unknown }).modelContext;
   out.push({ name: 'webmcp', ok: hasMcp, detail: hasMcp ? 'document.modelContext installed' : 'shim not installed yet' });

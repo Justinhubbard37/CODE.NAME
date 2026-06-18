@@ -1,148 +1,108 @@
 import type {
-  Endpoint,
-  ConfigProfile,
+  ModelInventoryEntry,
+  ProviderConnection,
+  RuntimeProfile,
   SecurityGates,
   WorkTask,
 } from '../types';
 
-/**
- * Local-first endpoint registry. Local loopback engines come first and are the
- * default route; cloud is registered but secondary. The harness is model
- * agnostic — every entry is probed and selectable.
- */
-export const defaultEndpoints: Endpoint[] = [
+const now = 0;
+
+function configuredModel(
+  id: string,
+  source: ModelInventoryEntry['source'],
+  executionClass: ModelInventoryEntry['executionClass'],
+): ModelInventoryEntry {
+  return {
+    id,
+    displayName: id,
+    executionClass,
+    availability: 'unknown',
+    source,
+    discoveredAt: now,
+    capabilities: [],
+  };
+}
+
+export const defaultProviderConnections: ProviderConnection[] = [
   {
-    id: 'agent-sidecar',
-    label: 'Agent Sidecar (A2A)',
-    kind: 'a2a',
-    providerKind: 'a2a',
-    baseUrl: 'http://127.0.0.1:0',
-    model: 'adk-agent',
-    isLocal: true,
-    networkClass: 'local-only',
-    runsLocalOnly: true,
-    requiresNetwork: false,
-    cloudCapable: false,
-    secretRequirement: 'none',
-    status: 'offline',
-  },
-  {
-    id: 'ollama-local',
-    label: 'Ollama (local)',
-    kind: 'ollama',
+    id: 'ollama',
+    label: 'Ollama',
     providerKind: 'ollama',
-    baseUrl: 'http://localhost:11434',
-    model: 'llama3.1',
-    isLocal: true,
-    networkClass: 'local-only',
-    runsLocalOnly: true,
+    baseUrl: 'http://127.0.0.1:11434',
     requiresNetwork: false,
-    cloudCapable: false,
+    requiresSecret: false,
     secretRequirement: 'none',
-    status: 'offline',
+    status: 'unknown',
+    detail: 'Model inventory has not been refreshed.',
+    models: [configuredModel('llama3.1', 'configured', 'local')],
   },
   {
-    id: 'ollama-cloud',
-    label: 'Ollama Cloud',
-    kind: 'ollama',
-    providerKind: 'ollama',
-    baseUrl: 'https://ollama.com',
-    model: 'gpt-oss:120b',
-    isLocal: false,
-    networkClass: 'cloud',
-    runsLocalOnly: false,
-    requiresNetwork: true,
-    cloudCapable: true,
-    requiresSecret: true,
-    secretRequirement: 'keychain',
-    usesCloud: true,
-    apiKeyEnv: 'OLLAMA_API_KEY',
-    status: 'offline',
-  },
-  {
-    id: 'lmstudio-local',
-    label: 'LM Studio (local)',
-    kind: 'lmstudio',
+    id: 'lmstudio',
+    label: 'LM Studio',
     providerKind: 'lmstudio',
     baseUrl: 'http://localhost:1234',
-    model: 'local-model',
-    isLocal: true,
-    networkClass: 'local-only',
-    runsLocalOnly: true,
     requiresNetwork: false,
-    cloudCapable: false,
+    requiresSecret: false,
     secretRequirement: 'none',
-    status: 'offline',
+    status: 'unknown',
+    detail: 'Model inventory has not been refreshed.',
+    models: [configuredModel('local-model', 'configured', 'local')],
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini',
+    providerKind: 'gemini',
+    baseUrl: 'https://generativelanguage.googleapis.com',
+    requiresNetwork: true,
+    requiresSecret: true,
+    secretRequirement: 'keychain',
+    apiKeyEnv: 'GEMINI_API_KEY',
+    status: 'unknown',
+    detail: 'Model inventory has not been refreshed.',
+    models: [],
   },
   {
     id: 'custom-openai',
     label: 'Custom OpenAI-compatible',
-    kind: 'custom',
     providerKind: 'openai-compatible',
     baseUrl: 'http://localhost:8000',
-    model: 'default',
-    isLocal: true,
-    networkClass: 'local-only',
-    runsLocalOnly: true,
     requiresNetwork: false,
-    cloudCapable: false,
+    requiresSecret: false,
     secretRequirement: 'none',
-    status: 'offline',
-  },
-  {
-    id: 'gemini-cloud',
-    label: 'Gemini (cloud · secondary)',
-    kind: 'gemini',
-    providerKind: 'gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com',
-    model: 'gemini-2.0-flash',
-    isLocal: false,
-    networkClass: 'cloud',
-    runsLocalOnly: false,
-    requiresNetwork: true,
-    cloudCapable: true,
-    requiresSecret: true,
-    secretRequirement: 'keychain',
-    apiKeyEnv: 'GEMINI_API_KEY',
-    status: 'offline',
+    status: 'unknown',
+    detail: 'Model inventory has not been refreshed.',
+    userEditable: true,
+    models: [configuredModel('default', 'configured', 'local')],
   },
 ];
 
-/**
- * Fixed providers whose transport identity (kind, URL, local/cloud, key name) is
- * NOT user-editable — only the chosen model and the API key are. This keeps
- * Ollama Local (your computer) and Ollama Cloud (ollama.com) from ever being
- * conflated. "custom-openai" is intentionally NOT here: it exists for custom URLs.
- */
-export const LOCKED_ENDPOINT_IDS = new Set([
-  'agent-sidecar',
-  'ollama-local',
-  'ollama-cloud',
-  'lmstudio-local',
-  'gemini-cloud',
-]);
+export const NORMAL_PROVIDER_IDS = new Set(defaultProviderConnections.map((p) => p.id));
 
-export const defaultProfiles: ConfigProfile[] = [
+export const defaultRuntimeProfiles: RuntimeProfile[] = [
   {
     id: 'profile-balanced',
-    name: 'BALANCED',
-    endpointId: 'ollama-local',
-    temperature: 0.7,
-    contextWindow: 8192,
+    label: 'BALANCED',
+    providerId: 'ollama',
+    modelId: 'llama3.1',
+    defaultTemperature: 0.7,
+    defaultContextWindow: 8192,
   },
   {
     id: 'profile-precise',
-    name: 'PRECISE',
-    endpointId: 'ollama-local',
-    temperature: 0.2,
-    contextWindow: 16384,
+    label: 'PRECISE',
+    providerId: 'ollama',
+    modelId: 'llama3.1',
+    defaultTemperature: 0.2,
+    defaultContextWindow: 16384,
   },
   {
     id: 'profile-creative',
-    name: 'CREATIVE',
-    endpointId: 'lmstudio-local',
-    temperature: 1.0,
-    contextWindow: 8192,
+    label: 'CREATIVE',
+    providerId: 'lmstudio',
+    modelId: 'local-model',
+    defaultTemperature: 1.0,
+    defaultContextWindow: 8192,
   },
 ];
 
@@ -167,5 +127,12 @@ export const initialTask: WorkTask = {
     },
   ],
   activity: [],
-  session: { id: 'sess-primary', caps: { browser: true, tools: true, network: true, filesystem: true } },
+  session: {
+    id: 'sess-primary',
+    caps: { browser: true, tools: true, network: true, filesystem: true },
+  },
 };
+
+export const defaultEndpoints = defaultProviderConnections;
+export const defaultProfiles = defaultRuntimeProfiles;
+export const LOCKED_ENDPOINT_IDS = NORMAL_PROVIDER_IDS;

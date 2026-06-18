@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react';
 import { secretPresent, setSecret, deleteSecret } from '../../lib/secrets';
-import { useApp } from '../../state/AppState';
 
-// Secrets the app knows about — keyed by the same name as the env-var fallback.
+// Secrets the app knows about, keyed by their OS keychain names.
 const SECRETS: { name: string; label: string }[] = [
   { name: 'GEMINI_API_KEY', label: 'Gemini API key' },
   { name: 'OLLAMA_API_KEY', label: 'Ollama Cloud API key' },
 ];
 
 /**
- * Secrets panel (Phase 2.4). Stores API keys in the OS keychain via the Rust
- * shell — never in plain text. Falls back to env vars when the keychain is
- * unavailable (e.g. plain-browser mode).
+ * Stores API keys in the OS keychain via the Rust shell and only reports
+ * whether a key is present.
  */
 export function SecretsPanel() {
-  const { refreshEndpoints } = useApp();
   const [present, setPresent] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
@@ -33,20 +30,18 @@ export function SecretsPanel() {
     if (ok) {
       setPresent((p) => ({ ...p, [name]: true }));
       setDrafts((d) => ({ ...d, [name]: '' }));
-      refreshEndpoints(); // re-check connectivity now that the key exists
     }
   };
 
   const clear = async (name: string) => {
     await deleteSecret(name);
     setPresent((p) => ({ ...p, [name]: false }));
-    refreshEndpoints();
   };
 
   return (
     <div className="space-y-2">
       <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
-        Secrets · OS keychain
+        Secrets - OS keychain
       </div>
       {SECRETS.map((s) => (
         <div key={s.name} className="space-y-1">
@@ -62,7 +57,7 @@ export function SecretsPanel() {
               value={drafts[s.name] ?? ''}
               onChange={(e) => setDrafts((d) => ({ ...d, [s.name]: e.target.value }))}
               aria-label={s.label}
-              placeholder={present[s.name] ? '•••••••• stored' : 'paste key'}
+              placeholder={present[s.name] ? '******** stored' : 'paste key'}
               className="flex-1 min-w-0 bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             />
             <button

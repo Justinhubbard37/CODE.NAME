@@ -33,7 +33,8 @@ The window is split into two panes.
 - **Audit Ledger:** the append-only history of knowledge-graph writes.
 - **Local KB context panel:** review retrieved chunks, select which chunks are
   allowed into chat context, and explicitly turn Attach on or off.
-- **Chat thread + composer:** talk to the selected model or the offline synthetic fallback.
+- **Chat thread + composer:** talk to the selected provider/model runtime. Provider
+  failures appear as structured error cards instead of synthetic assistant replies.
 
 ## 1.1. Readability Calibration
 
@@ -55,6 +56,35 @@ search status block was removed to prevent overlap and clutter. Readable
 secondary text uses existing brand palette foreground values with corrected
 semantic mapping; no palette values changed. Retrieval, indexing, graph,
 database, attachment, visual-palette, and interaction behavior did not change.
+
+## 1.2. Phase 3A — Canonical Runtime Control and Provider Truthfulness
+
+Status: `IMPLEMENTED — PENDING OWNER REVIEW`
+
+Phase 3A replaces overlapping provider/model controls with one canonical runtime
+path. The top-right header has one provider selector on the far right and one
+provider-scoped model selector immediately to its left. Settings is the canonical
+Provider Manager for endpoints, credentials, model inventory refresh, persistent
+Runtime Profile defaults, and Agent Sidecar Setup.
+
+Ollama appears as one provider. Local models and cloud-tagged Ollama models both
+use the configured local Ollama daemon; `:cloud` and `-cloud` model suffixes
+mark cloud execution. The app does not auto-pull, auto-download, or preload
+models.
+
+Gemini is a real desktop provider integration. Model discovery and streamed
+generation run through Rust/Tauri commands, compatible models come from Gemini
+discovery results, and the Gemini API key remains in OS-backed secret storage.
+The frontend can know only whether the key is present.
+
+The bottom-left Parameter Tray is tuning-only. Temperature and context-window
+changes there are temporary per-chat overrides. Persistent Runtime Profile
+defaults are edited only in Provider Manager.
+
+Each user and assistant message keeps safe provider/model provenance for the
+runtime snapshot used by that request. Failed provider requests store structured
+safe failure metadata and render as error cards; they do not fall through to a
+synthetic assistant answer.
 
 ## 2. Ingesting Documents
 
@@ -154,18 +184,21 @@ Auto route traces are visible in the UI but are not silently injected into chat.
 When Attach is ON, the chat prompt labels the selected context with the Auto
 resolved mode, such as `auto resolved hybrid` or `auto resolved graph traversal`.
 
-**Choosing a model.** Open **Settings -> Models & routing**:
+**Choosing a provider and model.** Use the top-right runtime controls:
 
-- **Preset:** saved endpoint, temperature, and context settings.
-- **Endpoint:** local Ollama, LM Studio, a custom OpenAI-compatible server,
-  Ollama Cloud, Gemini, or the bundled sidecar route.
-- **Model:** the specific model. Local detection probes model servers when available.
+- The rightmost selector chooses the normal chat provider: Ollama, LM Studio,
+  Gemini, or a configured custom OpenAI-compatible provider.
+- The selector immediately to its left chooses a model returned by the active
+  provider's model inventory.
+- Agent Sidecar is not a normal chat provider. Use **Set Up Agent Sidecar** in
+  the provider menu or **Settings -> Provider Manager -> Agent Sidecar Setup**.
 
 **Local first.** Local endpoints need no key and no cloud network call.
 
-**Provider readiness.** If no real endpoint is available, the UI can use a
-synthetic offline fallback so the app remains demoable. A synthetic fallback does
-not prove that a real provider is configured or healthy.
+**Provider readiness.** If a provider is missing a key, offline, or the selected
+model is unavailable, Send is disabled or the failed request renders a structured
+provider-failure card with a safe reason and next step. Ordinary chat failures do
+not become synthetic assistant answers.
 
 ## 5. Tools The Agent Can Use
 
@@ -203,18 +236,19 @@ finished security boundary.
 
 ## 8. Settings And Shortcuts
 
-Open **Settings** with **Ctrl/Cmd + ,**. It collects model routing, API keys,
-gates, tuning, interface language, logs, and an About panel.
+Open **Settings** with **Ctrl/Cmd + ,**. It contains Provider Manager, API keys,
+security gates, persistent Runtime Profile defaults, interface language, logs,
+and an About panel.
 
 Keyboard shortcuts:
 
 - **Ctrl/Cmd + ,** - open Settings
 - **Ctrl/Cmd + K** - focus the chat composer
 
-**Keys:** add cloud API keys under **Settings -> Secrets**. Keys use the OS
-keychain path, but current source still exposes a frontend `secret_get` call.
-Do not treat this as production-grade secret isolation until the later hardening
-phase removes raw secret return paths.
+**Keys:** add cloud API keys under **Settings -> Provider Manager -> Secrets**.
+Keys use the OS keychain path. The frontend can set/delete keys and check whether
+a key is present, but raw keychain secret reads are denied. Gemini discovery and
+generation use backend-only key access.
 
 ## 9. Privacy And Local-First Behavior
 

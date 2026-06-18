@@ -6,7 +6,8 @@ persistence, SQLite knowledge-base ingestion/retrieval, a deterministic Auto
 retrieval router, real local Ollama semantic chunk retrieval, Hybrid SQLite KB
 retrieval with selected-context controls, bounded one-hop Graph traversal
 retrieval over SQLite KB entities and relationships, a supervised Python sidecar,
-settings for model routing, capability gates, and a gated ingestion path.
+canonical runtime controls for provider/model selection, capability gates, and a
+gated ingestion path.
 
 Current reality: full multi-hop GraphRAG reasoning is still a roadmap capability.
 SQLite lexical, semantic, Hybrid, and one-hop Graph KB retrieval are
@@ -64,17 +65,59 @@ npm run dev            # http://localhost:3000
 
 ## Local Models
 
-Point the settings drawer at a local endpoint:
+Use the top-right runtime controls for everyday chat routing:
 
-- Ollama -> http://localhost:11434
-- LM Studio -> http://localhost:1234
+- Select the provider in the rightmost provider selector.
+- Select a provider-scoped model in the selector immediately to its left.
+- Configure provider endpoints, credentials, inventory refresh, and persistent
+  Runtime Profile defaults in Settings -> Provider Manager.
 
-The status capsule reflects endpoint checks. With no real provider connected,
-chat can fall back to an offline synthetic stream so the UI stays demoable; that
-fallback is not proof that a real model/provider is ready.
+Ollama is one user-facing provider. Local models and cloud-tagged Ollama models
+both route through the configured local Ollama daemon; the model suffix
+`:cloud` or `-cloud` determines cloud execution. The app does not auto-pull,
+auto-download, or preload models.
+
+LM Studio and custom OpenAI-compatible providers discover models through their
+configured `/v1/models` endpoints. Gemini discovers compatible models through
+the desktop Rust/Tauri backend and streams generation through the same backend;
+the Gemini API key stays in OS-backed secret storage and is never returned to
+React.
+
+Provider request failures render as structured error cards. They no longer
+masquerade as real assistant answers through a synthetic fallback.
+
+## Phase 3A — Canonical Runtime Control and Provider Truthfulness
+
+Status: `IMPLEMENTED — PENDING OWNER REVIEW`
+
+Implemented runtime behavior:
+
+- One rightmost provider selector and one adjacent provider-scoped model
+  selector are the everyday runtime controls.
+- Ollama is one user-facing provider. Local and cloud-tagged models use the
+  configured local daemon; no model pulls, downloads, or cloud inference happen
+  automatically during discovery.
+- Gemini model discovery and streamed generation run through Rust/Tauri backend
+  commands. The Gemini key remains in secure desktop secret storage and never
+  enters frontend state, persisted config, logs, messages, activity text, or
+  error output.
+- The Parameter Tray is tuning-only. Temperature and context-window changes are
+  temporary per-chat overrides.
+- Each message records safe provider/model provenance, and provider failures
+  render as structured failure states instead of synthetic assistant answers.
+- Agent Sidecar has a dedicated setup path and is not a normal chat provider.
+
+Phase 3A is not accepted until owner manual verification is completed.
 
 ## Current Stabilization Notes
 
+- Phase 3A — Canonical Runtime Control and Provider Truthfulness is implemented
+  and pending owner review. It adds one provider selector, one provider-scoped
+  model selector, unified Ollama behavior, provider-specific inventory
+  discovery, real Gemini discovery/generation through Rust, per-chat temporary
+  tuning overrides, per-message runtime provenance, structured provider
+  failures, and a dedicated Agent Sidecar Setup area. Phase 3A is not accepted
+  until owner manual verification is completed.
 - Phase 2J improves readability through typography scale, font weight, and
   line-height across existing UI surfaces. No brand colors or theme values
   changed, no UI layout, component structure, or interaction design changed, no
@@ -104,11 +147,17 @@ fallback is not proof that a real model/provider is ready.
   semantic indexing after ingestion is future Phase 2I-B and is not implemented.
 - Retrieved chunks are never hidden-injected on chat send. Attach remains OFF by
   default, and Attach ON sends only selected visible chunks.
+- The bottom-left Parameter Tray is tuning-only for the active chat. Temperature
+  and context-window changes there are temporary per-chat runtime overrides and
+  do not modify persisted Runtime Profile defaults.
+- Each user/assistant chat message stores safe provider/model provenance for the
+  runtime snapshot that produced it. Failed provider requests store structured
+  safe failure metadata instead of a normal assistant answer.
 - Full multi-hop GraphRAG reasoning, external vector DB integration, sidecar
   community GraphRAG, legacy hash-vector GraphRAG, and model auto-pull/download
   are not implemented.
 - Capability gates are real controls, but not every backend command is fully
   enforced by Rust yet.
-- API keys are stored through the OS keychain path, but current frontend APIs can
-  still request secret values through `secret_get`; this is a known security gap
-  for a later hardening phase.
+- API keys are stored through the OS keychain path. The frontend can set/delete
+  keys and check key presence, but raw keychain secret reads are denied and
+  Gemini calls use backend-only key access.

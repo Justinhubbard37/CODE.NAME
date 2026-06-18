@@ -31,6 +31,7 @@ pub fn run() {
             secrets::secret_present,
             secrets::secret_set,
             secrets::secret_delete,
+            model::gemini_model_list,
             model::model_list,
             model::model_stream,
             kb::kb_init,

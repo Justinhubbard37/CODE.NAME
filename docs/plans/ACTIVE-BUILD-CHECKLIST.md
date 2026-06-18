@@ -1,5 +1,79 @@
 ## Active Product Milestone
 
+# Phase 3A — Canonical Runtime Control and Provider Truthfulness
+
+Goal: replace overlapping provider, model, credential, endpoint, and runtime
+settings with one canonical Runtime Profile path and honest provider status.
+
+Status: IMPLEMENTED — PENDING OWNER REVIEW
+
+Definition of done:
+
+- [x] expose one rightmost provider selector for normal chat providers only
+- [x] expose one adjacent provider-scoped model selector
+- [x] keep Runtime Profile as the sole persisted provider/model selection source
+- [x] unify Ollama as one user-facing provider
+- [x] classify Ollama `:cloud` and `-cloud` models as cloud execution through
+  the configured local Ollama daemon
+- [x] use provider-specific model discovery for Ollama, LM Studio, Gemini, and
+  custom OpenAI-compatible providers
+- [x] add real Gemini discovery and streamed generation through Rust/Tauri
+- [x] keep Gemini API keys in secure desktop secret storage only
+- [x] make the Parameter Tray tuning-only with a read-only active-runtime summary
+- [x] make Parameter Tray temperature/context changes temporary per-chat runtime
+  overrides
+- [x] keep persistent Runtime Profile defaults editable only in Provider Manager
+- [x] snapshot runtime for each request so provider/model switches affect future
+  messages only
+- [x] store safe per-message provider/model provenance
+- [x] render structured provider failures instead of synthetic assistant replies
+- [x] keep Agent Sidecar out of normal provider/model selectors
+- [x] add Set Up Agent Sidecar and Provider Manager access paths
+- [x] add config schema version 2 migration and one-time localStorage backup
+- [x] avoid automatic model pulls, downloads, preloads, polling, or cloud
+  inference during discovery
+- [x] preserve KB retrieval, graph behavior, attachment behavior, and brand
+  palette
+- [ ] owner manual verification accepted
+
+Target commit:
+
+`feat: consolidate runtime provider and model control`
+
+Implementation notes:
+
+- Runtime Profile fields are `id`, `label`, `providerId`, `modelId`,
+  `defaultTemperature`, and `defaultContextWindow`.
+- Provider connections store provider metadata and structured model inventory;
+  they do not own the active selected model.
+- Config migration writes `schemaVersion: 2` and creates one backup at
+  `codename:config:v1:pre-runtime-consolidation-backup` before overwriting a
+  legacy saved config.
+- Legacy `ollama-local` and `ollama-cloud` providers migrate to one `ollama`
+  provider. Legacy `lmstudio-local` migrates to `lmstudio`; `gemini-cloud`
+  migrates to `gemini`; custom OpenAI-compatible providers are preserved.
+- Agent Sidecar legacy selections migrate to no normal provider/model selected,
+  preserving the need for an explicit user selection.
+- Gemini HTTPS support uses the existing `reqwest` dependency with
+  `rustls-tls-native-roots`; no separate TLS crate or alternate HTTP client was
+  added directly.
+
+Explicitly not changed in Phase 3A:
+
+- brand colors or theme values
+- graph layout or graph rendering
+- KB retrieval logic
+- semantic indexing logic
+- SQLite KB schema
+- attachment behavior
+- runtime-gate policy semantics
+- model auto-pull or auto-download behavior
+- known untracked owner artifacts
+
+---
+
+## Prior Owner Review Milestone
+
 # Phase 2J - Typographic Readability Calibration
 
 Goal: improve readability through typography scale, font weight, line-height,
@@ -256,7 +330,7 @@ Status: ACCEPTED AFTER CORRECTION
 - [ ] app retrieves relevant chunks
 - [ ] model receives retrieved context
 - [ ] answer shows source snippets
-- [ ] works with local model route or synthetic fallback
+- [ ] works with a selected provider/model route and structured provider failures
 
 ### Milestone 8 - Real GraphRAG / Graph Traversal
 

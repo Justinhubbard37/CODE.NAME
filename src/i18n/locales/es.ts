@@ -24,7 +24,7 @@ export const es: Partial<Messages> = {
   // Settings screen
   'settings.title': 'Ajustes',
   'settings.subtitle': 'Un único lugar para modelos, secretos, permisos y espacio de trabajo.',
-  'settings.section.models': 'Modelos y enrutamiento',
+  'settings.section.models': 'Administrador de proveedores',
   'settings.section.secrets': 'Secretos',
   'settings.section.gates': 'Permisos de capacidad',
   'settings.section.tuning': 'Ajuste fino',
@@ -33,7 +33,7 @@ export const es: Partial<Messages> = {
   'settings.section.about': 'Acerca de',
 
   'settings.models.preset': 'Preajuste',
-  'settings.models.endpoint': 'Endpoint enrutado',
+  'settings.models.endpoint': 'Proveedor',
   'settings.models.model': 'Modelo',
   'settings.models.noModels': 'No se detectaron modelos instalados. Inicia el servidor de modelos y vuelve a sondear desde la píldora de estado.',
 

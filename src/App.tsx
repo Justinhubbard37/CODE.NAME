@@ -9,7 +9,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Settings as SettingsIcon } from 'lucide-react';
-import { AppStateProvider, useApp } from './state/AppState';
+import { AppStateProvider } from './state/AppState';
 import { ResizableSplit } from './components/layout/ResizableSplit';
 import { MissionControl } from './components/left/MissionControl';
 import { ExecutionCanvas } from './components/right/ExecutionCanvas';
@@ -21,7 +21,6 @@ import { SignInScreen } from './auth/SignInScreen';
 import { LanguageProvider, useT } from './i18n';
 
 function Shell() {
-  const { refreshEndpoints } = useApp();
   const t = useT();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -43,10 +42,11 @@ function Shell() {
     setOnboarded(true);
   };
 
-  // Probe the endpoint matrix once on boot.
   useEffect(() => {
-    refreshEndpoints();
-  }, [refreshEndpoints]);
+    const open = () => setSettingsOpen(true);
+    window.addEventListener('codename:open-settings', open);
+    return () => window.removeEventListener('codename:open-settings', open);
+  }, []);
 
   // Global keyboard shortcuts (Slice 10.2). Mod = Ctrl (Win/Linux) or Cmd (mac).
   //   Mod+,  → open Settings

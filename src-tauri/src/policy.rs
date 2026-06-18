@@ -463,6 +463,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "gemini_model_list",
+        required_gates: MODEL_NETWORK_CONDITIONAL,
+        risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),
+        rationale: "Lists Gemini models through Rust/Tauri using keychain-only API key access.",
+        priority: PolicyPriority::Critical,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "model_stream",
         required_gates: MODEL_NETWORK_CONDITIONAL,
         risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),

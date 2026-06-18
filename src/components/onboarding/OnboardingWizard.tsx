@@ -21,15 +21,11 @@ import {
   ChevronLeft, ChevronRight, Check, X, Loader2, RefreshCw, CircleAlert,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState';
-import { setSecret } from '../../lib/secrets';
-import { reachesNetwork } from '../../lib/llm';
 import { runSelfCheck, type CheckResult } from '../../lib/selfcheck';
 import { useFocusTrap } from '../../lib/a11y';
 
 type StepId = 'welcome' | 'model' | 'access' | 'gates' | 'check' | 'done';
 const STEPS: StepId[] = ['welcome', 'model', 'access', 'gates', 'check', 'done'];
-
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
 const GATE_COPY: { key: 'filesystem' | 'network' | 'tools'; label: string; help: string }[] = [
   { key: 'filesystem', label: 'Filesystem', help: 'Allow gated ingestion and writes to the local knowledge graph.' },
@@ -39,8 +35,6 @@ const GATE_COPY: { key: 'filesystem' | 'network' | 'tools'; label: string; help:
 
 export function OnboardingWizard({ onClose }: { onClose: () => void }) {
   const {
-    endpoints, profiles, activeProfile, updateProfile,
-    activeEndpoint, setEndpointModel, refreshEndpoints,
     gates, toggleGate,
   } = useApp();
 
@@ -51,17 +45,6 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
   useFocusTrap(dialogRef, onClose);
 
   const go = (delta: number) => setStepIdx((i) => Math.min(STEPS.length - 1, Math.max(0, i + delta)));
-
-  /* ---- access / key step ---- */
-  const [keyValue, setKeyValue] = useState('');
-  const [keySaved, setKeySaved] = useState(false);
-  const saveKey = useCallback(async () => {
-    const env = activeEndpoint.apiKeyEnv;
-    if (!env || !keyValue.trim()) return;
-    const ok = await setSecret(env, keyValue.trim());
-    setKeySaved(ok);
-    if (ok) setKeyValue('');
-  }, [activeEndpoint.apiKeyEnv, keyValue]);
 
   /* ---- self-check step ---- */
   const [checks, setChecks] = useState<CheckResult[] | null>(null);
@@ -79,16 +62,9 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
     if (step === 'check' && checks === null && !checking) void runChecks();
   }, [step, checks, checking, runChecks]);
 
-  /* ---- model probing ---- */
-  const [probing, setProbing] = useState(false);
-  const probe = useCallback(async () => {
-    setProbing(true);
-    try {
-      await refreshEndpoints();
-    } finally {
-      setProbing(false);
-    }
-  }, [refreshEndpoints]);
+  const configureProvider = () => {
+    window.dispatchEvent(new CustomEvent('codename:open-settings'));
+  };
 
   const stepMeta: Record<StepId, { icon: typeof Rocket; title: string }> = {
     welcome: { icon: Rocket, title: 'Welcome' },
@@ -162,107 +138,29 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
 
           {step === 'model' && (
             <div className="space-y-3">
-              <label className="block">
-                <span className="type-label uppercase tracking-wider text-neutral-400">Endpoint</span>
-                <select
-                  value={activeProfile.endpointId}
-                  onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
-                  className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600"
-                >
-                  {endpoints.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.label} {reachesNetwork(e) ? '· cloud-capable' : '· local'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="type-label uppercase tracking-wider text-neutral-400">Model</span>
-                {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
-                  <select
-                    value={activeEndpoint.model}
-                    onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
-                    className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600"
-                  >
-                    {activeEndpoint.models.map((m) => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                ) : (
-                  <input
-                    value={activeEndpoint.model}
-                    onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
-                    placeholder="model name (e.g. llama3.1)"
-                    className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-400"
-                  />
-                )}
-              </label>
-
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <span className="type-meta text-neutral-400">
-                  Status: <span className={activeEndpoint.status === 'ready' ? 'text-emerald-400' : 'text-neutral-400'}>{activeEndpoint.status}</span>
-                  {activeEndpoint.detail ? ` · ${activeEndpoint.detail}` : ''}
-                </span>
-                <button
-                  onClick={probe}
-                  disabled={probing}
-                  className="flex items-center gap-1 type-control border border-neutral-700 hover:border-neutral-500 text-neutral-300 px-2 py-1 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-                >
-                  {probing ? <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3 h-3" aria-hidden="true" />}
-                  Detect installed models
-                </button>
-              </div>
-              <p className="type-meta text-neutral-400">
-                Tip: install <span className="text-neutral-400">Ollama</span> and pull a model (e.g. <span className="text-neutral-400">ollama pull llama3.1</span>) for a fully local, offline assistant.
+              <p className="text-neutral-400">
+                Configure provider connections, credentials, and model inventory in Provider Manager.
               </p>
+              <button
+                onClick={configureProvider}
+                className="type-control border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              >
+                Configure Provider
+              </button>
             </div>
           )}
 
           {step === 'access' && (
             <div className="space-y-3">
-              {activeEndpoint.apiKeyEnv ? (
-                <>
-                  <p className="text-neutral-400">
-                    <span className="text-neutral-200">{activeEndpoint.label}</span> is a cloud endpoint. Add its API key
-                    {activeEndpoint.apiKeyEnv === 'OLLAMA_API_KEY' ? ' (from your ollama.com account)' : ''} to use it.
-                    Keys are stored in your OS keychain — never in plain text.
-                  </p>
-                  {isTauri ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="password"
-                        value={keyValue}
-                        onChange={(e) => { setKeyValue(e.target.value); setKeySaved(false); }}
-                        placeholder={activeEndpoint.apiKeyEnv}
-                        className="flex-1 bg-neutral-900 border border-neutral-800 text-neutral-200 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-400"
-                      />
-                      <button
-                        onClick={saveKey}
-                        disabled={!keyValue.trim()}
-                        className="type-control border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 px-3 py-1.5 rounded disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-                      >
-                        Save key
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="type-meta text-neutral-400 border border-neutral-800 p-2">
-                      Keychain storage is available in the desktop app. In the browser preview you can skip this.
-                    </p>
-                  )}
-                  {keySaved && (
-                    <p className="type-meta text-emerald-400 flex items-center gap-1">
-                      <Check className="w-3 h-3" aria-hidden="true" /> Saved to keychain.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <div className="flex items-start gap-2 text-neutral-400">
-                  <Check className="w-4 h-4 text-emerald-500/80 mt-0.5 shrink-0" aria-hidden="true" />
-                  <p>
-                    <span className="text-neutral-200">{activeEndpoint.label}</span> runs locally — no key needed.
-                    You’re fully offline. You can always add cloud endpoints later in Settings.
-                  </p>
-                </div>
-              )}
+              <p className="text-neutral-400">
+                API keys and provider health checks are handled in Provider Manager. Keys are stored in the desktop OS keychain and are never written to app config.
+              </p>
+              <button
+                onClick={configureProvider}
+                className="type-control border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 px-3 py-1.5 rounded focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              >
+                Configure Provider
+              </button>
             </div>
           )}
 

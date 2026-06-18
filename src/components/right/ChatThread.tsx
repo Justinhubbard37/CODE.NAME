@@ -59,6 +59,27 @@ function ToolBubble({ m }: { m: ChatMessage }) {
 function Bubble({ m }: { m: ChatMessage }) {
   if (m.role === 'tool') return <ToolBubble m={m} />;
 
+  if (m.failure) {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[85%] px-3 py-2 type-body border border-red-500/40 bg-red-500/10 text-red-100 font-mono">
+          <div className="type-meta text-red-300 uppercase tracking-widest mb-1">
+            provider failure
+          </div>
+          <div className="text-neutral-200">
+            {m.runtime?.providerLabel ?? m.failure.providerId} · {m.runtime?.modelLabel ?? m.failure.modelId}
+          </div>
+          <div className="mt-1 text-red-200">{m.failure.safeMessage}</div>
+          <div className="mt-1 type-meta text-neutral-400">
+            {m.failure.retryable ? 'Retryable' : 'Not retryable'}
+            {m.failure.httpStatus ? ` · HTTP ${m.failure.httpStatus}` : ''}
+            {m.failure.nextStep ? ` · ${m.failure.nextStep}` : ''}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (m.role === 'system') {
     return (
       <div className="type-meta font-mono text-neutral-400 italic border-l-2 border-neutral-800 pl-2 py-1">
@@ -82,6 +103,11 @@ function Bubble({ m }: { m: ChatMessage }) {
           </div>
         )}
         {m.content}
+        {!user && m.runtime && (
+          <div className="mt-2 pt-1 border-t border-neutral-800 type-meta text-neutral-400">
+            {m.runtime.providerLabel} · {m.runtime.modelLabel} · {m.runtime.executionClass}
+          </div>
+        )}
         {m.streaming && (
           <span className="inline-block w-1.5 h-3 ml-0.5 bg-emerald-400 animate-pulse align-middle" />
         )}

@@ -3,11 +3,8 @@ import { useApp } from '../../state/AppState';
 import { StatusModule } from './StatusModule';
 
 export function AgentHeader() {
-  const { activeTask, showActivity, setShowActivity, activeEndpoint, runningModel } = useApp();
+  const { activeTask, showActivity, setShowActivity } = useApp();
   const activityCount = activeTask.activity.length;
-  // The model actually running this chat: what the server last confirmed, or the
-  // chosen model before the first reply.
-  const model = runningModel || activeEndpoint.model;
 
   return (
     <div className="flex items-center justify-between gap-2 px-3 h-10 bg-neutral-950 border-b border-neutral-800 shrink-0">
@@ -18,12 +15,6 @@ export function AgentHeader() {
         </span>
         <span className="type-meta text-neutral-400 font-mono uppercase truncate">
           {activeTask.name}
-        </span>
-        <span
-          className="type-meta font-mono text-sky-400/80 border border-neutral-800 px-1 py-0.5 rounded truncate max-w-[180px]"
-          title="Model actually running this chat (server-verified)"
-        >
-          {model}
         </span>
         <button
           onClick={() => setShowActivity(!showActivity)}

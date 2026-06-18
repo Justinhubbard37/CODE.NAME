@@ -6,11 +6,10 @@ import {
 } from '../../lib/backup';
 import { ModelTuningControls } from './ModelTuningControls';
 import { SecurityGates } from './SecurityGates';
-import { SecretsPanel } from './SecretsPanel';
 import { useApp } from '../../state/AppState';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageWorkspaces, canConfigureSiem } from '../../auth/roles';
-import { reachesNetwork } from '../../lib/llm';
+import { executionClassLabel, modelAvailabilityLabel } from '../../lib/llm';
 import {
   loadWorkspaces, getActiveWorkspace, createWorkspace, switchWorkspace, deleteWorkspace,
   type Workspace,
@@ -33,9 +32,8 @@ export function StealthDrawer() {
     updateProfile,
     addProfile,
     deleteProfile,
-    endpoints,
-    activeEndpoint,
-    setEndpointModel,
+    activeModel,
+    activeRuntimeLabel,
   } = useApp();
 
   const trayRef = useRef<HTMLDivElement>(null);
@@ -203,65 +201,29 @@ export function StealthDrawer() {
                       : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'
                   }`}
                 >
-                  {p.name}
+                  {p.label}
                 </button>
               ))}
             </div>
             <input
-              value={activeProfile.name}
-              onChange={(e) => updateProfile(activeProfile.id, { name: e.target.value })}
+              value={activeProfile.label}
+              onChange={(e) => updateProfile(activeProfile.id, { label: e.target.value })}
               placeholder="preset name"
               className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
             />
           </div>
 
-          {/* Endpoint binding for the active preset */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 border border-neutral-800 bg-neutral-950 p-2">
             <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
-              Routed Endpoint
+              Active Runtime
             </div>
-            <select
-              value={activeProfile.endpointId}
-              onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
-              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
-            >
-              {endpoints.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.label} {reachesNetwork(e) ? '· cloud-capable' : '· local'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Model picker for the routed endpoint */}
-          <div className="space-y-1.5">
-            <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
-              Model
+            <div className="type-body font-mono text-neutral-200 truncate">{activeRuntimeLabel}</div>
+            <div className="type-meta font-mono text-neutral-400">
+              {activeModel
+                ? `${executionClassLabel(activeModel.executionClass)} / ${modelAvailabilityLabel(activeModel.availability)}`
+                : 'Unavailable'}
             </div>
-            {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
-              <select
-                value={activeEndpoint.model}
-                onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
-                className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 type-control font-mono p-1.5 outline-none focus:border-neutral-600"
-              >
-                {activeEndpoint.models.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="type-label font-mono text-neutral-400 border border-neutral-800 p-1.5 leading-relaxed">
-                {activeEndpoint.model}
-                <br />
-                no installed models detected — start the model server, then press the ⟳ button on
-                the status pill (top-right) to probe.
-              </div>
-            )}
           </div>
-
-          {/* API keys in the OS keychain */}
-          <SecretsPanel />
 
           {/* Hardware sliders (temperature + context window) */}
           <ModelTuningControls />

@@ -29,19 +29,19 @@ import type {
   ConfigProfile,
   Endpoint,
   EffectiveGateState,
+  ModelInventoryEntry,
   NodeData,
+  ProviderConnection,
+  ProviderFailure,
+  RuntimeProvenance,
+  RuntimeRequestSnapshot,
   QuarantineItem,
   SecurityGates,
   TabCaps,
   WorkTask,
 } from '../types';
 import { initialNodes, initialEdges } from '../store';
-import {
-  defaultEndpoints,
-  defaultGates,
-  defaultProfiles,
-  initialTask,
-} from '../config/defaults';
+import { initialTask } from '../config/defaults';
 import {
   loadEndpoints,
   loadProfiles,
@@ -50,7 +50,18 @@ import {
   saveConfig,
 } from '../config/persist';
 import { hashFile } from '../lib/hash';
-import { pingEndpoint, streamChat, listModels, reachesNetwork, type ChatTurn } from '../lib/llm';
+import {
+  canSendWithRuntime,
+  classifyProviderFailure,
+  discoverProviderModels,
+  executionClassForModel,
+  executionClassLabel,
+  modelEntryForSelection,
+  providerStatusLabel,
+  reachesNetwork,
+  streamChat,
+  type ChatTurn,
+} from '../lib/llm';
 import {
   RETRIEVAL_CHAT_RESULT_LIMIT,
   RETRIEVAL_RESULT_LIMIT,
@@ -96,8 +107,8 @@ import {
 } from '../kg/kbProjection';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
 import { retriever } from '../kg/retrieve';
-import { getSidecarInfo, streamFromSidecar, cancelSidecar, sidecarToolResult, sidecarCommunities, sidecarBrowserOpen, sidecarPoolCreate, sidecarPoolRelease } from '../lib/sidecar';
-import { installWebMcp, setToolGuard, setToolLogger, registerTool, executeTool } from '../lib/webmcp';
+import { cancelSidecar, sidecarCommunities, sidecarBrowserOpen, sidecarPoolCreate, sidecarPoolRelease } from '../lib/sidecar';
+import { installWebMcp, setToolGuard, setToolLogger, registerTool } from '../lib/webmcp';
 import { setAgentUI } from '../components/right/a2ui/bus';
 import type { A2UIPayload } from '../components/right/a2ui/types';
 import { effectiveGates } from '../lib/perms';
@@ -119,6 +130,19 @@ const NODE_STYLE: CSSProperties = {
   fontSize: '10px',
   padding: '8px',
   boxShadow: '0 0 10px rgba(0,0,0,0.5)',
+};
+
+const NO_ACTIVE_PROVIDER: ProviderConnection = {
+  id: '',
+  label: 'Select provider',
+  providerKind: 'custom',
+  baseUrl: '',
+  requiresNetwork: false,
+  requiresSecret: false,
+  secretRequirement: 'none',
+  status: 'unknown',
+  detail: 'No normal chat provider selected.',
+  models: [],
 };
 
 interface AppStateValue {
@@ -173,22 +197,32 @@ interface AppStateValue {
   abort: () => void;
   showActivity: boolean;
   setShowActivity: (v: boolean) => void;
-  /** model the server last confirmed it actually ran (empty until first reply) */
-  runningModel: string;
 
   /* endpoints / profiles / gates */
-  endpoints: Endpoint[];
+  endpoints: ProviderConnection[];
   profiles: ConfigProfile[];
   activeProfileId: string;
   setActiveProfileId: (id: string) => void;
   activeProfile: ConfigProfile;
-  activeEndpoint: Endpoint;
+  activeEndpoint: ProviderConnection;
+  activeModel: ModelInventoryEntry | undefined;
+  activeRuntimeLabel: string;
+  effectiveTemperature: number;
+  effectiveContextWindow: number;
+  canSend: boolean;
+  cannotSendReason: string;
   updateProfile: (id: string, patch: Partial<ConfigProfile>) => void;
+  setActiveProvider: (providerId: string) => Promise<void>;
+  setActiveModel: (modelId: string) => void;
   setEndpointModel: (endpointId: string, model: string) => void;
   updateEndpoint: (id: string, patch: Partial<Endpoint>) => void;
+  updateProviderConnection: (id: string, patch: Partial<ProviderConnection>) => void;
+  setRuntimeOverride: (patch: { temperature?: number; contextWindow?: number }) => void;
+  clearRuntimeOverrides: () => void;
   addProfile: () => void;
   deleteProfile: (id: string) => void;
-  refreshEndpoints: () => void;
+  refreshEndpoints: () => Promise<void>;
+  refreshProviderModels: (providerId: string) => Promise<void>;
   gates: SecurityGates;
   toggleGate: (k: keyof SecurityGates) => void;
   adminPolicy: AdminPolicy;
@@ -610,6 +644,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setTasks((ts) => ts.map((t) => (t.id === id ? fn(t) : t)));
   }, []);
 
+  const pushActivity = useCallback(
+    (taskId: string, kind: ActivityKind, text: string) => {
+      patchTask(taskId, (t) => ({
+        ...t,
+        activity: [
+          ...t.activity,
+          { id: uuidv4().slice(0, 8), ts: Date.now(), kind, text },
+        ].slice(-60),
+      }));
+    },
+    [patchTask],
+  );
+
   const addTask = useCallback((kind: WorkTask['kind']) => {
     const id = `task-${uuidv4().slice(0, 6)}`;
     const names: Record<WorkTask['kind'], string> = {
@@ -661,8 +708,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [activeTaskId],
   );
 
-  /* ---- endpoints / profiles / gates (persisted) ---- */
-  const [endpoints, setEndpoints] = useState<Endpoint[]>(() => loadEndpoints());
+  /* ---- provider connections / Runtime Profiles / gates (persisted) ---- */
+  const [endpoints, setEndpoints] = useState<ProviderConnection[]>(() => loadEndpoints());
   const endpointsRef = useRef(endpoints);
   endpointsRef.current = endpoints;
   const [profiles, setProfiles] = useState<ConfigProfile[]>(() => loadProfiles());
@@ -674,9 +721,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   gatesRef.current = applyPolicy(adminPolicy, gates);
   const [siemConfig, setSiemConfigState] = useState<SiemConfig | null>(() => loadSiemConfig());
 
-  // Save config (endpoints, presets, active preset, gates) whenever it changes.
+  // Save config (providers, Runtime Profiles, active profile, gates) whenever it changes.
   useEffect(() => {
-    saveConfig({ endpoints, profiles, activeProfileId, gates });
+    saveConfig({ providerConnections: endpoints, runtimeProfiles: profiles, activeProfileId, gates });
   }, [endpoints, profiles, activeProfileId, gates]);
 
   // Mirror the gate state into the Rust shell so it enforces the gates at the
@@ -721,27 +768,71 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [profiles, activeProfileId],
   );
   const activeEndpoint = useMemo(
-    () => endpoints.find((e) => e.id === activeProfile.endpointId) ?? endpoints[0],
-    [endpoints, activeProfile],
+    () => endpoints.find((e) => e.id === activeProfile.providerId) ?? NO_ACTIVE_PROVIDER,
+    [endpoints, activeProfile.providerId],
   );
+  const activeModel = useMemo(
+    () => modelEntryForSelection(activeEndpoint, activeProfile.modelId),
+    [activeEndpoint, activeProfile.modelId],
+  );
+  const effectiveTemperature =
+    activeTask.runtimeOverrides?.temperature ?? activeProfile.defaultTemperature;
+  const effectiveContextWindow =
+    activeTask.runtimeOverrides?.contextWindow ?? activeProfile.defaultContextWindow;
+  const canSendState = canSendWithRuntime(activeEndpoint, activeModel);
+  const activeRuntimeLabel = activeModel
+    ? `${activeEndpoint.label} · ${activeModel.displayName}`
+    : `${activeEndpoint.label} · No model`;
 
   const updateProfile = useCallback((id: string, patch: Partial<ConfigProfile>) => {
     setProfiles((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }, []);
 
   const setEndpointModel = useCallback((endpointId: string, model: string) => {
-    setEndpoints((eps) => eps.map((e) => (e.id === endpointId ? { ...e, model } : e)));
-  }, []);
+    setProfiles((ps) =>
+      ps.map((profile) =>
+        profile.id === activeProfileId && profile.providerId === endpointId
+          ? { ...profile, modelId: model }
+          : profile,
+      ),
+    );
+  }, [activeProfileId]);
+
+  const setActiveModel = useCallback((modelId: string) => {
+    setProfiles((ps) =>
+      ps.map((profile) =>
+        profile.id === activeProfileId ? { ...profile, modelId } : profile,
+      ),
+    );
+  }, [activeProfileId]);
 
   const updateEndpoint = useCallback((id: string, patch: Partial<Endpoint>) => {
     setEndpoints((eps) => eps.map((e) => (e.id === id ? { ...e, ...patch } : e)));
   }, []);
+  const updateProviderConnection = updateEndpoint;
+
+  const setRuntimeOverride = useCallback((patch: { temperature?: number; contextWindow?: number }) => {
+    patchTask(activeTaskIdRef.current, (task) => ({
+      ...task,
+      runtimeOverrides: {
+        ...(task.runtimeOverrides ?? {}),
+        ...patch,
+      },
+    }));
+  }, [patchTask]);
+
+  const clearRuntimeOverrides = useCallback(() => {
+    patchTask(activeTaskIdRef.current, (task) => ({
+      ...task,
+      runtimeOverrides: undefined,
+    }));
+  }, [patchTask]);
 
   const addProfile = useCallback(() => {
     const id = `profile-${uuidv4().slice(0, 6)}`;
     setProfiles((ps) => {
       const base = ps.find((p) => p.id === activeProfileId) ?? ps[0];
-      return [...ps, { ...base, id, name: 'NEW PRESET' }];
+      return [...ps, { ...base, id, label: 'NEW PRESET' }];
     });
     setActiveProfileId(id);
   }, [activeProfileId]);
@@ -780,85 +871,52 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
   }, [currentUser]);
 
-  const refreshEndpoints = useCallback(async () => {
-    setEndpoints((eps) => eps.map((e) => ({ ...e, status: 'configuring' as const })));
-    type Probe = {
-      id: string;
-      status: Endpoint['status'];
-      detail: string;
-      models?: string[];
-      model?: string;
-    };
-    const results: Probe[] = await Promise.all(
-      endpointsRef.current.map(async (e): Promise<Probe> => {
-        if (e.kind === 'a2a') {
-          const info = await getSidecarInfo();
-          const ready = !!info && info.status === 'ready';
-          return {
-            id: e.id,
-            status: ready ? 'ready' : 'offline',
-            detail: info?.status ?? 'sidecar (desktop only)',
-          };
-        }
-        if (!gates.network && reachesNetwork(e)) {
-          return { id: e.id, status: 'offline', detail: 'network gate closed' };
-        }
-        const r = await pingEndpoint(e);
-        if (!r.ok) return { id: e.id, status: 'error', detail: r.detail };
-        // Reachable — find out which models are actually installed and make sure
-        // the selected one exists. A missing model is the #1 cause of "READY but
-        // it won't answer" (the probe hits /api/tags, which is fine even when the
-        // configured model isn't downloaded).
-        const list = await listModels(e);
-        let model: string | undefined;
-        let detail = r.detail;
-        if (list.length) {
-          const current = e.model;
-          model = list.includes(current) ? current : list[0];
-          detail = `${list.length} model(s)`;
-        }
-        return {
-          id: e.id,
-          status: 'ready',
-          detail,
-          models: list.length ? list : undefined,
-          model,
-        };
-      }),
-    );
+  const refreshProviderModels = useCallback(async (providerId: string) => {
+    const provider = endpointsRef.current.find((e) => e.id === providerId);
+    if (!provider) return;
     setEndpoints((eps) =>
-      eps.map((e) => {
-        const r = results.find((x) => x.id === e.id);
-        if (!r) return e;
-        return {
-          ...e,
-          status: r.status,
-          detail: r.detail,
-          ...(r.models ? { models: r.models } : {}),
-          ...(r.model ? { model: r.model } : {}),
-        };
-      }),
+      eps.map((e) => (e.id === providerId ? { ...e, status: 'configuring', detail: 'Refreshing model inventory.' } : e)),
     );
-  }, [gates.network]);
+    const result = await discoverProviderModels(provider, gatesRef.current.network);
+    setEndpoints((eps) =>
+      eps.map((e) =>
+        e.id === providerId
+          ? {
+              ...e,
+              status: result.status,
+              detail: result.detail,
+              models: result.models,
+              lastFailure: result.lastFailure,
+            }
+          : e,
+      ),
+    );
+    pushActivity(
+      activeTaskIdRef.current,
+      result.lastFailure ? 'system' : 'network',
+      result.lastFailure
+        ? `${provider.label}: ${result.lastFailure.safeMessage}`
+        : `${provider.label}: ${result.detail ?? providerStatusLabel(result.status)}`,
+    );
+  }, [pushActivity]);
+
+  const refreshEndpoints = useCallback(async () => {
+    await Promise.all(endpointsRef.current.map((provider) => refreshProviderModels(provider.id)));
+  }, [refreshProviderModels]);
+
+  const setActiveProvider = useCallback(async (providerId: string) => {
+    setProfiles((ps) =>
+      ps.map((profile) =>
+        profile.id === activeProfileId ? { ...profile, providerId } : profile,
+      ),
+    );
+    await refreshProviderModels(providerId);
+  }, [activeProfileId, refreshProviderModels]);
 
   /* ---- chat ---- */
   const [sending, setSending] = useState(false);
   const [showActivity, setShowActivity] = useState(true);
-  const [runningModel, setRunningModel] = useState('');
   const abortRef = useRef<AbortController | null>(null);
-
-  const pushActivity = useCallback(
-    (taskId: string, kind: ActivityKind, text: string) => {
-      patchTask(taskId, (t) => ({
-        ...t,
-        activity: [
-          ...t.activity,
-          { id: uuidv4().slice(0, 8), ts: Date.now(), kind, text },
-        ].slice(-60),
-      }));
-    },
-    [patchTask],
-  );
 
   const buildSemanticIndex = useCallback(async () => {
     if (semanticIndexing) return;
@@ -1116,13 +1174,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const trimmed = text.trim();
       if (!trimmed || sending) return;
       const taskId = activeTaskId;
-      const ep = activeEndpoint;
+      const provider = activeEndpoint;
+      const model = activeModel;
+      const sendable = canSendWithRuntime(provider, model);
+      const requestStartedAt = Date.now();
+      const executionClass = model?.executionClass ?? executionClassForModel(provider, activeProfile.modelId);
+      const modelId = model?.id ?? activeProfile.modelId;
+      const modelLabel = model?.displayName ?? modelId;
+      const temperature =
+        model?.maxTemperature !== undefined
+          ? Math.min(effectiveTemperature, model.maxTemperature)
+          : effectiveTemperature;
+      const runtime: RuntimeProvenance = {
+        providerId: provider.id,
+        providerLabel: provider.label,
+        modelId,
+        modelLabel,
+        executionClass,
+        requestStartedAt,
+        outcome: 'success',
+      };
+      const snapshot: RuntimeRequestSnapshot = {
+        ...runtime,
+        providerBaseUrl: provider.baseUrl,
+        providerKind: provider.providerKind,
+        temperature,
+        contextWindow: effectiveContextWindow,
+      };
 
       const userMsg: ChatMessage = {
         id: uuidv4().slice(0, 8),
         role: 'user',
         content: trimmed,
         ts: Date.now(),
+        runtime,
       };
       const asstId = uuidv4().slice(0, 8);
       const asstMsg: ChatMessage = {
@@ -1131,11 +1216,49 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         content: '',
         ts: Date.now(),
         streaming: true,
+        runtime,
       };
 
       patchTask(taskId, (t) => ({ ...t, messages: [...t.messages, userMsg, asstMsg] }));
       setSending(true);
-      pushActivity(taskId, 'query', `routing to ${ep.label} (${ep.kind})`);
+      pushActivity(taskId, 'query', `runtime ${provider.label} · ${modelLabel} · ${executionClassLabel(executionClass)}`);
+
+      const completeRuntime = (outcome: RuntimeProvenance['outcome']): RuntimeProvenance => ({
+        ...runtime,
+        requestCompletedAt: Date.now(),
+        outcome,
+      });
+
+      const finishWithFailure = (failure: ProviderFailure) => {
+        const completed = completeRuntime('error');
+        patchTask(taskId, (t) => ({
+          ...t,
+          messages: t.messages.map((m) =>
+            m.id === asstId || m.id === userMsg.id
+              ? {
+                  ...m,
+                  streaming: false,
+                  runtime: completed,
+                  failure: m.id === asstId ? failure : m.failure,
+                  content: m.id === asstId ? failure.safeMessage : m.content,
+                }
+              : m,
+          ),
+        }));
+        pushActivity(
+          taskId,
+          'system',
+          `${provider.label} · ${modelLabel}: ${failure.category} · ${failure.safeMessage}`,
+        );
+      };
+
+      if (!sendable.ok) {
+        const failure = classifyProviderFailure(new Error(sendable.reason), provider, modelId, executionClass);
+        finishWithFailure(failure);
+        setSending(false);
+        abortRef.current = null;
+        return;
+      }
 
       const retrievalForMessage = retrievalEnabledForChat
         ? selectedRetrievalResults(kbSearchResults, retrievalSelectedChunkIds, RETRIEVAL_CHAT_RESULT_LIMIT)
@@ -1158,18 +1281,21 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
       const baseTask = tasks.find((t) => t.id === taskId);
       const turns: ChatTurn[] = (baseTask?.messages ?? [])
-        .filter((m) => m.role !== 'system' && m.role !== 'tool')
+        .filter((m) => {
+          if (m.role !== 'user' && m.role !== 'assistant') return false;
+          if (m.failure) return false;
+          if (m.runtime?.outcome === 'error' || m.runtime?.outcome === 'cancelled') return false;
+          if (!m.content.trim()) return false;
+          return true;
+        })
         .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
       turns.push({ role: 'user', content: promptText });
-      // Tell the model its TRUE identity — the exact model we route to, which the
-      // app also verifies the server actually ran. Accurate self-knowledge, not a
-      // hardcoded guess. (Some local models otherwise parrot Qwen/NVIDIA/etc.)
       const systemTurns: ChatTurn[] = [{
         role: 'system',
         content:
-          `You are "${ep.model}", a large language model running locally through the ` +
+          `You are "${modelLabel}", a model reached through ${provider.label} in the ` +
           `CODE NAME desktop app. If asked what model or AI you are, identify yourself as ` +
-          `"${ep.model}". Do not claim to be a different model, company, or product.`,
+          `"${modelLabel}". Do not claim to be a different model, company, or product.`,
       }];
       if (hasAttachedRetrieval) {
         systemTurns.push({
@@ -1183,134 +1309,27 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const ctl = new AbortController();
       abortRef.current = ctl;
 
-      if (!gates.network && reachesNetwork(ep)) {
-        patchTask(taskId, (t) => ({
-          ...t,
-          messages: t.messages.map((m) =>
-            m.id === asstId
-              ? {
-                  ...m,
-                  streaming: false,
-                  content:
-                    '[BLOCKED] Network gate is closed. Outbound cloud routing is severed at the bridge. Re-open the Network gate in the stealth drawer or switch to a local endpoint.',
-                }
-              : m,
-          ),
-        }));
-        pushActivity(taskId, 'system', 'network gate closed — cloud route severed');
+      if (!gates.network && reachesNetwork(provider, modelId)) {
+        const failure = classifyProviderFailure(new Error('permission denied: network gate closed'), provider, modelId, executionClass);
+        finishWithFailure({
+          ...failure,
+          category: 'permission_denied',
+          safeMessage: 'Network gate is closed.',
+          retryable: false,
+          nextStep: 'Open the Network gate or choose a local model.',
+        });
         setSending(false);
         abortRef.current = null;
         return;
       }
 
-      // Route to the local agent sidecar over A2A when that endpoint is active.
-      if (ep.kind === 'a2a') {
-        if (!gates.tools) {
-          patchTask(taskId, (t) => ({
-            ...t,
-            messages: t.messages.map((m) =>
-              m.id === asstId
-                ? {
-                    ...m,
-                    streaming: false,
-                    content:
-                      '[BLOCKED] Tool-execution gate is closed. The agent sidecar bridge is severed. Re-open the Tools gate to route to the sidecar.',
-                  }
-                : m,
-            ),
-          }));
-          pushActivity(taskId, 'system', 'tools gate closed — sidecar bridge severed');
-          setSending(false);
-          abortRef.current = null;
-          return;
-        }
-        try {
-          const info = await getSidecarInfo();
-          if (!info || info.status !== 'ready') throw new Error('sidecar not ready');
-          pushActivity(taskId, 'network', `A2A → ${info.host}:${info.port} (token held in shell)`);
-          await streamFromSidecar(
-            promptText,
-            async (tok) => {
-              // Tool call event from sidecar (Slice 3.4): execute via WebMCP guard + audit,
-              // then post the result back so the ADK tool proxy can unblock.
-              if (tok.startsWith('{"__tool_call__":')) {
-                try {
-                  const tc = JSON.parse(tok) as {
-                    id: string;
-                    name: string;
-                    args: Record<string, unknown>;
-                  };
-                  // Push a tool bubble (in-flight — no result yet).
-                  const toolMsgId = `tool-${uuidv4().slice(0, 8)}`;
-                  const toolMsgContent = JSON.stringify({ name: tc.name, args: tc.args });
-                  patchTask(taskId, (t) => ({
-                    ...t,
-                    messages: [
-                      ...t.messages,
-                      { id: toolMsgId, role: 'tool' as const, content: toolMsgContent, ts: Date.now() },
-                    ],
-                  }));
-                  pushActivity(taskId, 'tool', `agent → ${tc.name}(${JSON.stringify(tc.args)})`);
-                  const result = await executeTool(tc.name, tc.args);
-                  const resultText = result.content.map((c) => c.text).join('');
-                  // Update tool bubble with result.
-                  patchTask(taskId, (t) => ({
-                    ...t,
-                    messages: t.messages.map((m) =>
-                      m.id === toolMsgId
-                        ? { ...m, content: JSON.stringify({ name: tc.name, args: tc.args, result: resultText }) }
-                        : m,
-                    ),
-                  }));
-                  await sidecarToolResult(tc.id, resultText);
-                } catch {
-                  /* ignore — tool proxy times out gracefully */
-                }
-                return;
-              }
-              // Normal text token — append to the assistant message.
-              patchTask(taskId, (t) => ({
-                ...t,
-                messages: t.messages.map((m) =>
-                  m.id === asstId ? { ...m, content: m.content + tok } : m,
-                ),
-              }));
-            },
-            { model: activeEndpoint.model, temperature: activeProfile.temperature },
-          );
-        } catch (err) {
-          patchTask(taskId, (t) => ({
-            ...t,
-            messages: t.messages.map((m) =>
-              m.id === asstId
-                ? {
-                    ...m,
-                    content:
-                      m.content ||
-                      `[SIDECAR OFFLINE] ${err instanceof Error ? err.message : 'unavailable'}. Run the desktop app (npm run tauri dev) so the Rust supervisor can launch the Python sidecar.`,
-                  }
-                : m,
-            ),
-          }));
-        } finally {
-          patchTask(taskId, (t) => ({
-            ...t,
-            messages: t.messages.map((m) => (m.id === asstId ? { ...m, streaming: false } : m)),
-          }));
-          setSending(false);
-          abortRef.current = null;
-        }
-        return;
-      }
-
       let servedModel = '';
       try {
-        await streamChat(ep, activeProfile, turns, {
+        await streamChat(provider, snapshot, turns, {
           signal: ctl.signal,
           onActivity: (kind, t) => pushActivity(taskId, kind, t),
           onModel: (m) => {
             servedModel = m;
-            setRunningModel(m);
           },
           onToken: (tok) =>
             patchTask(taskId, (t) => ({
@@ -1320,51 +1339,76 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
               ),
             })),
         });
-      } finally {
+        const completed = completeRuntime('success');
         patchTask(taskId, (t) => ({
           ...t,
-          messages: t.messages.map((m) => (m.id === asstId ? { ...m, streaming: false } : m)),
+          messages: t.messages.map((m) =>
+            m.id === asstId || m.id === userMsg.id
+              ? { ...m, streaming: false, runtime: completed }
+              : m,
+          ),
         }));
+        if (
+          provider.providerKind === 'lmstudio' &&
+          (!servedModel || servedModel === modelId)
+        ) {
+          setEndpoints((eps) =>
+            eps.map((endpoint) =>
+              endpoint.id === provider.id
+                ? {
+                    ...endpoint,
+                    models: endpoint.models.map((entry) =>
+                      entry.id === modelId ? { ...entry, availability: 'ready' as const } : entry,
+                    ),
+                  }
+                : endpoint,
+            ),
+          );
+        }
+        if (servedModel && servedModel !== modelId) {
+          pushActivity(taskId, 'system', `model mismatch: requested ${modelId}, provider reported ${servedModel}`);
+        }
+      } catch (err) {
+        const cancelled = ctl.signal.aborted;
+        if (cancelled) {
+          const completed = completeRuntime('cancelled');
+          patchTask(taskId, (t) => ({
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === asstId || m.id === userMsg.id
+                ? { ...m, streaming: false, runtime: completed }
+                : m,
+            ),
+          }));
+          pushActivity(taskId, 'system', `${provider.label} · ${modelLabel}: request cancelled`);
+        } else {
+          const failure =
+            err instanceof Error && 'failure' in err
+              ? (err as Error & { failure: ProviderFailure }).failure
+              : classifyProviderFailure(err, provider, modelId, executionClass);
+          finishWithFailure(failure);
+          setEndpoints((eps) =>
+            eps.map((endpoint) =>
+              endpoint.id === provider.id
+                ? { ...endpoint, lastFailure: failure, detail: failure.safeMessage }
+                : endpoint,
+            ),
+          );
+        }
+      } finally {
         setSending(false);
         abortRef.current = null;
-      }
-      // Truth check: confirm the server actually ran the model we requested. If it
-      // substituted a different one (e.g. LM Studio serving its already-loaded
-      // model), say so plainly instead of pretending — the chosen model must be
-      // the one that actually runs.
-      const wanted = ep.model.toLowerCase();
-      const got = servedModel.toLowerCase();
-      if (servedModel && got !== wanted && !got.includes(wanted) && !wanted.includes(got)) {
-        pushActivity(
-          taskId,
-          'system',
-          `model mismatch — requested "${ep.model}", server ran "${servedModel}"`,
-        );
-        patchTask(taskId, (t) => ({
-          ...t,
-          messages: [
-            ...t.messages,
-            {
-              id: uuidv4().slice(0, 8),
-              role: 'system' as const,
-              content:
-                `⚠ Model mismatch: you selected "${ep.model}", but the server actually ran ` +
-                `"${servedModel}" — the reply above came from "${servedModel}", not your choice. ` +
-                `To run the model you pick: in LM Studio turn on "Just-In-Time model loading" (or load ` +
-                `"${ep.model}" there). Ollama loads the requested model automatically.`,
-              ts: Date.now(),
-            },
-          ],
-        }));
       }
     },
     [
       sending,
       activeTaskId,
       activeEndpoint,
+      activeModel,
       activeProfile,
+      effectiveTemperature,
+      effectiveContextWindow,
       gates.network,
-      gates.tools,
       kbSearchResults,
       retrievalSelectedChunkIds,
       retrievalEnabledForChat,
@@ -1873,7 +1917,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     abort,
     showActivity,
     setShowActivity,
-    runningModel,
     /* endpoints / profiles / gates */
     endpoints,
     profiles,
@@ -1881,12 +1924,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setActiveProfileId,
     activeProfile,
     activeEndpoint,
+    activeModel,
+    activeRuntimeLabel,
+    effectiveTemperature,
+    effectiveContextWindow,
+    canSend: canSendState.ok,
+    cannotSendReason: canSendState.reason,
     updateProfile,
+    setActiveProvider,
+    setActiveModel,
     setEndpointModel,
     updateEndpoint,
+    updateProviderConnection,
+    setRuntimeOverride,
+    clearRuntimeOverrides,
     addProfile,
     deleteProfile,
     refreshEndpoints,
+    refreshProviderModels,
     gates: applyPolicy(adminPolicy, gates),
     toggleGate,
     adminPolicy,

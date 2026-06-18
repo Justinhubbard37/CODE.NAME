@@ -23,8 +23,8 @@ export const en = {
 
   // Settings screen
   'settings.title': 'Settings',
-  'settings.subtitle': 'One place for models, secrets, gates, and workspace.',
-  'settings.section.models': 'Models & routing',
+  'settings.subtitle': 'One place for providers, secrets, gates, and workspace.',
+  'settings.section.models': 'Provider Manager',
   'settings.section.secrets': 'Secrets',
   'settings.section.gates': 'Capability gates',
   'settings.section.tuning': 'Tuning',
@@ -33,7 +33,7 @@ export const en = {
   'settings.section.about': 'About',
 
   'settings.models.preset': 'Preset',
-  'settings.models.endpoint': 'Routed endpoint',
+  'settings.models.endpoint': 'Provider',
   'settings.models.model': 'Model',
   'settings.models.noModels': 'No installed models detected. Start the model server, then re-probe from the status pill.',
 
