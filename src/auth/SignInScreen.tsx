@@ -47,7 +47,7 @@ export function SignInScreen() {
       <div className="w-80 flex flex-col gap-4">
         {/* Header */}
         <div className="text-center mb-2">
-          <div className="type-heading tracking-[0.3em] uppercase text-neutral-500 mb-1">CODE NAME</div>
+          <div className="type-heading tracking-[0.3em] uppercase text-neutral-400 mb-1">CODE NAME</div>
           <div className="text-neutral-400 type-body">Sign in to continue</div>
         </div>
 
@@ -66,7 +66,7 @@ export function SignInScreen() {
                   }`}
                 >
                   <span className="flex-1 font-mono">{u.name}</span>
-                  <span className="type-meta text-neutral-600">{ROLE_LABELS[u.role]}</span>
+                  <span className="type-meta text-neutral-400">{ROLE_LABELS[u.role]}</span>
                 </button>
               ))}
             </div>
@@ -97,7 +97,7 @@ export function SignInScreen() {
 
             <button
               onClick={() => setCreating(true)}
-              className="type-meta text-neutral-600 hover:text-neutral-400 transition-colors text-center"
+              className="type-meta text-neutral-400 hover:text-neutral-400 transition-colors text-center"
             >
               + Add account
             </button>

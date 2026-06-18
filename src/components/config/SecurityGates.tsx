@@ -18,7 +18,7 @@ export function SecurityGates() {
 
   return (
     <div className="space-y-2">
-      <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+      <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
         Capability Gates
       </div>
       {!isAdmin && (
@@ -55,7 +55,7 @@ export function SecurityGates() {
                 <div className={`type-control font-mono tracking-wider ${on ? 'text-neutral-200' : 'text-neutral-400'}`}>
                   {label}
                 </div>
-                <div className="type-meta text-neutral-600 font-mono truncate">{desc}</div>
+                <div className="type-meta text-neutral-400 font-mono truncate">{desc}</div>
               </div>
               <span
                 className={`flex items-center gap-1 type-meta font-mono px-1.5 py-0.5 rounded-full ${
@@ -82,7 +82,7 @@ export function SecurityGates() {
               className={`p-1.5 transition-colors ${
                 locked
                   ? 'text-amber-400 hover:text-amber-300'
-                  : 'text-neutral-700 hover:text-neutral-400'
+                  : 'text-neutral-500 hover:text-neutral-400'
               } ${!isAdmin ? 'cursor-default' : 'cursor-pointer'}`}
             >
               <Lock className="w-3 h-3" />
@@ -91,7 +91,7 @@ export function SecurityGates() {
         );
       })}
       {isAdmin && (
-        <div className="type-meta font-mono text-neutral-700 px-1">
+        <div className="type-meta font-mono text-neutral-400 px-1">
           Lock icon → admin policy ceiling (forces gate closed for all users)
         </div>
       )}

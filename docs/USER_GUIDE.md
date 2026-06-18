@@ -44,6 +44,14 @@ retrieval behavior changed, no semantic indexing behavior changed, no database
 schema changed, and no graph behavior changed. Graph visual-polish work remains
 backlog.
 
+The corrective Phase 2J update adds manual vertical resizing for the expanded
+Logic activity and Audit Ledger sections in the existing right pane. Expanded
+Logic and Audit Ledger sections automatically reveal the newest activity, and
+new entries remain visible as they arrive. The Knowledge Search status now stays
+in normal flow immediately above the search input, including when Advanced mode
+controls are expanded. Readable secondary text uses existing brand palette
+foreground values with corrected semantic mapping; no palette values changed.
+
 ## 2. Ingesting Documents
 
 Drag one or more files onto the left pane. Each file is:

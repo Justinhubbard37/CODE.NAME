@@ -171,7 +171,7 @@ export function StealthDrawer() {
           {/* Presets (saved parameter sets) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+              <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
                 Presets
               </div>
               <div className="flex gap-1">
@@ -200,7 +200,7 @@ export function StealthDrawer() {
                   className={`px-1.5 py-1 type-label font-mono border ${
                     p.id === activeProfileId
                       ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
-                      : 'border-neutral-800 text-neutral-500 hover:border-neutral-600'
+                      : 'border-neutral-800 text-neutral-400 hover:border-neutral-600'
                   }`}
                 >
                   {p.name}
@@ -217,7 +217,7 @@ export function StealthDrawer() {
 
           {/* Endpoint binding for the active preset */}
           <div className="space-y-1.5">
-            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
               Routed Endpoint
             </div>
             <select
@@ -235,7 +235,7 @@ export function StealthDrawer() {
 
           {/* Model picker for the routed endpoint */}
           <div className="space-y-1.5">
-            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
               Model
             </div>
             {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
@@ -251,7 +251,7 @@ export function StealthDrawer() {
                 ))}
               </select>
             ) : (
-              <div className="type-label font-mono text-neutral-600 border border-neutral-800 p-1.5 leading-relaxed">
+              <div className="type-label font-mono text-neutral-400 border border-neutral-800 p-1.5 leading-relaxed">
                 {activeEndpoint.model}
                 <br />
                 no installed models detected — start the model server, then press the ⟳ button on
@@ -269,10 +269,10 @@ export function StealthDrawer() {
           {/* Workspaces (Phase 8.3) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
             <div className="flex items-center justify-between">
-              <div className="type-label font-mono uppercase tracking-wider text-neutral-500">Workspaces</div>
+              <div className="type-label font-mono uppercase tracking-wider text-neutral-400">Workspaces</div>
               <button
                 onClick={signOut}
-                className="type-control font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
+                className="type-control font-mono text-neutral-400 hover:text-neutral-400 transition-colors"
               >
                 {currentUser?.name} · sign out
               </button>
@@ -294,7 +294,7 @@ export function StealthDrawer() {
                   {ws.id !== activeWsId && canWs && (
                     <button
                       onClick={() => handleDeleteWorkspace(ws.id)}
-                      className="p-1 text-neutral-600 hover:text-red-400 transition-colors"
+                      className="p-1 text-neutral-400 hover:text-red-400 transition-colors"
                       title="Delete workspace"
                     >
                       <Trash2 className="w-2.5 h-2.5" />
@@ -310,12 +310,12 @@ export function StealthDrawer() {
                   onChange={(e) => setNewWsName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateWorkspace()}
                   placeholder="New workspace…"
-                  className="flex-1 bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
+                  className="flex-1 bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-400"
                 />
                 <button
                   onClick={handleCreateWorkspace}
                   disabled={!newWsName.trim()}
-                  className="px-2 py-1 border border-neutral-700 text-neutral-500 hover:text-neutral-300 disabled:opacity-40 transition-colors"
+                  className="px-2 py-1 border border-neutral-700 text-neutral-400 hover:text-neutral-300 disabled:opacity-40 transition-colors"
                   title="Create workspace"
                 >
                   <Plus className="w-3 h-3" />
@@ -329,13 +329,13 @@ export function StealthDrawer() {
 
           {/* Data safety — backup / restore / export (Phase 7) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
               Data
             </div>
 
             {/* Encrypted workspace backup */}
             <div className="space-y-1">
-              <div className="type-control font-mono text-neutral-600 uppercase tracking-wide">Workspace backup</div>
+              <div className="type-control font-mono text-neutral-400 uppercase tracking-wide">Workspace backup</div>
               <div className="flex gap-1">
                 <button
                   onClick={() => { setDataOp('export-pw'); setPassphrase(''); setDataMsg(''); }}
@@ -390,7 +390,7 @@ export function StealthDrawer() {
                       }}
                       className="px-2 py-0.5 type-control font-mono border border-emerald-700 text-emerald-400 hover:bg-emerald-950/40 disabled:opacity-30"
                     >OK</button>
-                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
+                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:text-neutral-300">cancel</button>
                   </div>
                 </div>
               )}
@@ -434,7 +434,7 @@ This will OVERWRITE all current data. ` +
                       }}
                       className="px-2 py-0.5 type-control font-mono border border-amber-700 text-amber-400 hover:bg-amber-950/40 disabled:opacity-30"
                     >Import</button>
-                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-500 hover:text-neutral-300">cancel</button>
+                    <button onClick={() => setDataOp('idle')} className="px-2 py-0.5 type-control font-mono border border-neutral-700 text-neutral-400 hover:text-neutral-300">cancel</button>
                   </div>
                 </div>
               )}
@@ -448,7 +448,7 @@ This will OVERWRITE all current data. ` +
 
             {/* Open-format exports */}
             <div className="space-y-1">
-              <div className="type-control font-mono text-neutral-600 uppercase tracking-wide">Open export</div>
+              <div className="type-control font-mono text-neutral-400 uppercase tracking-wide">Open export</div>
               <div className="flex flex-wrap gap-1">
                 <button
                   onClick={() => exportGraphJSON().catch(() => {})}
@@ -484,21 +484,21 @@ This will OVERWRITE all current data. ` +
 
           {/* SIEM endpoint (Phase 8.6) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+            <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
               SIEM Forwarding
             </div>
             {!canSiem ? (
-              <div className="type-control font-mono text-neutral-600 px-1">Admin role required to configure SIEM.</div>
+              <div className="type-control font-mono text-neutral-400 px-1">Admin role required to configure SIEM.</div>
             ) : (
               <div className="space-y-1.5">
-                <div className="type-control font-mono text-neutral-600">
+                <div className="type-control font-mono text-neutral-400">
                   POST audit events to an HTTP endpoint (requires Network gate open).
                 </div>
                 <input
                   value={siemUrl}
                   onChange={(e) => setSiemUrl(e.target.value)}
                   placeholder="https://siem.corp/ingest"
-                  className="w-full bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-700"
+                  className="w-full bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-400"
                 />
                 <div className="flex gap-1 items-center">
                   <button
@@ -518,7 +518,7 @@ This will OVERWRITE all current data. ` +
                       Disable
                     </button>
                   )}
-                  <span className={`ml-auto type-control font-mono ${siemConfig?.enabled ? 'text-emerald-400' : 'text-neutral-600'}`}>
+                  <span className={`ml-auto type-control font-mono ${siemConfig?.enabled ? 'text-emerald-400' : 'text-neutral-400'}`}>
                     {siemConfig?.enabled ? '● active' : '○ off'}
                   </span>
                 </div>
@@ -529,30 +529,30 @@ This will OVERWRITE all current data. ` +
           {/* Crash Reporting (Phase 9.3) */}
           <div className="border-t border-neutral-800 pt-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="type-control font-mono font-bold tracking-widest text-neutral-500 uppercase">Crash Reports</div>
+              <div className="type-control font-mono font-bold tracking-widest text-neutral-400 uppercase">Crash Reports</div>
               <button
                 onClick={toggleCrashConsent}
                 className={`type-control font-mono px-2 py-0.5 rounded border transition-colors ${
                   crashConsent
                     ? 'border-amber-700 text-amber-400 hover:border-amber-500'
-                    : 'border-neutral-700 text-neutral-500 hover:text-neutral-300 hover:border-neutral-500'
+                    : 'border-neutral-700 text-neutral-400 hover:text-neutral-300 hover:border-neutral-500'
                 }`}
               >
                 {crashConsent ? '● collecting' : '○ off'}
               </button>
             </div>
             {crashConsent && (
-              <div className="type-control font-mono text-neutral-600 mb-2">
+              <div className="type-control font-mono text-neutral-400 mb-2">
                 Panic and JS errors are written locally — never transmitted.
               </div>
             )}
             {crashReports.length > 0 && (
               <div className="flex flex-col gap-1 mb-2">
                 {crashReports.slice(0, 5).map((r) => (
-                  <div key={r} className="type-control font-mono text-neutral-500 truncate">{r}</div>
+                  <div key={r} className="type-control font-mono text-neutral-400 truncate">{r}</div>
                 ))}
                 {crashReports.length > 5 && (
-                  <div className="type-control font-mono text-neutral-600">…and {crashReports.length - 5} more</div>
+                  <div className="type-control font-mono text-neutral-400">…and {crashReports.length - 5} more</div>
                 )}
                 <button
                   onClick={clearCrashReports}
@@ -566,7 +566,7 @@ This will OVERWRITE all current data. ` +
 
           {/* View Logs (Phase 9.1) */}
           <div className="border-t border-neutral-800 pt-3">
-            <div className="type-control font-mono font-bold tracking-widest text-neutral-500 uppercase mb-2">Logs</div>
+            <div className="type-control font-mono font-bold tracking-widest text-neutral-400 uppercase mb-2">Logs</div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
@@ -578,7 +578,7 @@ This will OVERWRITE all current data. ` +
                 View Logs
               </button>
               {logDir && (
-                <span className="type-control font-mono text-neutral-600 truncate max-w-[160px]" title={logDir}>
+                <span className="type-control font-mono text-neutral-400 truncate max-w-[160px]" title={logDir}>
                   {logDir}
                 </span>
               )}

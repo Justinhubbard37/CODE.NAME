@@ -45,14 +45,14 @@ export function SecretsPanel() {
 
   return (
     <div className="space-y-2">
-      <div className="type-label font-mono uppercase tracking-wider text-neutral-500">
+      <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
         Secrets · OS keychain
       </div>
       {SECRETS.map((s) => (
         <div key={s.name} className="space-y-1">
           <div className="flex items-center justify-between type-label font-mono">
-            <span className="text-neutral-500">{s.label}</span>
-            <span className={present[s.name] ? 'text-emerald-400' : 'text-neutral-600'}>
+            <span className="text-neutral-400">{s.label}</span>
+            <span className={present[s.name] ? 'text-emerald-400' : 'text-neutral-400'}>
               {present[s.name] ? 'set' : 'not set'}
             </span>
           </div>
@@ -84,7 +84,7 @@ export function SecretsPanel() {
           </div>
         </div>
       ))}
-      <div className="type-meta font-mono text-neutral-600">
+      <div className="type-meta font-mono text-neutral-400">
         Stored in your OS keychain, not in a plain-text file. Secret values are
         not readable from the webview after saving.
       </div>

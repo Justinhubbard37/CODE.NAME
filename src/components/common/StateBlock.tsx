@@ -22,7 +22,7 @@ const ICON = {
 } as const;
 
 const ACCENT = {
-  empty: 'text-neutral-600',
+  empty: 'text-neutral-400',
   loading: 'text-neutral-500',
   error: 'text-red-400',
 } as const;
@@ -51,7 +51,7 @@ export function StateBlock({
       <div
         role={role}
         aria-live={live}
-        className={`flex items-center gap-2 font-mono type-meta text-neutral-600 ${className ?? ''}`}
+        className={`flex items-center gap-2 font-mono type-meta text-neutral-400 ${className ?? ''}`}
       >
         <Icon className={`w-3 h-3 shrink-0 ${accent} ${kind === 'loading' ? 'animate-spin' : ''}`} aria-hidden="true" />
         <span className="uppercase tracking-wider">{title}</span>
@@ -70,7 +70,7 @@ export function StateBlock({
         aria-hidden="true"
       />
       <div className="type-section uppercase tracking-widest text-neutral-400">{title}</div>
-      {hint && <div className="type-body text-neutral-600 max-w-xs">{hint}</div>}
+      {hint && <div className="type-body text-neutral-400 max-w-xs">{hint}</div>}
     </div>
   );
 }

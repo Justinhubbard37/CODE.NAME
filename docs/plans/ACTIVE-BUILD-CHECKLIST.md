@@ -2,12 +2,13 @@
 
 # Phase 2J - Typographic Readability Calibration
 
-Goal: improve readability through typography scale, font weight, and line-height
-across existing UI surfaces without changing brand colors, UI layout, component
-structure, interaction design, retrieval behavior, indexing behavior, database
-schema, or graph behavior.
+Goal: improve readability through typography scale, font weight, line-height,
+readable secondary foreground mapping, right-pane section ergonomics, and
+Knowledge Search status flow across existing UI surfaces without changing brand
+palette values, retrieval behavior, indexing behavior, database schema, graph
+behavior, or attachment behavior.
 
-Status: IMPLEMENTED - READY FOR OWNER REVIEW
+Status: IMPLEMENTED WITH CORRECTIVE UPDATE - READY FOR OWNER REVIEW
 
 Definition of done:
 
@@ -17,10 +18,18 @@ Definition of done:
   surfaces
 - [x] preserve every existing brand color and theme value
 - [x] preserve UI layout, component structure, and interaction design
+- [x] add persisted manual vertical resizing for the expanded Logic and Audit
+  Ledger right-pane boundaries
+- [x] keep expanded Logic and Audit Ledger sections scrolled to newest activity
+- [x] keep Knowledge Search status in normal flow immediately above the search
+  input
+- [x] remap readable low-contrast muted text to existing brighter brand text
+  foreground values without changing palette values
 - [x] preserve retrieval behavior
 - [x] preserve semantic indexing behavior
 - [x] preserve database schema
 - [x] preserve graph behavior
+- [x] preserve attachment behavior
 - [x] keep graph visual-polish work in backlog
 - [ ] owner manual verification accepted
 
@@ -28,14 +37,19 @@ Target commit:
 
 `feat: improve global readability hierarchy`
 
+Corrective commit:
+
+`fix: correct workbench layout and text contrast`
+
 Explicitly not changed in Phase 2J:
 
 - brand colors or theme values
-- UI layout, component structure, or interaction design
+- brand palette hex values
 - retrieval behavior
 - semantic indexing behavior
 - database schema
 - graph behavior
+- attachment behavior
 - graph visual-polish backlog items
 
 Graph visual-polish work remains backlog, including zoom-level label overlap /
@@ -49,10 +63,13 @@ Status: READY FOR OWNER REVIEW
 
 Required visible result:
 
-existing UI surfaces keep their current placement, colors, controls, and
+existing UI surfaces keep their current placement, palette, controls, and
 behavior while headings, body text, snippets, source filenames, route traces,
 status information, Attach state, chat text, and operator-facing metadata are
-easier to read at normal desktop scale.
+easier to read at normal desktop scale. The expanded Logic and Audit Ledger
+sections can be manually resized and reveal newest activity; Knowledge Search
+status remains directly above the search input; readable secondary text uses
+existing brighter brand foreground values.
 
 Phase 2J is not accepted until owner manual verification is completed.
 

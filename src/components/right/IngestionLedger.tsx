@@ -30,7 +30,7 @@ function Row({ item }: { item: QuarantineItem }) {
         <span className="text-neutral-300 truncate flex-1">{item.name}</span>
         <span className={`shrink-0 ${m.c}`}>{m.label}</span>
       </div>
-      <div className="flex items-center gap-2 mt-0.5 type-meta text-neutral-600 font-mono pl-5">
+      <div className="flex items-center gap-2 mt-0.5 type-meta text-neutral-400 font-mono pl-5">
         <span className="truncate">{item.hash}</span>
         {item.size > 0 && <span>· {item.size}B</span>}
       </div>
@@ -74,12 +74,12 @@ export function IngestionLedger() {
 
   return (
     <div role="region" aria-label="Ingestion ledger" className="shrink-0 border-b border-neutral-800 bg-neutral-900/40">
-      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-400">
         <span>
           Ingestion Ledger
           {conflicts > 0 && <span className="ml-2 text-red-400">{conflicts} conflict(s)</span>}
         </span>
-        <button onClick={clearLedger} aria-label="Clear resolved ingestion items" className="text-neutral-600 hover:text-neutral-300 flex items-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500">
+        <button onClick={clearLedger} aria-label="Clear resolved ingestion items" className="text-neutral-400 hover:text-neutral-300 flex items-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500">
           <X className="w-3 h-3" aria-hidden="true" /> clear resolved
         </button>
       </div>

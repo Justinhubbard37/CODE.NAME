@@ -16,7 +16,7 @@ export function AgentHeader() {
         <span className="font-mono type-section text-neutral-200 tracking-wider truncate">
           {activeTask.agent}
         </span>
-        <span className="type-meta text-neutral-600 font-mono uppercase truncate">
+        <span className="type-meta text-neutral-400 font-mono uppercase truncate">
           {activeTask.name}
         </span>
         <span
@@ -27,7 +27,7 @@ export function AgentHeader() {
         </span>
         <button
           onClick={() => setShowActivity(!showActivity)}
-          className="flex items-center gap-0.5 type-control font-mono text-neutral-500 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-600 rounded px-1 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="flex items-center gap-0.5 type-control font-mono text-neutral-400 hover:text-neutral-200 border border-neutral-800 hover:border-neutral-600 rounded px-1 py-0.5 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           title={showActivity ? 'Collapse activity stream' : 'Expand activity stream'}
           aria-label={showActivity ? 'Collapse activity stream' : 'Expand activity stream'}
           aria-expanded={showActivity}

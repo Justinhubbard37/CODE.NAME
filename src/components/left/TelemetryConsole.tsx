@@ -76,7 +76,7 @@ export function TelemetryConsole() {
         ? 'text-amber-400/80'
         : watchdogHealth === 'offline'
           ? 'text-red-400/80'
-          : 'text-neutral-600';
+          : 'text-neutral-400';
   const healthLabel =
     watchdogHealth === 'ok'
       ? 'OK'
@@ -100,11 +100,11 @@ export function TelemetryConsole() {
 
   return (
     <div className="absolute bottom-10 left-2 z-20 w-44 pointer-events-auto type-meta font-mono">
-      <div className="type-label text-neutral-500 uppercase tracking-wider mb-1">Telemetry</div>
+      <div className="type-label text-neutral-400 uppercase tracking-wider mb-1">Telemetry</div>
       <div className="bg-neutral-950/80 border border-neutral-800 backdrop-blur-sm p-2 grid grid-cols-2 gap-y-1">
         {rows.map(([k, v, colour]) => (
           <div key={k} className="contents">
-            <span className="text-neutral-600">{k}</span>
+            <span className="text-neutral-400">{k}</span>
             <span className={`text-right ${colour ?? 'text-emerald-400/80'}`}>{v}</span>
           </div>
         ))}

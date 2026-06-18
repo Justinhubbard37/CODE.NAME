@@ -120,7 +120,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
               <h2 id="onboarding-title" className="type-heading font-mono tracking-widest text-neutral-100 uppercase">
                 {Meta.title}
               </h2>
-              <p className="type-meta font-mono text-neutral-500 mt-0.5">
+              <p className="type-meta font-mono text-neutral-400 mt-0.5">
                 Step {stepIdx + 1} of {STEPS.length} · CODE NAME setup
               </p>
             </div>
@@ -147,11 +147,11 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'welcome' && (
             <div className="space-y-3">
               <p className="text-neutral-200">A local-first agent harness with a governed knowledge graph.</p>
-              <p className="text-neutral-500">
+              <p className="text-neutral-400">
                 This quick setup is optional — every step can be skipped, and the safe defaults run
                 fully offline on your machine. You can change all of this later in Settings.
               </p>
-              <ul className="text-neutral-500 space-y-1">
+              <ul className="text-neutral-400 space-y-1">
                 <li>· Pick a model (local Ollama by default)</li>
                 <li>· Add a cloud key only if you want one</li>
                 <li>· Review the capability gates</li>
@@ -163,7 +163,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'model' && (
             <div className="space-y-3">
               <label className="block">
-                <span className="type-label uppercase tracking-wider text-neutral-500">Endpoint</span>
+                <span className="type-label uppercase tracking-wider text-neutral-400">Endpoint</span>
                 <select
                   value={activeProfile.endpointId}
                   onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
@@ -178,7 +178,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
               </label>
 
               <label className="block">
-                <span className="type-label uppercase tracking-wider text-neutral-500">Model</span>
+                <span className="type-label uppercase tracking-wider text-neutral-400">Model</span>
                 {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
                   <select
                     value={activeEndpoint.model}
@@ -192,13 +192,13 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                     value={activeEndpoint.model}
                     onChange={(e) => setEndpointModel(activeEndpoint.id, e.target.value)}
                     placeholder="model name (e.g. llama3.1)"
-                    className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-600"
+                    className="mt-1 w-full bg-neutral-900 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-400"
                   />
                 )}
               </label>
 
               <div className="flex items-center justify-between gap-2 pt-1">
-                <span className="type-meta text-neutral-500">
+                <span className="type-meta text-neutral-400">
                   Status: <span className={activeEndpoint.status === 'ready' ? 'text-emerald-400' : 'text-neutral-400'}>{activeEndpoint.status}</span>
                   {activeEndpoint.detail ? ` · ${activeEndpoint.detail}` : ''}
                 </span>
@@ -211,7 +211,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                   Detect installed models
                 </button>
               </div>
-              <p className="type-meta text-neutral-600">
+              <p className="type-meta text-neutral-400">
                 Tip: install <span className="text-neutral-400">Ollama</span> and pull a model (e.g. <span className="text-neutral-400">ollama pull llama3.1</span>) for a fully local, offline assistant.
               </p>
             </div>
@@ -233,7 +233,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                         value={keyValue}
                         onChange={(e) => { setKeyValue(e.target.value); setKeySaved(false); }}
                         placeholder={activeEndpoint.apiKeyEnv}
-                        className="flex-1 bg-neutral-900 border border-neutral-800 text-neutral-200 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-600"
+                        className="flex-1 bg-neutral-900 border border-neutral-800 text-neutral-200 p-1.5 outline-none focus:border-neutral-600 placeholder-neutral-400"
                       />
                       <button
                         onClick={saveKey}
@@ -244,7 +244,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                       </button>
                     </div>
                   ) : (
-                    <p className="type-meta text-neutral-600 border border-neutral-800 p-2">
+                    <p className="type-meta text-neutral-400 border border-neutral-800 p-2">
                       Keychain storage is available in the desktop app. In the browser preview you can skip this.
                     </p>
                   )}
@@ -268,14 +268,14 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
 
           {step === 'gates' && (
             <div className="space-y-3">
-              <p className="text-neutral-500">
+              <p className="text-neutral-400">
                 Gates are capability switches. They start open for a smooth first run; close any you don’t want.
               </p>
               {GATE_COPY.map((g) => (
                 <div key={g.key} className="flex items-start justify-between gap-3 border border-neutral-800 px-3 py-2">
                   <div>
                     <div className="text-neutral-200">{g.label}</div>
-                    <div className="type-meta text-neutral-600">{g.help}</div>
+                    <div className="type-meta text-neutral-400">{g.help}</div>
                   </div>
                   <button
                     onClick={() => toggleGate(g.key)}
@@ -298,7 +298,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
           {step === 'check' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-neutral-500">Confirms each integration has a working offline/loopback path.</p>
+                <p className="text-neutral-400">Confirms each integration has a working offline/loopback path.</p>
                 <button
                   onClick={runChecks}
                   disabled={checking}
@@ -309,14 +309,14 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
               <div className="space-y-1.5">
-                {checks === null && checking && <p className="text-neutral-600">Running…</p>}
+                {checks === null && checking && <p className="text-neutral-400">Running…</p>}
                 {(checks ?? []).map((c) => (
                   <div key={c.name} className="flex items-center gap-2 border border-neutral-800 px-2 py-1.5">
                     {c.ok
                       ? <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
                       : <CircleAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />}
                     <span className="text-neutral-300 w-24 shrink-0">{c.name}</span>
-                    <span className="type-meta text-neutral-500 truncate">{c.detail}</span>
+                    <span className="type-meta text-neutral-400 truncate">{c.detail}</span>
                   </div>
                 ))}
               </div>
@@ -332,13 +332,13 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
               <div className="border-t border-neutral-900 pt-3">
-                <div className="type-label uppercase tracking-wider text-neutral-500 mb-2">Docs &amp; help</div>
+                <div className="type-label uppercase tracking-wider text-neutral-400 mb-2">Docs &amp; help</div>
                 <ul className="space-y-1 text-neutral-400">
                   <li>· <span className="text-neutral-200">User Guide</span> — ingestion, search, chat, audit (docs/USER_GUIDE.md)</li>
                   <li>· <span className="text-neutral-200">Admin Guide</span> — roles, policy, SSO, SIEM (docs/ADMIN_GUIDE.md)</li>
                   <li>· <span className="text-neutral-200">Troubleshooting</span> — common fixes (docs/TROUBLESHOOTING.md)</li>
                 </ul>
-                <p className="type-meta text-neutral-600 mt-2">Open Settings (Ctrl+,) any time to change models, keys, gates, and language.</p>
+                <p className="type-meta text-neutral-400 mt-2">Open Settings (Ctrl+,) any time to change models, keys, gates, and language.</p>
               </div>
             </div>
           )}
@@ -356,7 +356,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
 
           <button
             onClick={onClose}
-            className="type-meta font-mono text-neutral-600 hover:text-neutral-400 transition-colors"
+            className="type-meta font-mono text-neutral-400 hover:text-neutral-400 transition-colors"
           >
             {step === 'done' ? '' : 'Skip setup'}
           </button>

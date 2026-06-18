@@ -126,18 +126,18 @@ export function ArchiveIndex() {
       : status.tone === 'working'
         ? 'text-cyan-300'
         : status.tone === 'empty'
-          ? 'text-neutral-500'
+          ? 'text-neutral-400'
           : 'text-amber-300';
   const retrievalTitle = `${retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace)} KB Results`;
   const traceSummary = retrievalTraceSummary(retrievalRouteTrace);
 
   return (
     <div className="absolute top-2 left-2 z-20 w-56 pointer-events-auto type-label font-mono">
-      <div className="flex items-center justify-between mb-1 type-section text-neutral-500 uppercase tracking-wider">
+      <div className="flex items-center justify-between mb-1 type-section text-neutral-400 uppercase tracking-wider">
         <span>Archive Index</span>
         <button
           onClick={() => setCollapsed((value) => !value)}
-          className="text-neutral-600 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="text-neutral-400 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           title={collapsed ? 'Expand archive index' : 'Collapse archive index'}
           aria-label={collapsed ? 'Expand archive index' : 'Collapse archive index'}
           aria-expanded={!collapsed}
@@ -149,11 +149,11 @@ export function ArchiveIndex() {
         <div className="bg-neutral-950/80 border border-neutral-800 backdrop-blur-sm p-2 max-h-[40vh] overflow-y-auto">
           <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
             <div className="flex items-center justify-between type-label uppercase tracking-wider">
-              <span className="text-neutral-500">Knowledge</span>
+              <span className="text-neutral-400">Knowledge</span>
               <span className={statusText}>{status.label}</span>
             </div>
-            <div className="mt-1 type-meta text-neutral-500">{status.detail}</div>
-            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-500">
+            <div className="mt-1 type-meta text-neutral-400">{status.detail}</div>
+            <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-400">
               <span>Documents</span><span className="text-neutral-300 text-right">{kbStats.documentCount}</span>
               <span>Chunks</span><span className="text-neutral-300 text-right">{kbStats.chunkCount}</span>
             </div>
@@ -164,7 +164,7 @@ export function ArchiveIndex() {
             <button
               type="button"
               onClick={() => setAdvancedOpen((value) => !value)}
-              className="flex w-full items-center justify-between type-label uppercase tracking-wider text-neutral-500 hover:text-neutral-300"
+              className="flex w-full items-center justify-between type-label uppercase tracking-wider text-neutral-400 hover:text-neutral-300"
               aria-expanded={advancedOpen}
             >
               <span>Advanced KB details</span>
@@ -172,7 +172,7 @@ export function ArchiveIndex() {
             </button>
             {advancedOpen && (
               <div className="mt-1">
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-500">
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 type-meta text-neutral-400">
                   <span>Deleted</span><span className="text-neutral-300 text-right">{kbStats.deletedDocumentCount}</span>
                   <span>Entities</span><span className="text-neutral-300 text-right">{kbStats.entityCount}</span>
                   <span>Relationships</span><span className="text-neutral-300 text-right">{kbStats.relationshipCount}</span>
@@ -205,7 +205,7 @@ export function ArchiveIndex() {
                     <RefreshCw className="h-3 w-3" aria-hidden="true" />
                   </button>
                 </div>
-                <div className="mt-1 type-meta text-neutral-600">
+                <div className="mt-1 type-meta text-neutral-400">
                   Local Ollama only; models are not auto-pulled.
                 </div>
               </div>
@@ -214,7 +214,7 @@ export function ArchiveIndex() {
 
           {kbDocuments.length > 0 && (
             <div className="mb-2 border border-neutral-800 bg-black/30 p-1.5">
-              <div className="type-label uppercase tracking-wider text-neutral-500 mb-1">
+              <div className="type-label uppercase tracking-wider text-neutral-400 mb-1">
                 KB Documents
               </div>
               <div className="space-y-1">
@@ -223,7 +223,7 @@ export function ArchiveIndex() {
                     <div className="flex items-start gap-1">
                       <div className="min-w-0 flex-1">
                         <div className="truncate type-control text-neutral-200">{doc.title}</div>
-                        <div className="type-meta text-neutral-600">
+                        <div className="type-meta text-neutral-400">
                           {doc.chunkCount} chunk{doc.chunkCount === 1 ? '' : 's'} -{' '}
                           {new Date(doc.updatedAt).toLocaleDateString()}
                         </div>
@@ -231,7 +231,7 @@ export function ArchiveIndex() {
                       <button
                         onClick={() => removeDocument(doc.id, doc.title)}
                         disabled={deletingId === doc.id}
-                        className="shrink-0 text-neutral-600 hover:text-red-300 disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-red-500"
+                        className="shrink-0 text-neutral-400 hover:text-red-300 disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-red-500"
                         title="Remove document from SQLite KB"
                         aria-label={`Remove ${doc.title} from SQLite KB`}
                       >
@@ -255,7 +255,7 @@ export function ArchiveIndex() {
                     <div className="truncate type-control text-neutral-200">
                       #{index + 1} {result.documentTitle} - chunk {result.chunk.ordinal + 1}
                     </div>
-                    <div className="truncate text-neutral-600">
+                    <div className="truncate text-neutral-400">
                       match {retrievalMatchKindLabel(result)} - {retrievalSource(result)}
                     </div>
                     {result.graphRole && (

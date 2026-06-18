@@ -6,7 +6,7 @@ import { reachesNetwork } from '../../lib/llm';
 import type { Endpoint, EndpointStatus } from '../../types';
 
 const COLOR: Record<EndpointStatus, string> = {
-  offline: 'text-neutral-500 border-neutral-700 bg-neutral-800/40',
+  offline: 'text-neutral-400 border-neutral-700 bg-neutral-800/40',
   configuring: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
   ready: 'text-emerald-300 border-emerald-500/50 bg-emerald-500/10',
   error: 'text-red-300 border-red-500/50 bg-red-500/10',
@@ -62,12 +62,12 @@ export function StatusModule() {
         >
           <span aria-hidden="true" className={`w-1.5 h-1.5 rounded-full ${DOT[st]}`} />
           <span className="uppercase tracking-wider">{st}</span>
-          <span className="text-neutral-500">·</span>
+          <span className="text-neutral-400">·</span>
           <span className="text-neutral-400 normal-case">{activeEndpoint.label}</span>
         </button>
         <button
           onClick={() => refreshEndpoints()}
-          className="p-1 text-neutral-500 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           title="Probe all endpoints"
           aria-label="Probe all endpoints"
         >
@@ -77,7 +77,7 @@ export function StatusModule() {
 
       {open && (
         <div role="menu" aria-label="Endpoint matrix" className="absolute top-8 right-0 z-50 w-72 bg-neutral-900 border border-neutral-700 shadow-2xl p-1">
-          <div className="px-2 py-1 type-label text-neutral-500 uppercase tracking-wider border-b border-neutral-800">
+          <div className="px-2 py-1 type-label text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
             Endpoint Matrix · click to route · ✎ to edit
           </div>
           {endpoints.map((e) => {
@@ -103,7 +103,7 @@ export function StatusModule() {
                       {e.label}
                       {active && <span className="ml-1 type-meta text-emerald-400">ACTIVE</span>}
                     </div>
-                    <div className="type-meta text-neutral-600 truncate">
+                    <div className="type-meta text-neutral-400 truncate">
                       {e.model} · {e.detail ?? e.status}
                       {reachesNetwork(e) ? ' · CLOUD' : ' · LOCAL'}
                     </div>
@@ -116,7 +116,7 @@ export function StatusModule() {
                   }}
                   title="Edit this endpoint"
                   aria-label={`Edit endpoint ${e.label}`}
-                  className="shrink-0 p-1 text-neutral-600 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                  className="shrink-0 p-1 text-neutral-400 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
                 >
                   <Pencil className="w-3 h-3" aria-hidden="true" />
                 </button>

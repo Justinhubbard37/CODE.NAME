@@ -15,7 +15,7 @@ export function ModelTuningControls() {
       {/* Temperature */}
       <div>
         <div className="flex justify-between type-label font-mono mb-1">
-          <span className="text-neutral-500 uppercase tracking-wider">Temperature</span>
+          <span className="text-neutral-400 uppercase tracking-wider">Temperature</span>
           <span className="text-emerald-400">{activeProfile.temperature.toFixed(2)}</span>
         </div>
         <input
@@ -34,7 +34,7 @@ export function ModelTuningControls() {
       {/* Context window */}
       <div>
         <div className="flex justify-between type-label font-mono mb-1">
-          <span className="text-neutral-500 uppercase tracking-wider">Context Window</span>
+          <span className="text-neutral-400 uppercase tracking-wider">Context Window</span>
           <span className="text-emerald-400">
             {(activeProfile.contextWindow / 1024).toFixed(0)}K
           </span>

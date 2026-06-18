@@ -27,17 +27,17 @@ function ToolBubble({ m }: { m: ChatMessage }) {
           <span className="uppercase tracking-widest type-label">tool</span>
           <span className="text-amber-400">{payload?.name ?? '?'}</span>
           {pending && (
-            <span className="ml-auto flex items-center gap-1 text-neutral-600">
+            <span className="ml-auto flex items-center gap-1 text-neutral-400">
               <span className="w-1 h-1 bg-amber-500 rounded-full animate-pulse" />
               running
             </span>
           )}
         </div>
         {payload?.args && Object.keys(payload.args).length > 0 && (
-          <div className="px-2 py-1 text-neutral-500 border-b border-neutral-800/50">
+          <div className="px-2 py-1 text-neutral-400 border-b border-neutral-800/50">
             {Object.entries(payload.args).map(([k, v]) => (
               <div key={k}>
-                <span className="text-neutral-600">{k}=</span>
+                <span className="text-neutral-400">{k}=</span>
                 <span className="text-neutral-400">{JSON.stringify(v)}</span>
               </div>
             ))}
@@ -49,7 +49,7 @@ function ToolBubble({ m }: { m: ChatMessage }) {
           </div>
         )}
         {!payload && (
-          <div className="px-2 py-1 text-neutral-500 whitespace-pre-wrap">{m.content}</div>
+          <div className="px-2 py-1 text-neutral-400 whitespace-pre-wrap">{m.content}</div>
         )}
       </div>
     </div>
@@ -61,7 +61,7 @@ function Bubble({ m }: { m: ChatMessage }) {
 
   if (m.role === 'system') {
     return (
-      <div className="type-meta font-mono text-neutral-600 italic border-l-2 border-neutral-800 pl-2 py-1">
+      <div className="type-meta font-mono text-neutral-400 italic border-l-2 border-neutral-800 pl-2 py-1">
         {m.content}
       </div>
     );
@@ -94,7 +94,7 @@ function Bubble({ m }: { m: ChatMessage }) {
 function ThinkingBubble({ label }: { label: string }) {
   return (
     <div className="flex justify-start" role="status" aria-live="polite">
-      <div className="flex items-center gap-2 max-w-[85%] px-3 py-2 type-meta font-mono border border-neutral-800 bg-neutral-900/60 text-neutral-500">
+      <div className="flex items-center gap-2 max-w-[85%] px-3 py-2 type-meta font-mono border border-neutral-800 bg-neutral-900/60 text-neutral-400">
         <span className="flex gap-1" aria-hidden="true">
           <span className="w-1 h-1 rounded-full bg-emerald-400/80 animate-pulse" />
           <span className="w-1 h-1 rounded-full bg-emerald-400/60 animate-pulse [animation-delay:150ms]" />

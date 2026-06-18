@@ -1,18 +1,25 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ScrollText, ChevronDown, ChevronRight, RefreshCw, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { kgStore } from '../../kg/store';
 import { verifyAuditChain } from '../../kg/commit';
 import type { AuditRecord } from '../../types';
 
 /**
- * Surfaces the append-only KG audit ledger (Phase 6) — the write history of the
+ * Surfaces the append-only KG audit ledger (Phase 6) - the write history of the
  * self-growing knowledge graph. Reuses the Phase 0 AuditRecord schema.
  *
  * Phase 7 (Slice 7.2): adds a "Verify Chain" button that checks the tamper-evident
  * hash chain across all audit records and reports the first broken link, if any.
  */
-export function AuditLedger() {
-  const [open, setOpen] = useState(false);
+export function AuditLedger({
+  open,
+  onOpenChange,
+  height,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  height?: number;
+}) {
   const [rows, setRows] = useState<AuditRecord[]>([]);
   const [verifying, setVerifying] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{
@@ -20,12 +27,18 @@ export function AuditLedger() {
     brokenAt?: string;
     checkedCount: number;
   } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const a = await kgStore.getAudit();
-      a.sort((x, y) => y.ts - x.ts);
-      setRows(a.slice(0, 80));
+      a.sort((x, y) => x.ts - y.ts);
+      const next = a.slice(-80);
+      setRows((current) =>
+        current.length === next.length && current.every((row, index) => row.id === next[index]?.id)
+          ? current
+          : next,
+      );
     } catch {
       /* store unavailable */
     }
@@ -46,14 +59,26 @@ export function AuditLedger() {
   }, []);
 
   useEffect(() => {
-    if (open) load();
+    if (!open) return;
+    void load();
+    const interval = window.setInterval(() => {
+      void load();
+    }, 2000);
+    return () => window.clearInterval(interval);
   }, [open, load]);
+
+  const newestRowId = rows[rows.length - 1]?.id;
+  useEffect(() => {
+    if (!open) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [open, newestRowId]);
 
   return (
     <div className="shrink-0 border-b border-neutral-800 bg-neutral-950">
-      <div className="flex items-center justify-between px-3 py-1 type-label font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1 type-label font-mono uppercase tracking-wider text-neutral-400">
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => onOpenChange(!open)}
           className="flex items-center gap-1 hover:text-neutral-200 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           aria-expanded={open}
           aria-label={open ? 'Collapse audit ledger' : 'Expand audit ledger'}
@@ -64,25 +89,23 @@ export function AuditLedger() {
         </button>
         {open && (
           <div className="flex items-center gap-2">
-            {/* Verify chain button */}
             <button
               onClick={verify}
               disabled={verifying}
-              className="flex items-center gap-0.5 text-neutral-600 hover:text-violet-400 disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+              className="flex items-center gap-0.5 text-neutral-400 hover:text-violet-400 disabled:opacity-40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
               title="Verify tamper-evident hash chain"
               aria-label="Verify tamper-evident hash chain"
             >
               <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-              <span className="type-meta">{verifying ? 'checking…' : 'verify'}</span>
+              <span className="type-meta">{verifying ? 'checking\u2026' : 'verify'}</span>
             </button>
-            <button onClick={load} className="text-neutral-600 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500" title="Refresh audit ledger" aria-label="Refresh audit ledger">
+            <button onClick={load} className="text-neutral-400 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500" title="Refresh audit ledger" aria-label="Refresh audit ledger">
               <RefreshCw className="w-3 h-3" aria-hidden="true" />
             </button>
           </div>
         )}
       </div>
 
-      {/* Verification result banner */}
       {open && verifyResult !== null && (
         <div
           className={`mx-3 mb-1 px-2 py-1 type-meta font-mono flex items-center gap-1.5 ${
@@ -94,7 +117,7 @@ export function AuditLedger() {
           {verifyResult.ok ? (
             <>
               <ShieldCheck className="w-3 h-3 shrink-0" aria-hidden="true" />
-              chain intact — {verifyResult.checkedCount} link{verifyResult.checkedCount !== 1 ? 's' : ''} verified
+              chain intact {'\u2014'} {verifyResult.checkedCount} link{verifyResult.checkedCount !== 1 ? 's' : ''} verified
             </>
           ) : (
             <>
@@ -106,26 +129,30 @@ export function AuditLedger() {
       )}
 
       {open && (
-        <div className="max-h-40 overflow-y-auto px-3 pb-2 font-mono type-meta">
+        <div
+          ref={scrollRef}
+          style={height ? { height } : undefined}
+          className="overflow-y-auto px-3 pb-2 font-mono type-meta"
+        >
           {rows.length === 0 ? (
-            <div className="text-neutral-600 italic">// no audited writes yet</div>
+            <div className="text-neutral-400 italic">// no audited writes yet</div>
           ) : (
             rows.map((r) => (
               <div key={r.id} className="flex gap-2">
-                <span className="text-neutral-700 shrink-0">
+                <span className="text-neutral-400 shrink-0">
                   {new Date(r.ts).toLocaleTimeString([], { hour12: false })}
                 </span>
                 <span className={`shrink-0 w-12 ${r.decision.allowed ? 'text-emerald-400' : 'text-red-400'}`}>
                   [{r.action}]
                 </span>
-                <span className="text-neutral-500 shrink-0">
+                <span className="text-neutral-400 shrink-0">
                   {r.actor.kind}:{r.actor.id}
                 </span>
                 <span className="text-neutral-400 break-all">
                   {r.target.kind}/{r.target.id}
-                  {r.diff ? ` · ${r.diff}` : ''}
-                  {r.decision.allowed ? '' : ` · DENIED(${r.decision.reason ?? ''})`}
-                  {r.prevHash ? ` · #${r.prevHash.slice(0, 8)}` : ''}
+                  {r.diff ? <>{' \u00b7 '}{r.diff}</> : null}
+                  {r.decision.allowed ? null : <>{' \u00b7 '}DENIED({r.decision.reason ?? ''})</>}
+                  {r.prevHash ? <>{' \u00b7 '}#{r.prevHash.slice(0, 8)}</> : null}
                 </span>
               </div>
             ))

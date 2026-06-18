@@ -105,7 +105,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         className="flex justify-between items-center bg-neutral-950 p-3 border-b border-neutral-800 cursor-move select-none"
       >
         <div className="type-section text-neutral-300 flex items-center gap-2">
-          {node.data.label} <span className="type-meta text-neutral-500 bg-neutral-800 px-1 rounded">v{node.data.currentVersion || 1}</span>
+          {node.data.label} <span className="type-meta text-neutral-400 bg-neutral-800 px-1 rounded">v{node.data.currentVersion || 1}</span>
         </div>
         <button onClick={onClose} aria-label="Close inspector" className="text-neutral-500 hover:text-white transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500">
           <X className="w-4 h-4" aria-hidden="true" />
@@ -116,7 +116,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         <button 
           role="tab"
           aria-selected={tab === 'PROPS'}
-          className={`flex-1 py-2 font-bold tracking-widest focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${tab === 'PROPS' ? 'text-neutral-200 border-b-2 border-neutral-400' : 'text-neutral-600 hover:bg-neutral-800'}`}
+          className={`flex-1 py-2 font-bold tracking-widest focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${tab === 'PROPS' ? 'text-neutral-200 border-b-2 border-neutral-400' : 'text-neutral-400 hover:bg-neutral-800'}`}
           onClick={() => setTab('PROPS')}
         >
           PROPERTIES
@@ -124,7 +124,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         <button 
           role="tab"
           aria-selected={tab === 'HISTORY'}
-          className={`flex-1 py-2 font-bold tracking-widest flex items-center justify-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${tab === 'HISTORY' ? 'text-neutral-200 border-b-2 border-neutral-400' : 'text-neutral-600 hover:bg-neutral-800'}`}
+          className={`flex-1 py-2 font-bold tracking-widest flex items-center justify-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500 ${tab === 'HISTORY' ? 'text-neutral-200 border-b-2 border-neutral-400' : 'text-neutral-400 hover:bg-neutral-800'}`}
           onClick={() => setTab('HISTORY')}
         >
           <History className="w-3 h-3" aria-hidden="true" /> HISTORY
@@ -135,7 +135,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         {tab === 'PROPS' ? (
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="type-label text-neutral-500 uppercase tracking-widest">TITLE</label>
+              <label className="type-label text-neutral-400 uppercase tracking-widest">TITLE</label>
               <input 
                 type="text" 
                 value={editData.title || ''} 
@@ -145,7 +145,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
               />
             </div>
             <div className="space-y-1">
-              <label className="type-label text-neutral-500 uppercase tracking-widest">CLASSIFICATION</label>
+              <label className="type-label text-neutral-400 uppercase tracking-widest">CLASSIFICATION</label>
               <input 
                 type="text" 
                 value={editData.class || ''} 
@@ -155,7 +155,7 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
               />
             </div>
             <div className="space-y-1">
-              <label className="type-label text-neutral-500 uppercase tracking-widest">CONTENT / EXTRACT</label>
+              <label className="type-label text-neutral-400 uppercase tracking-widest">CONTENT / EXTRACT</label>
               <textarea 
                 value={editData.description || ''} 
                 onChange={(e) => handleChange('description', e.target.value)}
@@ -176,13 +176,13 @@ export function NodeDetailsPanel({ node, onClose, onUpdate }: Props) {
         ) : (
           <div className="space-y-3">
             {versions.length === 0 ? (
-              <div className="text-neutral-500 italic type-meta">No version history found. Save this node to begin tracking versions.</div>
+              <div className="text-neutral-400 italic type-meta">No version history found. Save this node to begin tracking versions.</div>
             ) : (
               versions.map((ver, idx) => (
                 <div key={idx} className="bg-neutral-950 border border-neutral-800 p-3 relative group">
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-bold text-neutral-300">v{ver.version}</span>
-                    <span className="type-meta text-neutral-600 font-mono">{new Date(ver.timestamp).toLocaleString()}</span>
+                    <span className="type-meta text-neutral-400 font-mono">{new Date(ver.timestamp).toLocaleString()}</span>
                   </div>
                   <div className="type-meta text-neutral-400 mb-2">{ver.changes}</div>
                   

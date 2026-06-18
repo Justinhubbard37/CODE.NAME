@@ -35,7 +35,7 @@ function Section({
 }) {
   return (
     <section className="px-5 py-4 border-b border-neutral-900">
-      <h3 className="flex items-center gap-2 type-section font-mono uppercase tracking-widest text-neutral-500 mb-3">
+      <h3 className="flex items-center gap-2 type-section font-mono uppercase tracking-widest text-neutral-400 mb-3">
         <Icon className="w-3 h-3 text-emerald-500/70" aria-hidden="true" />
         {title}
       </h3>
@@ -90,7 +90,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             <h2 id="settings-title" className="type-heading font-mono tracking-widest text-neutral-100 uppercase">
               {t('settings.title')}
             </h2>
-            <p className="type-meta font-mono text-neutral-500 mt-1">{t('settings.subtitle')}</p>
+            <p className="type-meta font-mono text-neutral-400 mt-1">{t('settings.subtitle')}</p>
           </div>
           <button
             ref={closeRef}
@@ -105,7 +105,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         {/* Models & routing */}
         <Section icon={Cpu} title={t('settings.section.models')}>
           <label className="block">
-            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.preset')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-400">{t('settings.models.preset')}</span>
             <select
               value={activeProfileId}
               onChange={(e) => setActiveProfileId(e.target.value)}
@@ -118,7 +118,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </label>
 
           <label className="block">
-            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.endpoint')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-400">{t('settings.models.endpoint')}</span>
             <select
               value={activeProfile.endpointId}
               onChange={(e) => updateProfile(activeProfile.id, { endpointId: e.target.value })}
@@ -133,7 +133,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </label>
 
           <label className="block">
-            <span className="type-label font-mono uppercase tracking-wider text-neutral-500">{t('settings.models.model')}</span>
+            <span className="type-label font-mono uppercase tracking-wider text-neutral-400">{t('settings.models.model')}</span>
             {activeEndpoint.models && activeEndpoint.models.length > 0 ? (
               <select
                 value={activeEndpoint.model}
@@ -145,7 +145,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
                 ))}
               </select>
             ) : (
-              <p className="mt-1 type-meta font-mono text-neutral-600 border border-neutral-800 p-2">
+              <p className="mt-1 type-meta font-mono text-neutral-400 border border-neutral-800 p-2">
                 {t('settings.models.noModels')}
               </p>
             )}
@@ -170,7 +170,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         {/* Language */}
         <Section icon={Languages} title={t('settings.section.language')}>
           <fieldset>
-            <legend className="type-label font-mono uppercase tracking-wider text-neutral-500 mb-2">
+            <legend className="type-label font-mono uppercase tracking-wider text-neutral-400 mb-2">
               {t('settings.language.label')}
             </legend>
             <div className="flex flex-wrap gap-2">
@@ -189,7 +189,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
                 </button>
               ))}
             </div>
-            <p className="type-meta font-mono text-neutral-600 mt-2">{t('settings.language.help')}</p>
+            <p className="type-meta font-mono text-neutral-400 mt-2">{t('settings.language.help')}</p>
           </fieldset>
         </Section>
 
@@ -203,30 +203,30 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
               >
                 {t('settings.logs.view')}
               </button>
-              <p className="type-meta font-mono text-neutral-600 mt-2">{t('settings.logs.help')}</p>
+              <p className="type-meta font-mono text-neutral-400 mt-2">{t('settings.logs.help')}</p>
             </div>
           ) : (
-            <p className="type-meta font-mono text-neutral-600">{t('settings.logs.desktopOnly')}</p>
+            <p className="type-meta font-mono text-neutral-400">{t('settings.logs.desktopOnly')}</p>
           )}
         </Section>
 
         {/* Help & docs (Phase 12, Slice 12.5) */}
         <Section icon={Info} title="Help & docs">
           <ul className="type-body font-mono text-neutral-400 space-y-1.5">
-            <li><span className="text-neutral-200">User Guide</span> — ingest, search, chat, tools, audit <span className="text-neutral-600">· docs/USER_GUIDE.md</span></li>
-            <li><span className="text-neutral-200">Admin Guide</span> — roles, policy, SSO, SIEM, audit <span className="text-neutral-600">· docs/ADMIN_GUIDE.md</span></li>
-            <li><span className="text-neutral-200">Troubleshooting</span> — common fixes <span className="text-neutral-600">· docs/TROUBLESHOOTING.md</span></li>
+            <li><span className="text-neutral-200">User Guide</span> — ingest, search, chat, tools, audit <span className="text-neutral-400">· docs/USER_GUIDE.md</span></li>
+            <li><span className="text-neutral-200">Admin Guide</span> — roles, policy, SSO, SIEM, audit <span className="text-neutral-400">· docs/ADMIN_GUIDE.md</span></li>
+            <li><span className="text-neutral-200">Troubleshooting</span> — common fixes <span className="text-neutral-400">· docs/TROUBLESHOOTING.md</span></li>
           </ul>
-          <p className="type-meta font-mono text-neutral-600">Full guides ship in the docs/ folder. Use Logs (above) for diagnostics.</p>
+          <p className="type-meta font-mono text-neutral-400">Full guides ship in the docs/ folder. Use Logs (above) for diagnostics.</p>
         </Section>
 
         {/* About */}
         <Section icon={Info} title={t('settings.section.about')}>
           <div className="type-body-strong font-mono text-neutral-300">
             <span className="text-neutral-100 font-bold tracking-widest">{t('app.name')}</span>
-            <span className="text-neutral-600"> · {t('settings.about.version')} {APP_VERSION}</span>
+            <span className="text-neutral-400"> · {t('settings.about.version')} {APP_VERSION}</span>
           </div>
-          <p className="type-body font-mono text-neutral-500">{t('settings.about.desc')}</p>
+          <p className="type-body font-mono text-neutral-400">{t('settings.about.desc')}</p>
         </Section>
       </div>
     </div>

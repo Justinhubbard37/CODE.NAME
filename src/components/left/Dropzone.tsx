@@ -63,13 +63,13 @@ export function Dropzone({ children }: { children: ReactNode }) {
               <>
                 <DownloadCloud className="w-6 h-6" />
                 <span className="tracking-widest uppercase">Release to quarantine + index</span>
-                <span className="type-meta text-neutral-500">hash · structure check · gated ingest</span>
+                <span className="type-meta text-neutral-400">hash · structure check · gated ingest</span>
               </>
             ) : (
               <>
                 <ShieldAlert className="w-6 h-6" />
                 <span className="tracking-widest uppercase">Filesystem gate closed</span>
-                <span className="type-meta text-neutral-500">re-open the FS gate to ingest</span>
+                <span className="type-meta text-neutral-400">re-open the FS gate to ingest</span>
               </>
             )}
           </div>

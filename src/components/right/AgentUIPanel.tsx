@@ -41,14 +41,14 @@ export function AgentUIPanel() {
 
   return (
     <div className="shrink-0 border-b border-neutral-800 bg-neutral-900/40 max-h-64 overflow-y-auto">
-      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-500">
+      <div className="flex items-center justify-between px-3 py-1.5 type-label font-mono uppercase tracking-wider text-neutral-400">
         <span className="flex items-center gap-1">
           <Layout className="w-3 h-3" aria-hidden="true" /> Agent UI · A2UI
         </span>
         <button
           onClick={() => setAgentUI(activeTaskId, null)}
           aria-label="Dismiss agent UI"
-          className="text-neutral-600 hover:text-neutral-300 flex items-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="text-neutral-400 hover:text-neutral-300 flex items-center gap-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
         >
           <X className="w-3 h-3" aria-hidden="true" /> dismiss
         </button>

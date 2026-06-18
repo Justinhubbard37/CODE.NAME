@@ -110,7 +110,7 @@ export function GraphQueryInput() {
       : status.tone === 'working'
         ? 'text-cyan-300'
         : status.tone === 'empty'
-          ? 'text-neutral-500'
+          ? 'text-neutral-400'
           : 'text-amber-300';
   const traceText = retrievalTraceSummary(retrievalRouteTrace);
   const semanticDependentWarning =
@@ -123,19 +123,15 @@ export function GraphQueryInput() {
 
   return (
     <div className="absolute bottom-2 left-1/2 z-20 w-[min(86%,21.5rem)] -translate-x-1/2 pointer-events-auto type-label font-mono">
-      <div className="mb-1 flex items-end justify-between gap-2">
-        <div>
-          <div className="type-label text-neutral-500 uppercase tracking-wider">Knowledge Search</div>
-          <div className={`type-label ${statusText}`}>{status.label}</div>
-        </div>
-        <div className="flex items-center gap-1">
+      <div className="mb-1 flex flex-col gap-1">
+        <div className="flex items-center justify-end gap-1">
           <button
             type="button"
             onClick={() => setRetrievalMode('auto')}
             className={`border px-2 py-0.5 type-control uppercase tracking-wider ${
               retrievalMode === 'auto'
                 ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
-                : 'border-neutral-700 bg-neutral-900 text-neutral-500 hover:text-neutral-300'
+                : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-300'
             }`}
           >
             Auto
@@ -144,7 +140,7 @@ export function GraphQueryInput() {
             type="button"
             onClick={() => setAdvancedOpen((value) => !value)}
             aria-expanded={advancedOpen}
-            className="flex items-center gap-1 border border-neutral-700 bg-neutral-900 px-2 py-0.5 type-control uppercase tracking-wider text-neutral-500 hover:text-neutral-300"
+            className="flex items-center gap-1 border border-neutral-700 bg-neutral-900 px-2 py-0.5 type-control uppercase tracking-wider text-neutral-400 hover:text-neutral-300"
           >
             Advanced
             <ChevronDown className={`h-3 w-3 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
@@ -154,25 +150,33 @@ export function GraphQueryInput() {
             <input type="file" accept="image/*" className="hidden" onChange={onOcr} aria-label="Scan an image with OCR and ingest its text" />
           </label>
         </div>
-      </div>
-      {advancedOpen && (
-        <div className="mb-1 flex flex-wrap justify-end gap-1">
-          {MANUAL_MODES.map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setRetrievalMode(mode)}
-              className={`border px-2 py-0.5 type-control uppercase tracking-wider ${
-                retrievalMode === mode
-                  ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-200'
-                  : 'border-neutral-700 bg-neutral-900 text-neutral-500 hover:text-neutral-300'
-              }`}
-            >
-              {modeTitle(mode)}
-            </button>
-          ))}
+        {advancedOpen && (
+          <div className="flex flex-wrap justify-end gap-1">
+            {MANUAL_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setRetrievalMode(mode)}
+                className={`border px-2 py-0.5 type-control uppercase tracking-wider ${
+                  retrievalMode === mode
+                    ? 'border-cyan-500/50 bg-cyan-500/10 text-cyan-200'
+                    : 'border-neutral-700 bg-neutral-900 text-neutral-400 hover:text-neutral-300'
+                }`}
+              >
+                {modeTitle(mode)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="bg-neutral-950/85 border border-neutral-800 px-2 py-1 type-meta tracking-wide text-neutral-400">
+          <div className="type-label text-neutral-400 uppercase tracking-wider">Knowledge Search</div>
+          <span className={statusText}>{status.label}</span>
+          <span className="text-neutral-400"> - </span>
+          <span>{retrievalMode === 'auto' ? 'Auto uses deterministic local rules.' : `${modeTitle(retrievalMode)} mode selected.`}</span>
+          {traceText && <span className="block break-words text-neutral-400">{traceText}</span>}
+          {semanticDependentWarning ? <span className="block break-words text-amber-300">{semanticDependentWarning}</span> : null}
         </div>
-      )}
+      </div>
       <form
         onSubmit={submit}
         className="flex items-center bg-neutral-900/90 border border-neutral-800 backdrop-blur-sm px-2 py-1.5"
@@ -193,23 +197,16 @@ export function GraphQueryInput() {
                     ? 'Query semantic KB embeddings...'
                     : 'Query lexical SQLite KB chunks...'
           }
-          className="flex-1 bg-transparent outline-none type-control text-neutral-200 placeholder-neutral-600"
+          className="flex-1 bg-transparent outline-none type-control text-neutral-200 placeholder-neutral-400"
         />
         {ocr && <span className="ml-2 type-meta text-emerald-400 animate-pulse whitespace-nowrap">{ocr}</span>}
       </form>
-      <div className="mt-1 bg-neutral-950/85 border border-neutral-800 px-2 py-1 type-meta tracking-wide text-neutral-500">
-        <span className={statusText}>{status.label}</span>
-        <span className="text-neutral-700"> - </span>
-        <span>{retrievalMode === 'auto' ? 'Auto uses deterministic local rules.' : `${modeTitle(retrievalMode)} mode selected.`}</span>
-        {traceText && <span className="block break-words text-neutral-400">{traceText}</span>}
-        {semanticDependentWarning ? <span className="block break-words text-amber-300">{semanticDependentWarning}</span> : null}
-      </div>
       {retrievalResults.length > 0 && (
         <div className={`mt-1 bg-neutral-950/90 border backdrop-blur-sm p-2 max-h-28 overflow-y-auto ${accentBorder}`}>
           <div className={`type-label uppercase tracking-wider mb-1 ${accentText}`}>
             {retrievalContextDisplayLabel(retrievalMode, retrievalRouteTrace)} KB retrieval
             {resolvedMode === 'graph' && expandedResultCount === 0 ? (
-              <span className="block type-meta normal-case tracking-normal text-neutral-500">
+              <span className="block type-meta normal-case tracking-normal text-neutral-400">
                 Graph seed-only: no graph-expanded evidence found
               </span>
             ) : null}
@@ -219,10 +216,10 @@ export function GraphQueryInput() {
               <div key={result.chunk.id} className="type-meta text-neutral-400">
                 <span className={accentText}>#{index + 1}</span>{' '}
                 <span className="type-control text-neutral-200">{result.documentTitle}</span>
-                <span className="text-neutral-600"> - chunk {result.chunk.ordinal + 1}</span>
-                <span className="text-neutral-700"> - match {retrievalMatchKindLabel(result)}</span>
-                {result.graphRole && <span className="text-neutral-700"> - role {result.graphRole}</span>}
-                <div className="truncate text-neutral-600">source: {retrievalSource(result)}</div>
+                <span className="text-neutral-400"> - chunk {result.chunk.ordinal + 1}</span>
+                <span className="text-neutral-400"> - match {retrievalMatchKindLabel(result)}</span>
+                {result.graphRole && <span className="text-neutral-400"> - role {result.graphRole}</span>}
+                <div className="truncate text-neutral-400">source: {retrievalSource(result)}</div>
                 {result.graphReason && (
                   <div className="truncate text-violet-300/70">reason: {result.graphReason}</div>
                 )}

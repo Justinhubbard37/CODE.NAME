@@ -23,7 +23,7 @@ export function EnvironmentBar() {
 
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 h-7 bg-neutral-950 border-b border-neutral-900 type-meta font-mono overflow-x-auto no-scrollbar">
-      <span className="text-neutral-600 uppercase tracking-wider shrink-0">ENV {activeTask.session.id}</span>
+      <span className="text-neutral-400 uppercase tracking-wider shrink-0">ENV {activeTask.session.id}</span>
       <span className="text-neutral-800 shrink-0">|</span>
       {CAPS.map(([k, label]) => {
         const globalOpen = k === 'browser' ? gates.tools : gates[k as keyof typeof gates];
@@ -48,7 +48,7 @@ export function EnvironmentBar() {
         );
       })}
       <span className="text-neutral-800 shrink-0">|</span>
-      <span className="text-neutral-500 shrink-0">
+      <span className="text-neutral-400 shrink-0">
         POOL br {pools.browser.used}/{pools.browser.cap} · ag {pools.agent.used}/{pools.agent.cap}
       </span>
     </div>

@@ -67,22 +67,22 @@ export function RetrievedContextPanel() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 type-label uppercase tracking-wider">
             <span className={accentText}>{panelLabel}</span>
-            <span className="text-neutral-600">
+            <span className="text-neutral-400">
               {hasResults ? `${retrievalResults.length} chunk${retrievalResults.length === 1 ? '' : 's'}` : 'no matches'}
             </span>
             {resolvedMode === 'graph' && hasResults && (
-              <span className="text-neutral-500">
+              <span className="text-neutral-400">
                 seeds {seedCount} expanded {expandedCount}
               </span>
             )}
             {hasResults && (
-              <span className="text-neutral-500">
+              <span className="text-neutral-400">
                 selected {selectedCount}/{Math.min(retrievalResults.length, RETRIEVAL_CHAT_RESULT_LIMIT)}
               </span>
             )}
           </div>
           {retrievalQuery && (
-            <div className="truncate type-meta text-neutral-600" title={retrievalQuery}>
+            <div className="truncate type-meta text-neutral-400" title={retrievalQuery}>
               query: {retrievalQuery}
             </div>
           )}
@@ -93,8 +93,8 @@ export function RetrievedContextPanel() {
             <div className="type-meta break-words text-amber-300">{retrievalRouteTrace.warningMessage}</div>
           )}
           {retrievalRouteTrace && (
-            <details className="mt-0.5 type-meta text-neutral-600">
-              <summary className="cursor-pointer text-neutral-500 hover:text-neutral-300">Route trace</summary>
+            <details className="mt-0.5 type-meta text-neutral-400">
+              <summary className="cursor-pointer text-neutral-400 hover:text-neutral-300">Route trace</summary>
               <div className="mt-0.5 grid grid-cols-2 gap-x-2 gap-y-0.5">
                 <span>Requested</span><span className="text-neutral-400">{retrievalRouteTrace.requestedMode}</span>
                 <span>Resolved</span><span className="text-neutral-400">{retrievalRouteTrace.resolvedMode}</span>
@@ -119,7 +119,7 @@ export function RetrievedContextPanel() {
           className={`shrink-0 border px-1.5 py-0.5 type-control uppercase tracking-wider disabled:opacity-40 ${
             retrievalEnabledForChat
               ? `${accentBorder} ${accentText}`
-              : 'border-neutral-800 text-neutral-500 hover:text-neutral-300'
+              : 'border-neutral-800 text-neutral-400 hover:text-neutral-300'
           }`}
           title="Attach or detach retrieved chunks for the next chat request"
           aria-label="Toggle retrieved context for chat"
@@ -128,7 +128,7 @@ export function RetrievedContextPanel() {
         </button>
         <button
           onClick={clearKbRetrieval}
-          className="shrink-0 text-neutral-600 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+          className="shrink-0 text-neutral-400 hover:text-neutral-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
           title="Clear retrieved context"
           aria-label="Clear retrieved context"
         >
@@ -157,15 +157,15 @@ export function RetrievedContextPanel() {
                   <span className="min-w-0 flex-1 truncate text-neutral-300">
                     {result.documentTitle}
                   </span>
-                  <span className="text-neutral-600">chunk {result.chunk.ordinal + 1}</span>
+                  <span className="text-neutral-400">chunk {result.chunk.ordinal + 1}</span>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 type-meta uppercase tracking-wider text-neutral-600">
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 type-meta uppercase tracking-wider text-neutral-400">
                   <span className={accentText}>match {retrievalMatchKindLabel(result)}</span>
                   {result.graphRole && <span>role {result.graphRole}</span>}
                   {Number.isFinite(result.traversalDepth) && <span>depth {result.traversalDepth}</span>}
                   {result.expansionType && <span>expansion {result.expansionType.replace(/_/g, ' ')}</span>}
                 </div>
-                <div className="mt-0.5 truncate type-meta text-neutral-600" title={retrievalSource(result)}>
+                <div className="mt-0.5 truncate type-meta text-neutral-400" title={retrievalSource(result)}>
                   source: {retrievalSource(result)}
                 </div>
                 {result.graphReason && (
@@ -173,7 +173,7 @@ export function RetrievedContextPanel() {
                     reason: {result.graphReason}
                   </div>
                 )}
-                <details className="mt-0.5 type-meta text-neutral-600">
+                <details className="mt-0.5 type-meta text-neutral-400">
                   <summary className="cursor-pointer hover:text-neutral-300">Scores and graph details</summary>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 uppercase tracking-wider">
                     {Number.isFinite(result.lexicalScore) && <span>lexical {retrievalScoreLabel(result.lexicalScore!)}</span>}

@@ -59,7 +59,7 @@ export function ChatInput() {
           id="chat-input"
           aria-label="Message the agent"
           placeholder={`Message ${activeEndpoint.model}… (Enter to send, Shift+Enter newline)`}
-          className="flex-1 resize-none bg-neutral-900 border border-neutral-800 focus:border-neutral-600 outline-none type-body text-neutral-200 placeholder-neutral-600 px-3 py-2 font-mono max-h-32"
+          className="flex-1 resize-none bg-neutral-900 border border-neutral-800 focus:border-neutral-600 outline-none type-body text-neutral-200 placeholder-neutral-400 px-3 py-2 font-mono max-h-32"
         />
         {sending ? (
           <button
@@ -81,7 +81,7 @@ export function ChatInput() {
           </button>
         )}
       </div>
-      <div className="flex justify-between mt-1 type-meta font-mono text-neutral-600">
+      <div className="flex justify-between mt-1 type-meta font-mono text-neutral-400">
         <span>
           PROFILE {activeProfile.name} · T{activeProfile.temperature} · CTX{activeProfile.contextWindow}
         </span>
@@ -94,8 +94,8 @@ export function ChatInput() {
                 retrievalEnabledForChat
                   ? retrievalAccentClass
                   : selectedRetrievalCount === 0
-                    ? 'text-neutral-700'
-                    : 'text-neutral-600 hover:text-neutral-400'
+                    ? 'text-neutral-500'
+                    : 'text-neutral-400 hover:text-neutral-400'
               }
               title="Attach or detach local KB chunks for the next chat request"
               aria-label="Toggle local KB context"

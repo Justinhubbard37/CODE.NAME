@@ -9,12 +9,12 @@ import type { Endpoint, EndpointKind, EndpointNetworkClass } from '../../types';
 const KINDS: EndpointKind[] = ['ollama', 'lmstudio', 'openai', 'custom', 'gemini', 'a2a'];
 const inputCls =
   'w-full bg-neutral-950 border border-neutral-800 text-neutral-300 p-1.5 outline-none focus:border-neutral-600 font-mono type-control';
-const roCls = 'w-full bg-neutral-900/60 border border-neutral-800 text-neutral-500 p-1.5 font-mono type-control';
+const roCls = 'w-full bg-neutral-900/60 border border-neutral-800 text-neutral-400 p-1.5 font-mono type-control';
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-1">
-      <div className="type-label text-neutral-500 uppercase tracking-wider">{label}</div>
+      <div className="type-label text-neutral-400 uppercase tracking-wider">{label}</div>
       {children}
     </div>
   );
@@ -131,7 +131,7 @@ export function EndpointEditor({
 
         <div className="p-3 space-y-3">
           {locked && (
-            <div className="type-meta font-mono text-neutral-500 border border-neutral-800 bg-neutral-950 p-1.5">
+            <div className="type-meta font-mono text-neutral-400 border border-neutral-800 bg-neutral-950 p-1.5">
               Built-in provider — its address and type are fixed so local and cloud can't be
               confused. You can set the API key (if cloud) and pick the model.
             </div>
@@ -215,7 +215,7 @@ export function EndpointEditor({
           )}
 
           {needsKey && (
-            <div className="type-meta font-mono text-neutral-600">
+            <div className="type-meta font-mono text-neutral-400">
               Stored in your OS keychain and only ever read inside the Rust shell when making a
               request — never shown on screen or written to a file.
             </div>
