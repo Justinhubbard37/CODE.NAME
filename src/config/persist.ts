@@ -17,6 +17,7 @@ import {
   defaultRuntimeProfiles,
   defaultGates,
 } from './defaults';
+import { normalizeRuntimeProfileTuning } from './runtimeTuning';
 
 export const CONFIG_KEY = 'codename:config:v1';
 export const MIGRATION_BACKUP_KEY = 'codename:config:v1:pre-runtime-consolidation-backup';
@@ -225,16 +226,16 @@ function migrateProfile(profile: LegacyProfile, endpoints: LegacyEndpoint[]): Ru
     legacyEndpointModel(endpoints, legacyEndpointId) ??
     defaultProfile?.modelId ??
     '';
-  return {
+  return normalizeRuntimeProfileTuning({
     id: profile.id || `profile-${Date.now()}`,
     label: profile.label || profile.name || defaultProfile?.label || 'PROFILE',
     providerId,
     modelId: providerId ? modelId : '',
     defaultTemperature:
-      profile.defaultTemperature ?? profile.temperature ?? defaultProfile?.defaultTemperature ?? 0.7,
+      profile.defaultTemperature ?? profile.temperature ?? defaultProfile?.defaultTemperature,
     defaultContextWindow:
-      profile.defaultContextWindow ?? profile.contextWindow ?? defaultProfile?.defaultContextWindow ?? 8192,
-  };
+      profile.defaultContextWindow ?? profile.contextWindow ?? defaultProfile?.defaultContextWindow,
+  });
 }
 
 function dedupeProviders(providers: ProviderConnection[]): ProviderConnection[] {
@@ -259,7 +260,7 @@ function normalizeV2(cfg: Partial<SavedConfigV2>): SavedConfigV2 {
   const providerConnections = dedupeProviders(cfg.providerConnections ?? []);
   const runtimeProfiles =
     cfg.runtimeProfiles && cfg.runtimeProfiles.length
-      ? cfg.runtimeProfiles.map((p) => ({ ...p }))
+      ? cfg.runtimeProfiles.map((p) => normalizeRuntimeProfileTuning({ ...p }))
       : cloneDefaultProfiles();
   const activeProfileId =
     cfg.activeProfileId && runtimeProfiles.some((p) => p.id === cfg.activeProfileId)
@@ -304,7 +305,13 @@ function loadConfig(): SavedConfigV2 {
     return normalizeV2({});
   }
   if (parsed.schemaVersion === SCHEMA_VERSION && parsed.providerConnections) {
-    return normalizeV2(parsed as SavedConfigV2);
+    const normalized = normalizeV2(parsed as SavedConfigV2);
+    try {
+      writeConfig(normalized);
+    } catch {
+      /* persistence can fail in private/browser test contexts */
+    }
+    return normalized;
   }
   writeBackupOnce(raw);
   const migrated = migrateV1(parsed as SavedConfigV1);
@@ -349,7 +356,7 @@ export function saveConfig(cfg: {
     gates: cfg.gates,
   };
   try {
-    writeConfig(saved);
+    writeConfig(normalizeV2(saved));
   } catch {
     /* storage unavailable or over quota - config just won't persist */
   }

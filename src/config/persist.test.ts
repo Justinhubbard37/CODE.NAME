@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  CANONICAL_RUNTIME_PROFILE_DEFAULTS,
+} from './defaults';
+import {
   CONFIG_KEY,
   CONFIG_SCHEMA_VERSION,
   MIGRATION_BACKUP_KEY,
@@ -7,6 +10,7 @@ import {
   loadEndpoints,
   loadProfiles,
 } from './persist';
+import { resolveEffectiveRuntimeTuning } from './runtimeTuning';
 
 function installStorage() {
   const data = new Map<string, string>();
@@ -158,5 +162,178 @@ describe('config v1 to v2 runtime migration', () => {
 
     loadProfiles();
     expect(storage.get(MIGRATION_BACKUP_KEY)).toBe('existing-backup');
+  });
+
+  it('migrates missing legacy temperature and context window to canonical defaults', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      endpoints: [{ id: 'ollama-local', kind: 'ollama', model: 'llama3.1' }],
+      profiles: [{ id: 'legacy-missing', name: 'Legacy', endpointId: 'ollama-local' }],
+      activeProfileId: 'legacy-missing',
+    }));
+
+    const [profile] = loadProfiles();
+
+    expect(profile.defaultTemperature).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature);
+    expect(profile.defaultContextWindow).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow);
+  });
+
+  it('normalizes missing v2 defaultTemperature and persists the repair', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'broken',
+        label: 'Broken',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultContextWindow: 4096,
+      }],
+      activeProfileId: 'broken',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+    const saved = JSON.parse(storage.get(CONFIG_KEY) ?? '{}');
+
+    expect(profile.defaultTemperature).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature);
+    expect(saved.runtimeProfiles[0].defaultTemperature).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature);
+  });
+
+  it('normalizes missing v2 defaultContextWindow and persists the repair', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'broken',
+        label: 'Broken',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultTemperature: 0.4,
+      }],
+      activeProfileId: 'broken',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+    const saved = JSON.parse(storage.get(CONFIG_KEY) ?? '{}');
+
+    expect(profile.defaultContextWindow).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow);
+    expect(saved.runtimeProfiles[0].defaultContextWindow).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow);
+  });
+
+  it('normalizes null v2 tuning values safely', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'broken',
+        label: 'Broken',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultTemperature: null,
+        defaultContextWindow: null,
+      }],
+      activeProfileId: 'broken',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+
+    expect(profile.defaultTemperature).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature);
+    expect(profile.defaultContextWindow).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow);
+  });
+
+  it('normalizes malformed and out-of-range v2 tuning values safely', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'broken',
+        label: 'Broken',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultTemperature: 9,
+        defaultContextWindow: 'large',
+      }],
+      activeProfileId: 'broken',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+
+    expect(profile.defaultTemperature).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature);
+    expect(profile.defaultContextWindow).toBe(CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow);
+  });
+
+  it('preserves valid v2 tuning values and keeps temperature zero valid', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'valid',
+        label: 'Valid',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultTemperature: 0,
+        defaultContextWindow: 512,
+      }],
+      activeProfileId: 'valid',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+
+    expect(profile.defaultTemperature).toBe(0);
+    expect(profile.defaultContextWindow).toBe(512);
+  });
+
+  it('resolves effective tuning by override, then profile default, then canonical default', () => {
+    expect(resolveEffectiveRuntimeTuning({
+      runtimeOverrides: { temperature: 0, contextWindow: 2048 },
+      profile: { defaultTemperature: 0.8, defaultContextWindow: 4096 },
+    })).toEqual({ temperature: 0, contextWindow: 2048 });
+
+    expect(resolveEffectiveRuntimeTuning({
+      profile: { defaultTemperature: 0.8, defaultContextWindow: 4096 },
+    })).toEqual({ temperature: 0.8, contextWindow: 4096 });
+
+    expect(resolveEffectiveRuntimeTuning({
+      runtimeOverrides: { temperature: Number.NaN, contextWindow: 0 },
+      profile: { defaultTemperature: undefined, defaultContextWindow: undefined },
+    })).toEqual({
+      temperature: CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature,
+      contextWindow: CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow,
+    });
+  });
+
+  it('returns finite effective tuning values for rendering and request snapshots after migration', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+      providerConnections: [],
+      runtimeProfiles: [{
+        id: 'broken',
+        label: 'Broken',
+        providerId: 'ollama',
+        modelId: 'llama3.1',
+        defaultTemperature: undefined,
+        defaultContextWindow: undefined,
+      }],
+      activeProfileId: 'broken',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const [profile] = loadProfiles();
+    const tuning = resolveEffectiveRuntimeTuning({ profile });
+    const requestSnapshotTuning = {
+      temperature: tuning.temperature,
+      contextWindow: tuning.contextWindow,
+    };
+
+    expect(profile.defaultTemperature).not.toBeUndefined();
+    expect(profile.defaultContextWindow).not.toBeUndefined();
+    expect(Number.isFinite(tuning.temperature)).toBe(true);
+    expect(Number.isFinite(tuning.contextWindow)).toBe(true);
+    expect(Number.isFinite(requestSnapshotTuning.temperature)).toBe(true);
+    expect(Number.isFinite(requestSnapshotTuning.contextWindow)).toBe(true);
   });
 });

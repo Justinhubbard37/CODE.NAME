@@ -57,6 +57,12 @@ Implementation notes:
 - Gemini HTTPS support uses the existing `reqwest` dependency with
   `rustls-tls-native-roots`; no separate TLS crate or alternate HTTP client was
   added directly.
+- Startup compatibility repair normalized missing, malformed, or invalid
+  migrated Runtime Profile temperature/context defaults and prevents
+  tuning-control rendering from crashing on legacy or incomplete persisted
+  state. No provider, model, discovery, key-handling, retrieval, graph, or
+  UI-design behavior changed. Phase 3A remains pending owner review and is not
+  accepted.
 
 Explicitly not changed in Phase 3A:
 

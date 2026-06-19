@@ -8,6 +8,11 @@ import type {
 
 const now = 0;
 
+export const CANONICAL_RUNTIME_PROFILE_DEFAULTS = {
+  defaultTemperature: 0.7,
+  defaultContextWindow: 8192,
+} as const;
+
 function configuredModel(
   id: string,
   source: ModelInventoryEntry['source'],
@@ -85,8 +90,8 @@ export const defaultRuntimeProfiles: RuntimeProfile[] = [
     label: 'BALANCED',
     providerId: 'ollama',
     modelId: 'llama3.1',
-    defaultTemperature: 0.7,
-    defaultContextWindow: 8192,
+    defaultTemperature: CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultTemperature,
+    defaultContextWindow: CANONICAL_RUNTIME_PROFILE_DEFAULTS.defaultContextWindow,
   },
   {
     id: 'profile-precise',

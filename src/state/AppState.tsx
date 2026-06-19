@@ -41,7 +41,7 @@ import type {
   WorkTask,
 } from '../types';
 import { initialNodes, initialEdges } from '../store';
-import { initialTask } from '../config/defaults';
+import { defaultRuntimeProfiles, initialTask } from '../config/defaults';
 import {
   loadEndpoints,
   loadProfiles,
@@ -49,6 +49,10 @@ import {
   loadGates,
   saveConfig,
 } from '../config/persist';
+import {
+  normalizeRuntimeProfileTuning,
+  resolveEffectiveRuntimeTuning,
+} from '../config/runtimeTuning';
 import { hashFile } from '../lib/hash';
 import {
   canSendWithRuntime,
@@ -764,7 +768,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [gates]);
 
   const activeProfile = useMemo(
-    () => profiles.find((p) => p.id === activeProfileId) ?? profiles[0],
+    () =>
+      normalizeRuntimeProfileTuning(
+        profiles.find((p) => p.id === activeProfileId) ??
+          profiles[0] ??
+          defaultRuntimeProfiles[0],
+      ),
     [profiles, activeProfileId],
   );
   const activeEndpoint = useMemo(
@@ -775,17 +784,25 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => modelEntryForSelection(activeEndpoint, activeProfile.modelId),
     [activeEndpoint, activeProfile.modelId],
   );
-  const effectiveTemperature =
-    activeTask.runtimeOverrides?.temperature ?? activeProfile.defaultTemperature;
-  const effectiveContextWindow =
-    activeTask.runtimeOverrides?.contextWindow ?? activeProfile.defaultContextWindow;
+  const effectiveTuning = useMemo(
+    () =>
+      resolveEffectiveRuntimeTuning({
+        runtimeOverrides: activeTask.runtimeOverrides,
+        profile: activeProfile,
+      }),
+    [activeTask.runtimeOverrides, activeProfile],
+  );
+  const effectiveTemperature = effectiveTuning.temperature;
+  const effectiveContextWindow = effectiveTuning.contextWindow;
   const canSendState = canSendWithRuntime(activeEndpoint, activeModel);
   const activeRuntimeLabel = activeModel
     ? `${activeEndpoint.label} · ${activeModel.displayName}`
     : `${activeEndpoint.label} · No model`;
 
   const updateProfile = useCallback((id: string, patch: Partial<ConfigProfile>) => {
-    setProfiles((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    setProfiles((ps) =>
+      ps.map((p) => (p.id === id ? normalizeRuntimeProfileTuning({ ...p, ...patch }) : p)),
+    );
   }, []);
 
   const setEndpointModel = useCallback((endpointId: string, model: string) => {
