@@ -210,6 +210,81 @@ describe('canonical runtime transport', () => {
     expect(JSON.parse(fetchSpy.mock.calls[0][1].body).model).toBe('gpt-oss:120b-cloud');
   });
 
+  it('keeps canonical local Ollama requests on the configured local daemon', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      body: stream('{"model":"qwen3.5:latest","message":{"content":"local"}}\n'),
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const p = provider({
+      id: 'ollama',
+      label: 'Ollama',
+      baseUrl: 'http://127.0.0.1:11434',
+      models: [{
+        id: 'qwen3.5:latest',
+        displayName: 'qwen3.5:latest',
+        executionClass: 'local',
+        availability: 'available',
+        source: 'ollama',
+        discoveredAt: 1,
+        capabilities: [],
+      }],
+    });
+
+    const selected = modelEntryForSelection(p, 'qwen3.5:latest');
+    expect(selected).toMatchObject({
+      id: 'qwen3.5:latest',
+      executionClass: 'local',
+      availability: 'available',
+    });
+    expect(canSendWithRuntime(p, selected).ok).toBe(true);
+
+    const text = await streamChat(
+      p,
+      snapshot(p, 'qwen3.5:latest'),
+      [{ role: 'user', content: 'hello' }],
+      { onToken: () => {} },
+    );
+
+    expect(text).toBe('local');
+    expect(fetchSpy.mock.calls[0][0]).toBe('http://127.0.0.1:11434/api/chat');
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).model).toBe('qwen3.5:latest');
+  });
+
+  it('keeps model inventory scoped to the selected canonical provider', () => {
+    const ollama = provider({
+      id: 'ollama',
+      label: 'Ollama',
+      models: [{
+        id: 'qwen3.5:latest',
+        displayName: 'qwen3.5:latest',
+        executionClass: 'local',
+        availability: 'available',
+        source: 'ollama',
+        discoveredAt: 1,
+        capabilities: [],
+      }],
+    });
+    const lmstudio = provider({
+      id: 'lmstudio',
+      label: 'LM Studio',
+      providerKind: 'lmstudio',
+      baseUrl: 'http://localhost:1234',
+      models: [{
+        id: 'lm-local',
+        displayName: 'lm-local',
+        executionClass: 'local',
+        availability: 'available',
+        source: 'lmstudio',
+        discoveredAt: 1,
+        capabilities: [],
+      }],
+    });
+
+    expect(modelEntryForSelection(ollama, 'qwen3.5:latest')?.availability).toBe('available');
+    expect(modelEntryForSelection(lmstudio, 'qwen3.5:latest')?.availability).toBe('unavailable');
+  });
+
   it('routes Gemini generation through Rust without frontend key material', async () => {
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
     mockedInvoke.mockResolvedValue('models/gemini-2.5-pro');

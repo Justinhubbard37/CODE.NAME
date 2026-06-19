@@ -19,10 +19,12 @@ import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { SignInScreen } from './auth/SignInScreen';
 import { LanguageProvider, useT } from './i18n';
+import type { SettingsView } from './config/runtimeProviders';
 
 function Shell() {
   const t = useT();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsView, setSettingsView] = useState<SettingsView>('settings');
 
   // First-run setup wizard (Phase 12, Slice 12.4). Shown once per profile until
   // completed or skipped; the flag is persisted to localStorage.
@@ -43,7 +45,11 @@ function Shell() {
   };
 
   useEffect(() => {
-    const open = () => setSettingsOpen(true);
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<{ view?: SettingsView }>).detail;
+      setSettingsView(detail?.view ?? 'settings');
+      setSettingsOpen(true);
+    };
     window.addEventListener('codename:open-settings', open);
     return () => window.removeEventListener('codename:open-settings', open);
   }, []);
@@ -58,6 +64,7 @@ function Shell() {
       if (!mod) return;
       if (e.key === ',') {
         e.preventDefault();
+        setSettingsView('settings');
         setSettingsOpen(true);
       } else if (e.key === 'k' || e.key === 'K') {
         e.preventDefault();
@@ -75,7 +82,10 @@ function Shell() {
 
       {/* Settings entry — sits beside the stealth-drawer tab in the corner. */}
       <button
-        onClick={() => setSettingsOpen(true)}
+        onClick={() => {
+          setSettingsView('settings');
+          setSettingsOpen(true);
+        }}
         aria-label={`${t('settings.open')} (Ctrl+,)`}
         title={`${t('settings.open')} · Ctrl+,`}
         className="fixed bottom-0 left-6 z-[60] w-7 h-7 flex items-center justify-center bg-neutral-900 border-t border-r border-neutral-700 text-neutral-400 hover:text-emerald-400 hover:bg-neutral-800 transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
@@ -83,7 +93,7 @@ function Shell() {
         <SettingsIcon className="w-3.5 h-3.5" aria-hidden="true" />
       </button>
 
-      {settingsOpen && <SettingsScreen onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsScreen view={settingsView} onClose={() => setSettingsOpen(false)} />}
 
       {!onboarded && <OnboardingWizard onClose={finishOnboarding} />}
 

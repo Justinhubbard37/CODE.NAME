@@ -63,7 +63,7 @@ export function OnboardingWizard({ onClose }: { onClose: () => void }) {
   }, [step, checks, checking, runChecks]);
 
   const configureProvider = () => {
-    window.dispatchEvent(new CustomEvent('codename:open-settings'));
+    window.dispatchEvent(new CustomEvent('codename:open-settings', { detail: { view: 'provider-manager' } }));
   };
 
   const stepMeta: Record<StepId, { icon: typeof Rocket; title: string }> = {

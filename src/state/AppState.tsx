@@ -53,6 +53,7 @@ import {
   normalizeRuntimeProfileTuning,
   resolveEffectiveRuntimeTuning,
 } from '../config/runtimeTuning';
+import { canonicalProviderIdForReference, normalizeProviderConnections } from '../config/runtimeProviders';
 import { hashFile } from '../lib/hash';
 import {
   canSendWithRuntime,
@@ -713,7 +714,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
 
   /* ---- provider connections / Runtime Profiles / gates (persisted) ---- */
-  const [endpoints, setEndpoints] = useState<ProviderConnection[]>(() => loadEndpoints());
+  const [endpoints, setEndpoints] = useState<ProviderConnection[]>(() =>
+    normalizeProviderConnections(loadEndpoints()),
+  );
   const endpointsRef = useRef(endpoints);
   endpointsRef.current = endpoints;
   const [profiles, setProfiles] = useState<ConfigProfile[]>(() => loadProfiles());
@@ -824,7 +827,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [activeProfileId]);
 
   const updateEndpoint = useCallback((id: string, patch: Partial<Endpoint>) => {
-    setEndpoints((eps) => eps.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+    setEndpoints((eps) => normalizeProviderConnections(eps.map((e) => (e.id === id ? { ...e, ...patch } : e))));
   }, []);
   const updateProviderConnection = updateEndpoint;
 
@@ -892,20 +895,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const provider = endpointsRef.current.find((e) => e.id === providerId);
     if (!provider) return;
     setEndpoints((eps) =>
-      eps.map((e) => (e.id === providerId ? { ...e, status: 'configuring', detail: 'Refreshing model inventory.' } : e)),
+      normalizeProviderConnections(
+        eps.map((e) => (e.id === providerId ? { ...e, status: 'configuring', detail: 'Refreshing model inventory.' } : e)),
+      ),
     );
     const result = await discoverProviderModels(provider, gatesRef.current.network);
     setEndpoints((eps) =>
-      eps.map((e) =>
-        e.id === providerId
-          ? {
-              ...e,
-              status: result.status,
-              detail: result.detail,
-              models: result.models,
-              lastFailure: result.lastFailure,
-            }
-          : e,
+      normalizeProviderConnections(
+        eps.map((e) =>
+          e.id === providerId
+            ? {
+                ...e,
+                status: result.status,
+                detail: result.detail,
+                models: result.models,
+                lastFailure: result.lastFailure,
+              }
+            : e,
+        ),
       ),
     );
     pushActivity(
@@ -922,12 +929,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, [refreshProviderModels]);
 
   const setActiveProvider = useCallback(async (providerId: string) => {
+    const canonicalProviderId = canonicalProviderIdForReference(providerId, endpointsRef.current);
+    if (!canonicalProviderId) return;
     setProfiles((ps) =>
       ps.map((profile) =>
-        profile.id === activeProfileId ? { ...profile, providerId } : profile,
+        profile.id === activeProfileId ? { ...profile, providerId: canonicalProviderId } : profile,
       ),
     );
-    await refreshProviderModels(providerId);
+    await refreshProviderModels(canonicalProviderId);
   }, [activeProfileId, refreshProviderModels]);
 
   /* ---- chat ---- */

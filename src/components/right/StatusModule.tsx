@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Pencil, Wrench } from 'lucide-react';
 import { useApp } from '../../state/AppState';
+import { buildNormalProviderMenu, type SettingsView } from '../../config/runtimeProviders';
 import {
   executionClassLabel,
   isModelSelectable,
@@ -19,8 +20,8 @@ const STATUS_CLASS: Record<string, string> = {
   configuring: 'text-amber-300 border-amber-500/50 bg-amber-500/10',
 };
 
-function openProviderManager() {
-  window.dispatchEvent(new CustomEvent('codename:open-settings'));
+function openSettings(view: SettingsView) {
+  window.dispatchEvent(new CustomEvent('codename:open-settings', { detail: { view } }));
 }
 
 export function StatusModule() {
@@ -35,6 +36,7 @@ export function StatusModule() {
   const [providerOpen, setProviderOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const providerMenu = buildNormalProviderMenu(endpoints);
 
   useEffect(() => {
     if (!providerOpen && !modelOpen) return;
@@ -149,7 +151,28 @@ export function StatusModule() {
             <div className="px-2 py-1 type-label text-neutral-400 uppercase tracking-wider border-b border-neutral-800">
               Providers
             </div>
-            {endpoints.map((provider) => {
+            {providerMenu.map((item) => {
+              if (item.type === 'divider') {
+                return <div key={item.id} role="separator" className="my-1 border-t border-neutral-800" />;
+              }
+              if (item.type === 'action') {
+                const Icon = item.id === 'setup-sidecar' ? Wrench : Pencil;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setProviderOpen(false);
+                      openSettings(item.target);
+                    }}
+                    role="menuitem"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-neutral-300 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
+                  >
+                    <Icon className="w-3 h-3" aria-hidden="true" />
+                    {item.label}
+                  </button>
+                );
+              }
+              const provider = item.provider;
               const active = provider.id === activeEndpoint.id;
               return (
                 <button
@@ -172,28 +195,6 @@ export function StatusModule() {
                 </button>
               );
             })}
-            <button
-              onClick={() => {
-                setProviderOpen(false);
-                openProviderManager();
-              }}
-              role="menuitem"
-              className="w-full flex items-center gap-2 px-2 py-1.5 border-t border-neutral-800 text-neutral-300 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-            >
-              <Wrench className="w-3 h-3" aria-hidden="true" />
-              Set Up Agent Sidecar
-            </button>
-            <button
-              onClick={() => {
-                setProviderOpen(false);
-                openProviderManager();
-              }}
-              role="menuitem"
-              className="w-full flex items-center gap-2 px-2 py-1.5 border-t border-neutral-800 text-neutral-300 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-emerald-500"
-            >
-              <Pencil className="w-3 h-3" aria-hidden="true" />
-              Provider Manager
-            </button>
           </div>
         )}
       </div>

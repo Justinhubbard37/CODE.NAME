@@ -26,14 +26,14 @@ function installStorage() {
   return data;
 }
 
-describe('config v1 to v2 runtime migration', () => {
+describe('config runtime migration and normalization', () => {
   let storage: Map<string, string>;
 
   beforeEach(() => {
     storage = installStorage();
   });
 
-  it('writes schemaVersion 2 and creates one pre-migration backup without secrets', () => {
+  it('writes schemaVersion 3 and creates one pre-migration backup without secrets', () => {
     const legacy = {
       endpoints: [
         {
@@ -90,6 +90,12 @@ describe('config v1 to v2 runtime migration', () => {
     const profiles = loadProfiles();
 
     expect(providers.filter((provider) => provider.id === 'ollama')).toHaveLength(1);
+    expect(providers.some((provider) => provider.id === 'ollama-cloud')).toBe(false);
+    expect(providers.find((provider) => provider.id === 'ollama')?.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'gpt-oss:120b-cloud', executionClass: 'cloud' }),
+      ]),
+    );
     expect(providers.find((provider) => provider.id === 'ollama')).toMatchObject({
       label: 'Ollama',
       baseUrl: 'http://127.0.0.1:11434',
@@ -109,10 +115,12 @@ describe('config v1 to v2 runtime migration', () => {
     storage.set(CONFIG_KEY, JSON.stringify({
       endpoints: [
         { id: 'gemini-cloud', kind: 'gemini', model: 'gemini-2.0-flash' },
+        { id: 'gemini-cloud-secondary', kind: 'gemini', model: 'gemini-2.5-pro' },
         { id: 'lmstudio-local', kind: 'lmstudio', model: 'local-model' },
       ],
       profiles: [
         { id: 'gemini', name: 'Gemini', endpointId: 'gemini-cloud' },
+        { id: 'gemini-secondary', name: 'Gemini secondary', endpointId: 'gemini-cloud-secondary' },
         { id: 'lm', name: 'LM', endpointId: 'lmstudio-local' },
       ],
       activeProfileId: 'lm',
@@ -123,11 +131,115 @@ describe('config v1 to v2 runtime migration', () => {
       providerId: 'gemini',
       modelId: 'gemini-2.0-flash',
     });
+    expect(profiles.find((profile) => profile.id === 'gemini-secondary')).toMatchObject({
+      providerId: 'gemini',
+      modelId: 'gemini-2.5-pro',
+    });
     expect(profiles.find((profile) => profile.id === 'lm')).toMatchObject({
       providerId: 'lmstudio',
       modelId: 'local-model',
     });
     expect(loadActiveProfileId()).toBe('lm');
+    expect(loadEndpoints().filter((provider) => provider.id === 'gemini')).toHaveLength(1);
+    expect(loadEndpoints().some((provider) => provider.id === 'gemini-cloud-secondary')).toBe(false);
+  });
+
+  it('normalizes all duplicate legacy providers to exactly four canonical providers', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      endpoints: [
+        { id: 'ollama-local', label: 'Ollama (Local)', kind: 'ollama', model: 'llama3.1' },
+        { id: 'ollama-cloud', label: 'Ollama Cloud', kind: 'ollama', model: 'gpt-oss:model-cloud' },
+        { id: 'lmstudio-local', label: 'LM Studio (Local)', kind: 'lmstudio', model: 'local-model' },
+        { id: 'gemini-cloud', label: 'Gemini Cloud', kind: 'gemini', model: 'gemini-2.0-flash' },
+        { id: 'gemini-cloud-secondary', label: 'Gemini (cloud - secondary)', kind: 'gemini', model: 'gemini-2.5-pro' },
+        { id: 'agent-sidecar-a2a', label: 'Agent Sidecar (A2A)', kind: 'a2a', model: 'adk-agent' },
+      ],
+      profiles: [
+        { id: 'ollama-local-profile', name: 'Ollama Local', endpointId: 'ollama-local' },
+        { id: 'ollama-cloud-profile', name: 'Ollama Cloud', endpointId: 'ollama-cloud' },
+        { id: 'lm-profile', name: 'LM Studio Local', endpointId: 'lmstudio-local' },
+        { id: 'gemini-profile', name: 'Gemini Secondary', endpointId: 'gemini-cloud-secondary' },
+      ],
+      activeProfileId: 'ollama-cloud-profile',
+    }));
+
+    const providers = loadEndpoints();
+    const profiles = loadProfiles();
+
+    expect(providers.map((provider) => provider.id)).toEqual([
+      'ollama',
+      'lmstudio',
+      'custom-openai',
+      'gemini',
+    ]);
+    expect(profiles.map((profile) => profile.providerId)).toEqual([
+      'ollama',
+      'ollama',
+      'lmstudio',
+      'gemini',
+    ]);
+    expect(profiles.find((profile) => profile.id === 'ollama-cloud-profile')?.modelId).toBe('gpt-oss:model-cloud');
+    expect(loadActiveProfileId()).toBe('ollama-cloud-profile');
+  });
+
+  it('preserves custom OpenAI-compatible configuration under one canonical runtime entry', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: 2,
+      providerConnections: [
+        {
+          id: 'custom-prod',
+          label: 'Production OpenAI-compatible',
+          providerKind: 'openai-compatible',
+          baseUrl: 'https://models.example.test',
+          requiresNetwork: true,
+          requiresSecret: true,
+          secretRequirement: 'keychain',
+          apiKeyEnv: 'CUSTOM_API_KEY',
+          status: 'available',
+          detail: '1 model.',
+          userEditable: true,
+          models: [{
+            id: 'custom-model',
+            displayName: 'custom-model',
+            executionClass: 'cloud',
+            availability: 'available',
+            source: 'openai-compatible',
+            discoveredAt: 1,
+            capabilities: [],
+          }],
+        },
+      ],
+      runtimeProfiles: [{
+        id: 'custom-profile',
+        label: 'Custom',
+        providerId: 'custom-prod',
+        modelId: 'custom-model',
+        defaultTemperature: 0.4,
+        defaultContextWindow: 4096,
+      }],
+      activeProfileId: 'custom-profile',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    const providers = loadEndpoints();
+    const custom = providers.find((provider) => provider.id === 'custom-openai');
+
+    expect(providers.filter((provider) => provider.id === 'custom-openai')).toHaveLength(1);
+    expect(custom).toMatchObject({
+      label: 'Custom OpenAI-compatible',
+      providerKind: 'openai-compatible',
+      baseUrl: 'https://models.example.test',
+      requiresNetwork: true,
+      requiresSecret: true,
+      secretRequirement: 'keychain',
+      apiKeyEnv: 'CUSTOM_API_KEY',
+      userEditable: true,
+    });
+    expect(custom?.models).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'custom-model' })]));
+    expect(loadProfiles()[0]).toMatchObject({
+      providerId: 'custom-openai',
+      modelId: 'custom-model',
+    });
   });
 
   it('removes active Agent Sidecar from normal provider/model selection without switching', () => {
@@ -152,6 +264,45 @@ describe('config v1 to v2 runtime migration', () => {
     expect(loadEndpoints().some((provider) => provider.id === 'agent-sidecar')).toBe(false);
   });
 
+  it('normalizes active Agent Sidecar aliases to an unselected normal runtime state', () => {
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: 2,
+      providerConnections: [{
+        id: 'agent-sidecar-a2a',
+        label: 'Agent Sidecar (A2A)',
+        providerKind: 'a2a',
+        baseUrl: 'http://127.0.0.1:0',
+        requiresNetwork: false,
+        requiresSecret: false,
+        secretRequirement: 'none',
+        status: 'available',
+        models: [],
+      }],
+      runtimeProfiles: [{
+        id: 'sidecar-profile',
+        label: 'Sidecar',
+        providerId: 'agent-sidecar-a2a',
+        modelId: 'agent-model',
+        defaultTemperature: 0.5,
+        defaultContextWindow: 4096,
+      }],
+      activeProfileId: 'sidecar-profile',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    expect(loadActiveProfileId()).toBe('sidecar-profile');
+    expect(loadProfiles()[0]).toMatchObject({
+      providerId: '',
+      modelId: '',
+    });
+    expect(loadEndpoints().map((provider) => provider.id)).toEqual([
+      'ollama',
+      'lmstudio',
+      'custom-openai',
+      'gemini',
+    ]);
+  });
+
   it('does not overwrite an existing migration backup', () => {
     storage.set(MIGRATION_BACKUP_KEY, 'existing-backup');
     storage.set(CONFIG_KEY, JSON.stringify({
@@ -161,6 +312,66 @@ describe('config v1 to v2 runtime migration', () => {
     }));
 
     loadProfiles();
+    expect(storage.get(MIGRATION_BACKUP_KEY)).toBe('existing-backup');
+  });
+
+  it('never creates a second migration backup key and keeps normalized loads idempotent', () => {
+    storage.set(MIGRATION_BACKUP_KEY, 'existing-backup');
+    storage.set(CONFIG_KEY, JSON.stringify({
+      schemaVersion: 2,
+      providerConnections: [
+        {
+          id: 'ollama-local',
+          label: 'Ollama (Local)',
+          providerKind: 'ollama',
+          baseUrl: 'http://127.0.0.1:11434',
+          requiresNetwork: false,
+          requiresSecret: false,
+          secretRequirement: 'none',
+          status: 'available',
+          models: [],
+        },
+        {
+          id: 'gemini-cloud-secondary',
+          label: 'Gemini (cloud - secondary)',
+          providerKind: 'gemini',
+          baseUrl: 'https://generativelanguage.googleapis.com',
+          requiresNetwork: true,
+          requiresSecret: true,
+          secretRequirement: 'keychain',
+          status: 'requires_api_key',
+          models: [],
+        },
+      ],
+      runtimeProfiles: [{
+        id: 'broken-phase-3a',
+        label: 'Broken',
+        providerId: 'gemini-cloud-secondary',
+        modelId: 'gemini-2.5-pro',
+        defaultTemperature: 0.7,
+        defaultContextWindow: 8192,
+      }],
+      activeProfileId: 'broken-phase-3a',
+      gates: { filesystem: true, network: true, tools: true },
+    }));
+
+    loadProfiles();
+    const firstSaved = storage.get(CONFIG_KEY);
+    loadProfiles();
+
+    expect(storage.get(CONFIG_KEY)).toBe(firstSaved);
+    expect(JSON.parse(firstSaved ?? '{}').schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    expect(loadProfiles()[0]).toMatchObject({
+      providerId: 'gemini',
+      modelId: 'gemini-2.5-pro',
+    });
+    expect(loadEndpoints().map((provider) => provider.id)).toEqual([
+      'ollama',
+      'lmstudio',
+      'custom-openai',
+      'gemini',
+    ]);
+    expect(Array.from(storage.keys()).filter((key) => key.includes('backup'))).toEqual([MIGRATION_BACKUP_KEY]);
     expect(storage.get(MIGRATION_BACKUP_KEY)).toBe('existing-backup');
   });
 

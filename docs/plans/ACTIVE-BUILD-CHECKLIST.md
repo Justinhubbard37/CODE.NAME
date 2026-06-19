@@ -29,7 +29,7 @@ Definition of done:
 - [x] render structured provider failures instead of synthetic assistant replies
 - [x] keep Agent Sidecar out of normal provider/model selectors
 - [x] add Set Up Agent Sidecar and Provider Manager access paths
-- [x] add config schema version 2 migration and one-time localStorage backup
+- [x] add config schema version 3 migration and one-time localStorage backup
 - [x] avoid automatic model pulls, downloads, preloads, polling, or cloud
   inference during discovery
 - [x] preserve KB retrieval, graph behavior, attachment behavior, and brand
@@ -46,7 +46,7 @@ Implementation notes:
   `defaultTemperature`, and `defaultContextWindow`.
 - Provider connections store provider metadata and structured model inventory;
   they do not own the active selected model.
-- Config migration writes `schemaVersion: 2` and creates one backup at
+- Config migration writes `schemaVersion: 3` and creates one backup at
   `codename:config:v1:pre-runtime-consolidation-backup` before overwriting a
   legacy saved config.
 - Legacy `ollama-local` and `ollama-cloud` providers migrate to one `ollama`
@@ -63,6 +63,14 @@ Implementation notes:
   state. No provider, model, discovery, key-handling, retrieval, graph, or
   UI-design behavior changed. Phase 3A remains pending owner review and is not
   accepted.
+- Corrective provider-consolidation repair deterministically normalizes legacy
+  provider records into exactly four canonical runtime providers: `ollama`,
+  `lmstudio`, `custom-openai`, and `gemini`. Legacy Ollama Local/Ollama Cloud,
+  LM Studio Local, and Gemini secondary/cloud records no longer appear in
+  normal runtime selection. Agent Sidecar is removed from normal provider
+  selection and routes through dedicated Agent Sidecar Setup, while Provider
+  Manager opens a distinct canonical provider-management destination. Phase 3A
+  remains pending owner review and is not accepted.
 
 Explicitly not changed in Phase 3A:
 

@@ -22,6 +22,12 @@ import {
   providerStatusLabel,
 } from '../../lib/llm';
 import { getSidecarInfo, restartSidecar, type SidecarInfo } from '../../lib/sidecar';
+import {
+  configuredSidecarEndpoint,
+  sidecarCheckResult,
+  type SidecarCheckResult,
+} from '../../config/sidecarSetup';
+import { normalProviderMenuProviders, type SettingsView } from '../../config/runtimeProviders';
 
 const APP_VERSION = '0.0.0';
 
@@ -45,7 +51,13 @@ function Section({
   );
 }
 
-export function SettingsScreen({ onClose }: { onClose: () => void }) {
+export function SettingsScreen({
+  onClose,
+  view = 'settings',
+}: {
+  onClose: () => void;
+  view?: SettingsView;
+}) {
   const t = useT();
   const { lang, setLang, languages } = useLang();
   const {
@@ -65,7 +77,23 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [refreshingProviderId, setRefreshingProviderId] = useState('');
   const [sidecarInfo, setSidecarInfo] = useState<SidecarInfo | null>(null);
-  const [sidecarMessage, setSidecarMessage] = useState('');
+  const [sidecarResult, setSidecarResult] = useState<SidecarCheckResult | null>(null);
+  const managedProviders = normalProviderMenuProviders(endpoints);
+  const title =
+    view === 'sidecar-setup'
+      ? 'Agent Sidecar Setup'
+      : view === 'provider-manager'
+        ? 'Provider Manager'
+        : t('settings.title');
+  const subtitle =
+    view === 'sidecar-setup'
+      ? 'Configure and verify Sidecar connectivity.'
+      : view === 'provider-manager'
+        ? 'Manage Ollama, LM Studio, Custom OpenAI-compatible, and Gemini.'
+        : t('settings.subtitle');
+  const showProviderManager = view !== 'sidecar-setup';
+  const showSidecarSetup = view === 'sidecar-setup' || view === 'settings';
+  const showGeneralSettings = view === 'settings';
 
   useFocusTrap(dialogRef, onClose);
 
@@ -85,13 +113,13 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
   async function checkSidecar() {
     const info = await getSidecarInfo();
     setSidecarInfo(info);
-    setSidecarMessage(info ? `Sidecar ${info.status}` : 'Sidecar unavailable in this runtime.');
+    setSidecarResult(sidecarCheckResult(info));
   }
 
   async function restartAndCheckSidecar() {
     const info = await restartSidecar();
     setSidecarInfo(info);
-    setSidecarMessage(info ? `Sidecar ${info.status}` : 'Sidecar restart unavailable.');
+    setSidecarResult(sidecarCheckResult(info));
   }
 
   function openLogs() {
@@ -118,9 +146,9 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
         <div className="sticky top-0 z-10 flex items-start justify-between gap-4 px-5 py-4 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800">
           <div>
             <h2 id="settings-title" className="type-heading font-mono tracking-widest text-neutral-100 uppercase">
-              {t('settings.title')}
+              {title}
             </h2>
-            <p className="type-meta font-mono text-neutral-400 mt-1">{t('settings.subtitle')}</p>
+            <p className="type-meta font-mono text-neutral-400 mt-1">{subtitle}</p>
           </div>
           <button
             ref={closeRef}
@@ -132,7 +160,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <Section icon={Cpu} title="Provider Manager">
+        {showProviderManager && <Section icon={Cpu} title="Provider Manager">
           <label className="block">
             <span className="type-label font-mono uppercase tracking-wider text-neutral-400">Runtime Profile</span>
             <select
@@ -185,7 +213,7 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="space-y-2">
-            {endpoints.map((provider) => {
+            {managedProviders.map((provider) => {
               const active = provider.id === activeEndpoint.id;
               const refreshing = refreshingProviderId === provider.id;
               return (
@@ -238,19 +266,30 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
               );
             })}
           </div>
-        </Section>
+        </Section>}
 
-        <Section icon={KeyRound} title={t('settings.section.secrets')}>
+        {showProviderManager && <Section icon={KeyRound} title={t('settings.section.secrets')}>
           <SecretsPanel />
-        </Section>
+        </Section>}
 
-        <Section icon={Wrench} title="Agent Sidecar Setup">
+        {showSidecarSetup && <Section icon={Wrench} title="Agent Sidecar Setup">
           <div className="border border-neutral-800 bg-neutral-950 p-3 type-body font-mono text-neutral-300">
+            <div>Configured endpoint: <span className="text-neutral-100">{configuredSidecarEndpoint()}</span></div>
             <div>Readiness: <span className="text-neutral-100">{sidecarInfo?.status ?? 'unknown'}</span></div>
             <div className="type-meta text-neutral-400">
               Connection: {sidecarInfo ? `${sidecarInfo.host}:${sidecarInfo.port}` : 'not checked'}
             </div>
-            {sidecarMessage && <div className="mt-2 type-meta text-neutral-400">{sidecarMessage}</div>}
+            {sidecarResult && (
+              <div className={`mt-2 type-meta ${
+                sidecarResult.kind === 'success'
+                  ? 'text-emerald-300'
+                  : sidecarResult.kind === 'failed'
+                    ? 'text-red-300'
+                    : 'text-amber-300'
+              }`}>
+                {sidecarResult.message}
+              </div>
+            )}
             <div className="mt-3 flex gap-2">
               <button
                 onClick={checkSidecar}
@@ -264,21 +303,27 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
               >
                 Restart Sidecar
               </button>
+              <button
+                onClick={onClose}
+                className="type-control font-mono border border-neutral-700 text-neutral-300 hover:border-neutral-500 px-2 py-1"
+              >
+                Close
+              </button>
             </div>
           </div>
-        </Section>
+        </Section>}
 
-        <Section icon={ShieldCheck} title={t('settings.section.gates')}>
+        {showGeneralSettings && <Section icon={ShieldCheck} title={t('settings.section.gates')}>
           <SecurityGates />
-        </Section>
+        </Section>}
 
-        <Section icon={SlidersHorizontal} title="Runtime Defaults">
+        {showProviderManager && <Section icon={SlidersHorizontal} title="Runtime Defaults">
           <p className="type-meta font-mono text-neutral-400">
             Persistent provider/profile defaults are edited above. The bottom-left Parameter Tray applies per-chat temporary overrides.
           </p>
-        </Section>
+        </Section>}
 
-        <Section icon={Languages} title={t('settings.section.language')}>
+        {showGeneralSettings && <Section icon={Languages} title={t('settings.section.language')}>
           <fieldset>
             <legend className="type-label font-mono uppercase tracking-wider text-neutral-400 mb-2">
               {t('settings.language.label')}
@@ -301,9 +346,9 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
             </div>
             <p className="type-meta font-mono text-neutral-400 mt-2">{t('settings.language.help')}</p>
           </fieldset>
-        </Section>
+        </Section>}
 
-        <Section icon={ScrollText} title={t('settings.section.logs')}>
+        {showGeneralSettings && <Section icon={ScrollText} title={t('settings.section.logs')}>
           {isTauri ? (
             <div>
               <button
@@ -317,23 +362,23 @@ export function SettingsScreen({ onClose }: { onClose: () => void }) {
           ) : (
             <p className="type-meta font-mono text-neutral-400">{t('settings.logs.desktopOnly')}</p>
           )}
-        </Section>
+        </Section>}
 
-        <Section icon={Info} title="Help & docs">
+        {showGeneralSettings && <Section icon={Info} title="Help & docs">
           <ul className="type-body font-mono text-neutral-400 space-y-1.5">
             <li><span className="text-neutral-200">User Guide</span> · docs/USER_GUIDE.md</li>
             <li><span className="text-neutral-200">Admin Guide</span> · docs/ADMIN_GUIDE.md</li>
             <li><span className="text-neutral-200">Troubleshooting</span> · docs/TROUBLESHOOTING.md</li>
           </ul>
-        </Section>
+        </Section>}
 
-        <Section icon={Info} title={t('settings.section.about')}>
+        {showGeneralSettings && <Section icon={Info} title={t('settings.section.about')}>
           <div className="type-body-strong font-mono text-neutral-300">
             <span className="text-neutral-100 font-bold tracking-widest">{t('app.name')}</span>
             <span className="text-neutral-400"> · {t('settings.about.version')} {APP_VERSION}</span>
           </div>
           <p className="type-body font-mono text-neutral-400">{t('settings.about.desc')}</p>
-        </Section>
+        </Section>}
       </div>
     </div>
   );
