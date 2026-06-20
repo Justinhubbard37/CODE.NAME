@@ -9,6 +9,7 @@ import { SecurityGates } from './SecurityGates';
 import { useApp } from '../../state/AppState';
 import { useAuth } from '../../auth/AuthContext';
 import { canManageWorkspaces, canConfigureSiem } from '../../auth/roles';
+import { parameterTrayExpandedWidthCss } from '../runtimeControlLayout';
 import { executionClassLabel, modelAvailabilityLabel } from '../../lib/llm';
 import {
   loadWorkspaces, getActiveWorkspace, createWorkspace, switchWorkspace, deleteWorkspace,
@@ -156,12 +157,17 @@ export function StealthDrawer() {
       {/* Sliding tray */}
       <div
         ref={trayRef}
-        className={`fixed bottom-0 left-0 z-[55] w-72 bg-neutral-950/95 border-t border-r border-neutral-700 backdrop-blur-sm transition-transform duration-200 ${
+        className={`fixed bottom-0 left-0 z-[55] bg-neutral-950/95 border-t border-r border-neutral-700 backdrop-blur-sm transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
-        style={{ maxHeight: '85vh', overflowY: 'auto' }}
+        style={{
+          width: parameterTrayExpandedWidthCss(),
+          maxWidth: 'calc(100vw - 1rem)',
+          maxHeight: '85vh',
+          overflowY: 'auto',
+        }}
       >
-        <div className="p-3 pl-7 space-y-4">
+        <div className="p-3 pl-7 space-y-4 min-w-0">
           <div className="type-control font-mono uppercase tracking-widest text-emerald-400/80 border-b border-neutral-800 pb-2">
             Parameter Tray
           </div>
@@ -213,11 +219,11 @@ export function StealthDrawer() {
             />
           </div>
 
-          <div className="space-y-1.5 border border-neutral-800 bg-neutral-950 p-2">
+          <div className="space-y-1.5 border border-neutral-800 bg-neutral-950 p-2 min-w-0">
             <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
               Active Runtime
             </div>
-            <div className="type-body font-mono text-neutral-200 truncate">{activeRuntimeLabel}</div>
+            <div className="type-body font-mono text-neutral-200 break-words">{activeRuntimeLabel}</div>
             <div className="type-meta font-mono text-neutral-400">
               {activeModel
                 ? `${executionClassLabel(activeModel.executionClass)} / ${modelAvailabilityLabel(activeModel.availability)}`
@@ -230,21 +236,21 @@ export function StealthDrawer() {
 
           {/* Workspaces (Phase 8.3) */}
           <div className="space-y-1.5 border-t border-neutral-800 pt-3">
-            <div className="flex items-center justify-between">
-              <div className="type-label font-mono uppercase tracking-wider text-neutral-400">Workspaces</div>
+            <div className="flex items-center justify-between gap-2 min-w-0">
+              <div className="type-label font-mono uppercase tracking-wider text-neutral-400 shrink-0">Workspaces</div>
               <button
                 onClick={signOut}
-                className="type-control font-mono text-neutral-400 hover:text-neutral-400 transition-colors"
+                className="type-control font-mono text-neutral-400 hover:text-neutral-400 transition-colors min-w-0 truncate"
               >
                 {currentUser?.name} · sign out
               </button>
             </div>
             <div className="space-y-1">
               {workspaces.map((ws) => (
-                <div key={ws.id} className="flex items-center gap-1">
+                <div key={ws.id} className="flex items-center gap-1 min-w-0">
                   <button
                     onClick={() => handleSwitchWorkspace(ws.id)}
-                    className={`flex-1 text-left px-2 py-1 type-label font-mono border transition-colors ${
+                    className={`flex-1 min-w-0 text-left px-2 py-1 type-label font-mono border transition-colors ${
                       ws.id === activeWsId
                         ? 'border-violet-500/50 text-violet-300 bg-violet-500/5'
                         : 'border-neutral-700 text-neutral-400 hover:border-neutral-500'
@@ -462,7 +468,7 @@ This will OVERWRITE all current data. ` +
                   placeholder="https://siem.corp/ingest"
                   className="w-full bg-neutral-900 border border-neutral-700 px-2 py-1 type-label font-mono text-neutral-300 focus:outline-none focus:border-neutral-500 placeholder:text-neutral-400"
                 />
-                <div className="flex gap-1 items-center">
+                <div className="flex flex-wrap gap-1 items-center">
                   <button
                     onClick={() => {
                       if (!siemUrl.trim()) { setSiemConfig(null); return; }
@@ -529,7 +535,7 @@ This will OVERWRITE all current data. ` +
           {/* View Logs (Phase 9.1) */}
           <div className="border-t border-neutral-800 pt-3">
             <div className="type-control font-mono font-bold tracking-widest text-neutral-400 uppercase mb-2">Logs</div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <button
                 onClick={() => {
                   if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
@@ -540,7 +546,7 @@ This will OVERWRITE all current data. ` +
                 View Logs
               </button>
               {logDir && (
-                <span className="type-control font-mono text-neutral-400 truncate max-w-[160px]" title={logDir}>
+                <span className="type-control font-mono text-neutral-400 truncate min-w-0 flex-1" title={logDir}>
                   {logDir}
                 </span>
               )}

@@ -71,6 +71,13 @@ Implementation notes:
   selection and routes through dedicated Agent Sidecar Setup, while Provider
   Manager opens a distinct canonical provider-management destination. Phase 3A
   remains pending owner review and is not accepted.
+- Owner-review usability correction constrains the model selector to the
+  visible viewport and enables scrolling when model inventory exceeds available
+  height. The expanded Parameter Tray width increased by 20 percent to preserve
+  readability after typography changes, with responsive viewport bounds. No
+  provider, model, routing, runtime-tuning, retrieval, graph, attachment,
+  credential, or visual-brand behavior changed. Phase 3A remains pending owner
+  acceptance and is not accepted.
 
 Explicitly not changed in Phase 3A:
 
