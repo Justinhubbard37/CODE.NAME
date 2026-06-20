@@ -63,10 +63,9 @@ pub fn run() {
             let log_dir = logging::init_logging(&handle);
             crash::init_crash_dir(&handle);
             tracing::info!("CODE NAME starting up");
-            // Pass log dir to sidecar so Python writes to the same location.
+            // Sidecar launch is explicit-only from Agent Sidecar Setup.
             let mgr = app.state::<SidecarManager>();
             mgr.set_log_dir(log_dir);
-            mgr.start(&handle);
             Ok(())
         })
         .build(tauri::generate_context!())

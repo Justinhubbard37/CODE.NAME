@@ -6,9 +6,9 @@ import { isGateLocked } from '../../auth/policy';
 import type { SecurityGates as Gates } from '../../types';
 
 const GATES: { key: keyof Gates; label: string; icon: typeof HardDrive; desc: string }[] = [
-  { key: 'filesystem', label: 'FILE SYSTEM', icon: HardDrive, desc: 'local ingest + disk reads' },
-  { key: 'network', label: 'NETWORK', icon: Globe, desc: 'outward / cloud requests' },
-  { key: 'tools', label: 'TOOL EXEC', icon: Wrench, desc: 'agent tool invocations' },
+  { key: 'filesystem', label: 'FILE SYSTEM', icon: HardDrive, desc: 'policy gate for file access' },
+  { key: 'network', label: 'NETWORK', icon: Globe, desc: 'policy gate for outbound requests' },
+  { key: 'tools', label: 'TOOL EXEC', icon: Wrench, desc: 'policy gate for tool dispatch' },
 ];
 
 export function SecurityGates() {
@@ -20,6 +20,9 @@ export function SecurityGates() {
     <div className="space-y-2">
       <div className="type-label font-mono uppercase tracking-wider text-neutral-400">
         Capability Gates
+      </div>
+      <div className="type-meta font-mono text-neutral-500 px-1">
+        Gates are policy limits, not connected or bound tools.
       </div>
       {!isAdmin && (
         <div className="flex items-center gap-1.5 type-meta font-mono text-amber-600/70 px-1">

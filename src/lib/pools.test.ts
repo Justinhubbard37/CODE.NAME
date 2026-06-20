@@ -1,5 +1,5 @@
 /**
- * Slice 6.3 — Isolation and lifecycle tests for the pool module.
+ * Slice 6.3 — Lease bookkeeping and lifecycle tests for the pool module.
  *
  * Uses _resetPool() for singleton isolation between cases.
  * onCreate / onRelease are vi.fn() — no Tauri mock required.
@@ -36,7 +36,7 @@ describe('lease()', () => {
     expect(r1.id).toBe(r2.id);
   });
 
-  it('gives two different tabs distinct slot ids (isolation proof)', () => {
+  it('gives two different tabs distinct placeholder slot ids', () => {
     const r1 = lease('browser', 'tab-A');
     const r2 = lease('browser', 'tab-B');
     expect(r1.ok).toBe(true);
@@ -174,9 +174,9 @@ describe('configurePoolBackend()', () => {
   });
 });
 
-// ── Cross-tab isolation (Slice 6.3 spec) ─────────────────────────────────────
+// ── Cross-tab lease separation ───────────────────────────────────────────────
 
-describe('cross-tab isolation', () => {
+describe('cross-tab lease separation', () => {
   it('two tabs with separate leases cannot share a slot id', () => {
     const r1 = lease('browser', 'tab-A');
     const r2 = lease('browser', 'tab-B');

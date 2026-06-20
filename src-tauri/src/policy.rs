@@ -1,8 +1,7 @@
 //! Pure Rust command-policy registry for the Phase 1 security spine.
 //!
-//! This module intentionally does not enforce policy on live Tauri commands yet.
-//! It defines the command inventory, gate/risk classifications, and sanitized
-//! denial helpers that later Phase 1 slices can call from command handlers.
+//! This module defines the command inventory, gate/risk classifications, and
+//! sanitized denial helpers used by live Tauri command handlers.
 
 #![allow(dead_code)]
 
@@ -303,18 +302,11 @@ const TOOLS_GATE: &[GateRequirement] = &[GateRequirement::Always(Gate::Tools)];
 const FILESYSTEM_GATE: &[GateRequirement] = &[GateRequirement::Always(Gate::Filesystem)];
 const SIDE_EFFECTFUL_SIDECAR: &[GateRequirement] = &[
     GateRequirement::Always(Gate::Tools),
-    GateRequirement::Conditional {
-        gate: Gate::Network,
-        reason:
-            "sidecar agent execution can reach cloud providers depending on sidecar configuration",
-    },
+    GateRequirement::Always(Gate::Network),
 ];
 const SIDECAR_COMMUNITIES: &[GateRequirement] = &[
     GateRequirement::Always(Gate::Tools),
-    GateRequirement::Conditional {
-        gate: Gate::Network,
-        reason: "community summarization can invoke the sidecar agent model",
-    },
+    GateRequirement::Always(Gate::Network),
 ];
 const BROWSER_OPEN: &[GateRequirement] = &[
     GateRequirement::Always(Gate::Tools),
@@ -322,10 +314,7 @@ const BROWSER_OPEN: &[GateRequirement] = &[
 ];
 const SIDECAR_POOL_CREATE: &[GateRequirement] = &[
     GateRequirement::Always(Gate::Tools),
-    GateRequirement::Conditional {
-        gate: Gate::Network,
-        reason: "browser and agent pool leases can lead to network-capable sidecar work",
-    },
+    GateRequirement::Always(Gate::Network),
 ];
 const MODEL_NETWORK_CONDITIONAL: &[GateRequirement] = &[GateRequirement::Conditional {
     gate: Gate::Network,
@@ -823,6 +812,22 @@ mod tests {
                 policy_requires_gate(command, Gate::Tools),
                 "{command} should require the Tools gate"
             );
+        }
+    }
+
+    #[test]
+    fn network_capable_sidecar_commands_fail_closed_on_network_gate() {
+        for command in [
+            "sidecar_send",
+            "sidecar_stream",
+            "sidecar_communities",
+            "sidecar_browser_open",
+            "sidecar_pool_create",
+        ] {
+            let err = require_gates(command, GateSnapshot::new(true, false, true))
+                .expect_err("closed network gate should deny sidecar command");
+            assert_eq!(err.code, PolicyErrorCode::GateClosed);
+            assert_eq!(err.gate, Some(Gate::Network));
         }
     }
 

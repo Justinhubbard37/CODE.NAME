@@ -26,6 +26,7 @@ export function ChatInput() {
     retrievalSelectedChunkIds,
     retrievalEnabledForChat,
     setRetrievalEnabledForChat,
+    runtimeCapabilities,
   } = useApp();
   const [text, setText] = useState('');
   const selectedRetrievalCount = retrievalResults.filter((result) =>
@@ -113,6 +114,7 @@ export function ChatInput() {
           )}
           <span>
             {executionClassLabel(activeModel?.executionClass ?? 'unknown')}
+            {' · '}{runtimeCapabilities.toolSummary}
             {reachesNetwork(activeEndpoint, activeModel?.id) ? ' · NETWORK' : ' · LOCAL-FIRST'}
           </span>
         </div>

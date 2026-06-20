@@ -1,12 +1,10 @@
 /**
- * Shared supervised pools (Phase 5 / Phase 6). Browser contexts and agent
- * runtimes are shared and capped (systemConfig.pools); tabs lease their own
- * isolated slot — N tabs do NOT spawn N browsers.
+ * Shared pool bookkeeping (Phase 5 / Phase 6 scaffold). Browser contexts and
+ * agent runtimes are not connected during containment; tabs only lease capped
+ * frontend placeholders.
  *
- * Phase 6 (Slices 6.1 / 6.2): real sidecar context lifecycle is injected via
- * configurePoolBackend(). pools.ts stays synchronous and testable; AppState.tsx
- * wires in the live sidecar callbacks at startup. If the sidecar is offline the
- * handle is simply absent and teardown is skipped (safe placeholder behaviour).
+ * configurePoolBackend() remains for future explicit implementation work, but
+ * AppState does not wire it to the sidecar in the containment phase.
  */
 import { systemConfig } from '../config/system';
 
@@ -14,7 +12,7 @@ export type PoolKind = 'browser' | 'agent';
 
 /**
  * Factory called when a NEW lease is created (not reused). Returns the opaque
- * sidecar handle to store with the lease, or null when the sidecar is offline.
+ * optional backend handle to store with the lease, or null when unavailable.
  */
 type ContextCreator = (
   kind: PoolKind,
@@ -32,8 +30,8 @@ let _onCreate: ContextCreator | null = null;
 let _onRelease: ContextDestroyer | null = null;
 
 /**
- * Wire in real sidecar callbacks (called once from AppState.tsx at startup).
- * Pass null/null to reset back to no-op (used in tests via _resetPool).
+ * Wire in future backend callbacks. Pass null/null to reset back to no-op
+ * (used in tests via _resetPool).
  */
 export function configurePoolBackend(
   create: ContextCreator | null,
@@ -48,7 +46,7 @@ interface Lease {
   taskId: string;
   id: string;
   ts: number;
-  /** Opaque sidecar context handle (present once async create resolves). */
+  /** Opaque backend handle (present once async create resolves). */
   handle?: string;
 }
 
@@ -79,7 +77,7 @@ export interface LeaseResult {
 }
 
 /**
- * Tear down the sidecar context for a lease (Slice 6.2). Fire-and-forget:
+ * Tear down the optional backend context for a lease. Fire-and-forget:
  * logs on failure but never throws — the caller always force-evicts.
  */
 function _teardown(l: Lease): void {
@@ -113,7 +111,7 @@ export function lease(kind: PoolKind, taskId: string): LeaseResult {
   leases.push(entry);
   emit();
 
-  // Fire-and-forget: create real sidecar context and attach handle (Slice 6.1).
+  // Fire-and-forget: create optional backend context and attach handle.
   if (_onCreate) {
     void _onCreate(kind, taskId, id).then((handle) => {
       if (handle) {

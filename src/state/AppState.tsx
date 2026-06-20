@@ -112,13 +112,25 @@ import {
 } from '../kg/kbProjection';
 import { evaluateKgWrite, makeAudit } from '../kg/commit';
 import { retriever } from '../kg/retrieve';
-import { cancelSidecar, sidecarCommunities, sidecarBrowserOpen, sidecarPoolCreate, sidecarPoolRelease } from '../lib/sidecar';
-import { installWebMcp, setToolGuard, setToolLogger, registerTool } from '../lib/webmcp';
+import { cancelSidecar } from '../lib/sidecar';
+import {
+  getTools,
+  installWebMcp,
+  onToolChange,
+  registerTool,
+  setToolGuard,
+  setToolLogger,
+  type ToolMeta,
+} from '../lib/webmcp';
+import {
+  buildRuntimeCapabilityState,
+  type RuntimeCapabilityBindingState,
+} from '../lib/capabilities';
 import { setAgentUI } from '../components/right/a2ui/bus';
 import type { A2UIPayload } from '../components/right/a2ui/types';
 import { effectiveGates } from '../lib/perms';
 import { runSelfCheck } from '../lib/selfcheck';
-import { lease as poolLease, releaseAll as poolReleaseAll, configurePoolBackend } from '../lib/pools';
+import { releaseAll as poolReleaseAll } from '../lib/pools';
 import { useAuth } from '../auth/AuthContext';
 import { canWrite, canToggleGates, canUseTool } from '../auth/roles';
 import { getActiveWorkspace } from '../auth/workspace';
@@ -234,6 +246,7 @@ interface AppStateValue {
   togglePolicyLock: (k: keyof SecurityGates) => void;
   siemConfig: SiemConfig | null;
   setSiemConfig: (cfg: SiemConfig | null) => void;
+  runtimeCapabilities: RuntimeCapabilityBindingState;
 
   /* ingestion */
   quarantine: QuarantineItem[];
@@ -263,45 +276,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   initWorkspaceStore(getActiveWorkspace().dbName);
   const bootTs = useRef(Date.now()).current;
 
-  /* ---- 9.2 health watchdog ---- */
-  const [watchdogHealth, setWatchdogHealth] = useState<string>('unknown');
-  const failCountRef = useRef(0);
-  useEffect(() => {
-    let alive = true;
-    const poll = async () => {
-      if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
-      try {
-        const { invoke: inv } = await import('@tauri-apps/api/core');
-        const res = await inv<{ ok: boolean; latency_ms: number; reason?: string }>(
-          'sidecar_health',
-        );
-        if (!alive) return;
-        if (res.ok) {
-          failCountRef.current = 0;
-          setWatchdogHealth('ok');
-        } else {
-          failCountRef.current += 1;
-          setWatchdogHealth(failCountRef.current >= 3 ? 'offline' : 'degraded');
-          if (failCountRef.current >= 3) {
-            failCountRef.current = 0;
-            inv('sidecar_restart').catch(() => {});
-          }
-        }
-      } catch {
-        if (!alive) return;
-        failCountRef.current += 1;
-        setWatchdogHealth(failCountRef.current >= 3 ? 'offline' : 'degraded');
-        if (failCountRef.current >= 3) {
-          failCountRef.current = 0;
-          import('@tauri-apps/api/core').then(({ invoke: inv }) => inv('sidecar_restart')).catch(() => {});
-        }
-      }
-    };
-    // Initial probe after 2 s to let the sidecar boot
-    const initial = setTimeout(poll, 2000);
-    const interval = setInterval(poll, 10_000);
-    return () => { alive = false; clearTimeout(initial); clearInterval(interval); };
-  }, []);
+  const watchdogHealth = 'unavailable';
 
   /* ---- 9.3 JS crash reporting ---- */
   useEffect(() => {
@@ -725,8 +700,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const gatesRef = useRef(gates);
   // 8.5: apply admin policy ceiling — gatesRef always holds the policy-constrained value
   const [adminPolicy, setAdminPolicy] = useState<AdminPolicy>(() => loadPolicy());
-  gatesRef.current = applyPolicy(adminPolicy, gates);
+  const effectiveGateState = applyPolicy(adminPolicy, gates);
+  gatesRef.current = effectiveGateState;
   const [siemConfig, setSiemConfigState] = useState<SiemConfig | null>(() => loadSiemConfig());
+  const [registeredTools, setRegisteredTools] = useState<ToolMeta[]>(() => getTools());
+  const runtimeCapabilities = useMemo(
+    () => buildRuntimeCapabilityState(registeredTools, {
+      toolsGateOpen: effectiveGateState.tools,
+      hasActiveToolBindings: false,
+      explicitlyAuthorized: false,
+    }),
+    [effectiveGateState.tools, registeredTools],
+  );
+
+  useEffect(() => {
+    const syncTools = () => setRegisteredTools(getTools());
+    syncTools();
+    return onToolChange(syncTools);
+  }, []);
 
   // Save config (providers, Runtime Profiles, active profile, gates) whenever it changes.
   useEffect(() => {
@@ -1501,17 +1492,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   // Install the WebMCP shim and register built-in, gate-routed tools (Phase 4).
   useEffect(() => {
-    // Phase 6 (Slices 6.1 / 6.2): wire real sidecar context lifecycle into the pool.
-    // If sidecar is offline, sidecarPoolCreate returns null and the lease stays a safe placeholder.
-    configurePoolBackend(
-      async (kind, taskId, leaseId) => {
-        const r = await sidecarPoolCreate(kind, taskId, leaseId);
-        return r?.handle ?? null;
-      },
-      async (handle) => {
-        await sidecarPoolRelease(handle);
-      },
-    );
     // 8.6: configure SIEM forwarder with live network-gate check
     configureSiem(loadSiemConfig(), () => gatesRef.current.network);
     installWebMcp();
@@ -1653,7 +1633,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     registerTool(
       {
         name: 'browser.open',
-        description: 'Open a URL via the shared Browser Harness pool (per-tab isolated context).',
+        description: 'Browser navigation is unavailable during Sidecar containment.',
         inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
         execute: async (args) => {
           const taskId = activeTaskIdRef.current;
@@ -1661,33 +1641,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           if (!task?.session.caps.browser) {
             return { content: [{ type: 'text', text: '[blocked] this tab lacks BROWSER permission' }] };
           }
-          const lz = poolLease('browser', taskId);
-          if (!lz.ok) return { content: [{ type: 'text', text: `[blocked] ${lz.reason}` }] };
           const url = String(args.url ?? '');
-          pushActivity(taskId, 'tool', `browser ctx ${lz.id} → ${url}`);
-          // Forward to sidecar CDP harness (Phase 5, Slice 5.4).
-          const result = await sidecarBrowserOpen(url);
-          // Audit any harness-written files (Phase 5, Slice 5.5).
-          if (result.harness_files?.length) {
-            for (const hf of result.harness_files) {
-              const hRecord = makeAudit({
-                actor: { kind: 'system', id: 'browser-harness', taskId },
-                action: 'create' as AuditAction,
-                target: { kind: 'file' as const, id: hf.path },
-                decision: { allowed: true, gate: 'filesystem' },
-                diff: `harness file: ${hf.path} (${hf.size} bytes)`,
-                provenance: { source: 'browser-harness' },
-              });
-              void kgStore.appendAudit(hRecord);
-              pushActivity(taskId, 'system', `harness wrote: ${hf.path}`);
-            }
-          }
-          if (result.error) {
-            return { content: [{ type: 'text', text: result.error }] };
-          }
-          const summary = result.text?.trim() || '(no text content)';
+          pushActivity(taskId, 'tool', `browser.open unavailable: ${url}`);
           return {
-            content: [{ type: 'text', text: `[${url}]\n${summary}` }],
+            content: [{
+              type: 'text',
+              text: '[unavailable] Browser execution is not connected or bound during Sidecar containment.',
+            }],
           };
         },
       },
@@ -1800,29 +1760,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           pushActivity(activeTaskId, 'tool', `indexed ${file.name} → graph`);
         }
       }
-      // After all files ingested, refresh community assignments via sidecar (Slice 4.4).
-      void (async () => {
-        const allNodes = nodesRef.current;
-        const allEdges = edgesRef.current;
-        if (allNodes.length < 2) return;
-        const nodePayload = allNodes.map((n) => ({
-          id: n.id,
-          text: [n.data.label, n.data.title, n.data.description].filter(Boolean).join(' '),
-        }));
-        const edgePayload = allEdges.map((e) => ({ source: e.source, target: e.target }));
-        const communities = await sidecarCommunities(nodePayload, edgePayload);
-        if (!communities.length) return;
-        // Patch communityId + communitySummary onto each node
-        for (const comm of communities) {
-          for (const memberId of comm.memberIds) {
-            const existing = nodesRef.current.find((n) => n.id === memberId);
-            if (existing) {
-              updateNodeData(memberId, { ...existing.data, communityId: comm.id, communitySummary: comm.summary });
-            }
-          }
-        }
-        pushActivity(activeTaskId, 'system', `communities: ${communities.length} detected`);
-      })();
     },
     [
       activeTaskId,
@@ -1832,7 +1769,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refreshKbDocuments,
       refreshKbStats,
       refreshSemanticStatus,
-      updateNodeData,
     ],
   );
 
@@ -1968,12 +1904,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     deleteProfile,
     refreshEndpoints,
     refreshProviderModels,
-    gates: applyPolicy(adminPolicy, gates),
+    gates: effectiveGateState,
     toggleGate,
     adminPolicy,
     togglePolicyLock,
     siemConfig,
     setSiemConfig,
+    runtimeCapabilities,
     /* ingestion */
     quarantine,
     ingestFiles,

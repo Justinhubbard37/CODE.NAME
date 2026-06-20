@@ -14,8 +14,8 @@ export interface SidecarInfo {
 }
 
 /**
- * Model settings forwarded to the sidecar at call time (Slice 3.3).
- * Undefined fields fall back to the sidecar's own defaults (CODENAME_MODEL / CODENAME_TEMP env vars).
+ * Reserved model settings for a future explicitly approved sidecar runtime.
+ * During containment these calls return safe unavailable errors.
  */
 export interface ModelSettings {
   model?: string;
@@ -47,9 +47,8 @@ export async function restartSidecar(): Promise<SidecarInfo | null> {
 }
 
 /**
- * Send a chat to the sidecar THROUGH the Rust shell and return the whole reply.
- * The bearer token never leaves Rust (Phase 1). Model settings are forwarded
- * in params.settings so the active profile drives the agent (Slice 3.3).
+ * Request sidecar chat through the Rust shell. Containment currently rejects
+ * execution before any sidecar request is made.
  */
 export async function sendToSidecar(
   message: string,
@@ -65,10 +64,8 @@ export async function sendToSidecar(
 }
 
 /**
- * Stream a chat reply from the sidecar THROUGH the Rust shell. Rust reads the
- * SSE stream and pushes each text chunk back over a Tauri Channel; the token
- * never leaves Rust (Phase 1). Model settings are forwarded so the active
- * profile drives the agent (Slice 3.3).
+ * Request sidecar streaming through the Rust shell. Containment currently
+ * rejects execution before any sidecar request is made.
  */
 export async function streamFromSidecar(
   message: string,
@@ -120,8 +117,8 @@ export async function sidecarEmbed(texts: string[]): Promise<number[][]> {
 }
 
 /**
- * Run local graph community detection and optional sidecar summarisation on the
- * current graph. This is not full GraphRAG retrieval.
+ * Legacy community endpoint wrapper. Rust containment returns unavailable and
+ * no community summary should be written from this path.
  */
 export async function sidecarCommunities(
   nodes: { id: string; text: string }[],
@@ -141,8 +138,8 @@ export async function sidecarCommunities(
 }
 
 /**
- * Navigate to a URL via Chrome CDP through the sidecar and return page text
- * (Phase 5, Slice 5.4). Chrome must be running with --remote-debugging-port=9222.
+ * Legacy browser endpoint wrapper. Rust containment returns unavailable and no
+ * browser execution is dispatched.
  *
  * Returns an object with:
  *   text  — up to 8 000 chars of the page's innerText (empty if Chrome unavailable)
@@ -166,9 +163,8 @@ export async function sidecarBrowserOpen(url: string): Promise<{
 }
 
 /**
- * Create a real isolated context in the sidecar pool (Phase 6, Slice 6.1).
- * Returns the opaque handle to store with the lease, or null if the sidecar
- * is offline (caller treats the lease as a safe placeholder).
+ * Legacy pool endpoint wrapper. Rust containment returns unavailable; callers
+ * must treat the lease as frontend bookkeeping only.
  */
 export async function sidecarPoolCreate(
   kind: string,
@@ -184,14 +180,13 @@ export async function sidecarPoolCreate(
       leaseId,
     });
   } catch {
-    return null; // sidecar offline — lease stays a safe placeholder
+    return null;
   }
 }
 
 /**
- * Release a sidecar pool context and tear down its associated resource
- * (Phase 6, Slice 6.2). Idempotent and best-effort — failure is swallowed
- * so the TS-side lease is always force-evicted.
+ * Legacy pool release wrapper. Rust containment treats this as unavailable or
+ * no-op cleanup, and TS-side lease eviction must not depend on it.
  */
 export async function sidecarPoolRelease(handle: string): Promise<void> {
   if (!isTauri()) return;

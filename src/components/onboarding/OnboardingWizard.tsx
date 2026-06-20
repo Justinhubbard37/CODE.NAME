@@ -30,7 +30,7 @@ const STEPS: StepId[] = ['welcome', 'model', 'access', 'gates', 'check', 'done']
 const GATE_COPY: { key: 'filesystem' | 'network' | 'tools'; label: string; help: string }[] = [
   { key: 'filesystem', label: 'Filesystem', help: 'Allow gated ingestion and writes to the local knowledge graph.' },
   { key: 'network', label: 'Network', help: 'Allow outbound calls to cloud models. Local models never need this.' },
-  { key: 'tools', label: 'Tools', help: 'Allow the agent to run WebMCP tools and reach the agent sidecar.' },
+  { key: 'tools', label: 'Tools', help: 'Policy gate for tool dispatch; tools must still be connected and bound.' },
 ];
 
 export function OnboardingWizard({ onClose }: { onClose: () => void }) {

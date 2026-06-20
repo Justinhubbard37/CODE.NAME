@@ -4,7 +4,6 @@
  */
 import { kgStore } from '../kg/store';
 import { retriever } from '../kg/retrieve';
-import { getSidecarInfo } from './sidecar';
 
 export interface CheckResult {
   name: string;
@@ -35,11 +34,10 @@ export async function runSelfCheck(): Promise<CheckResult[]> {
   const hasMcp = typeof document !== 'undefined' && !!(document as unknown as { modelContext?: unknown }).modelContext;
   out.push({ name: 'webmcp', ok: hasMcp, detail: hasMcp ? 'document.modelContext installed' : 'shim not installed yet' });
 
-  const info = await getSidecarInfo();
   out.push({
     name: 'sidecar',
     ok: true,
-    detail: info ? `desktop: ${info.status}` : 'loopback (desktop only) — offline OK',
+    detail: 'explicit setup only - no passive startup check',
   });
 
   return out;

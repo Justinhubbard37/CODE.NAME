@@ -1,9 +1,10 @@
 /**
  * WebMCP shim (Phase 4). The WebMCP `document.modelContext` API is a browser
  * proposal that does not exist natively in the Tauri webview, so we implement
- * its shape ourselves and OWN the security boundary: every executeTool() passes
- * through a gate guard + activity logger before running. Swap for a native API
- * or community polyfill later behind this same surface.
+ * its shape ourselves for UX and audit plumbing. Frontend guards are not a
+ * privileged security boundary; Rust command policy remains authoritative for
+ * sidecar/provider operations. Swap for a native API or community polyfill
+ * later behind this same surface.
  */
 export interface WebMcpResult {
   content: { type: 'text'; text: string }[];

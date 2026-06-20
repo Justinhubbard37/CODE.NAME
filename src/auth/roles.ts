@@ -32,7 +32,7 @@ export function canToggleGates(role: Role | undefined): boolean {
   return (role ?? 'admin') === 'admin';
 }
 
-/** Can this role execute tools (WebMCP, sidecar tools, graph.* tools)? */
+/** Can this role pass the governance check for tool dispatch? */
 export function canUseTool(role: Role | undefined): boolean {
   return (role ?? 'admin') !== 'viewer';
 }

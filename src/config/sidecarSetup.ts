@@ -32,7 +32,15 @@ export function sidecarCheckResult(info: SidecarInfo | null): SidecarCheckResult
   if (info.status === 'error') {
     return {
       kind: 'failed',
-      message: `Sidecar failed at ${info.host}:${info.port}.`,
+      message: info.host && info.port
+        ? `Sidecar failed at ${info.host}:${info.port}.`
+        : 'Sidecar failed before connection details were available.',
+    };
+  }
+  if (info.status === 'stopped' || !info.port) {
+    return {
+      kind: 'unavailable',
+      message: 'Sidecar is stopped. Use Agent Sidecar Setup for explicit startup.',
     };
   }
   return {
