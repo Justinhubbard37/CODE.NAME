@@ -5,7 +5,7 @@
 Goal: replace overlapping provider, model, credential, endpoint, and runtime
 settings with one canonical Runtime Profile path and honest provider status.
 
-Status: IMPLEMENTED — PENDING OWNER REVIEW
+Status: ACCEPTED AND CLOSED
 
 Definition of done:
 
@@ -34,11 +34,24 @@ Definition of done:
   inference during discovery
 - [x] preserve KB retrieval, graph behavior, attachment behavior, and brand
   palette
-- [ ] owner manual verification accepted
+- [x] owner manual verification accepted
 
-Target commit:
+Accepted commits:
 
-`feat: consolidate runtime provider and model control`
+- `47b5e760` - canonical runtime provider and model controls
+- `3d310d8` - runtime-profile migration hardening
+- `d9993f05` - dedicated Agent Sidecar setup
+- `6085a249` - viewport-safe model-selector scrolling and expanded
+  Parameter Tray readability correction
+
+Accepted Phase 3A scope:
+
+- canonical runtime provider and model controls
+- runtime-profile migration hardening
+- dedicated Agent Sidecar setup
+- truthful normal provider failures without synthetic fallback
+- viewport-safe model-selector scrolling
+- expanded Parameter Tray readability correction
 
 Implementation notes:
 
@@ -61,8 +74,8 @@ Implementation notes:
   migrated Runtime Profile temperature/context defaults and prevents
   tuning-control rendering from crashing on legacy or incomplete persisted
   state. No provider, model, discovery, key-handling, retrieval, graph, or
-  UI-design behavior changed. Phase 3A remains pending owner review and is not
-  accepted.
+  UI-design behavior changed. Phase 3A was accepted and closed after owner
+  review.
 - Corrective provider-consolidation repair deterministically normalizes legacy
   provider records into exactly four canonical runtime providers: `ollama`,
   `lmstudio`, `custom-openai`, and `gemini`. Legacy Ollama Local/Ollama Cloud,
@@ -70,14 +83,14 @@ Implementation notes:
   normal runtime selection. Agent Sidecar is removed from normal provider
   selection and routes through dedicated Agent Sidecar Setup, while Provider
   Manager opens a distinct canonical provider-management destination. Phase 3A
-  remains pending owner review and is not accepted.
+  was accepted and closed after owner review.
 - Owner-review usability correction constrains the model selector to the
   visible viewport and enables scrolling when model inventory exceeds available
   height. The expanded Parameter Tray width increased by 20 percent to preserve
   readability after typography changes, with responsive viewport bounds. No
   provider, model, routing, runtime-tuning, retrieval, graph, attachment,
-  credential, or visual-brand behavior changed. Phase 3A remains pending owner
-  acceptance and is not accepted.
+  credential, or visual-brand behavior changed. Phase 3A was accepted and
+  closed after owner review.
 
 Explicitly not changed in Phase 3A:
 
