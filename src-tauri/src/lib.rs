@@ -46,6 +46,7 @@ pub fn run() {
             provider::provider_store_credential,
             provider::provider_clear_credential,
             provider::provider_credential_status,
+            provider::provider_migrate_legacy_config,
             model::gemini_model_list,
             model::model_list,
             model::model_stream,

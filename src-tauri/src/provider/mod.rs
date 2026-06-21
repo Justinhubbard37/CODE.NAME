@@ -1,13 +1,18 @@
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 const PROVIDER_SECRET_SERVICE: &str = "com.codename.harness.provider";
+const PROVIDER_STORE_VERSION: u32 = 1;
+const PROVIDER_STORE_FILE: &str = "provider-runtime.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProviderId {
@@ -95,7 +100,7 @@ impl ConnectionId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionApprovalState {
     Approved,
@@ -103,7 +108,7 @@ pub enum ConnectionApprovalState {
     Disabled,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransportClass {
     LoopbackHttp,
@@ -111,7 +116,7 @@ pub enum TransportClass {
     FixedProviderApi,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LocalityClassification {
     LocalLoopback,
@@ -136,7 +141,7 @@ impl CredentialBindingRef {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialRequirement {
     None,
@@ -381,6 +386,51 @@ pub struct ProviderCancelStreamRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderMigrationRequest {
+    #[serde(default)]
+    pub provider_connections: Vec<LegacyProviderConnection>,
+    #[serde(default)]
+    pub active_provider_id: Option<String>,
+    #[serde(default)]
+    pub active_model_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyProviderConnection {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub provider_kind: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub models: Vec<LegacyModelInventoryEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyModelInventoryEntry {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderMigrationResult {
+    pub migrated_connections: usize,
+    pub disabled_connections: usize,
+    pub skipped_sidecar_entries: usize,
+    pub backup_created: bool,
+    pub recovery_detail: Option<String>,
+    pub snapshot: ProviderRuntimeSnapshot,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderCredentialStoreRequest {
     pub provider_id: ProviderId,
     pub connection_id: String,
@@ -425,6 +475,126 @@ struct ProviderRuntime {
     records: BTreeMap<ConnectionId, ConnectionRecord>,
     session: BTreeMap<ConnectionId, SessionConnectionState>,
     next_connection: u64,
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+struct MigrationCounters {
+    migrated_connections: usize,
+    disabled_connections: usize,
+    skipped_sidecar_entries: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderStoreFile {
+    version: u32,
+    next_connection: u64,
+    connections: Vec<StoredConnectionRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredConnectionRecord {
+    provider_id: ProviderId,
+    connection_id: String,
+    label: String,
+    endpoint: Option<StoredEndpointOrigin>,
+    approval_state: ConnectionApprovalState,
+    credential_requirement: CredentialRequirement,
+    credential_configured: bool,
+    disabled_reason: Option<String>,
+    stale_inventory_count: Option<usize>,
+    created_at: u64,
+    updated_at: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct StoredEndpointOrigin {
+    normalized_origin: String,
+    base_path: Option<String>,
+    transport_class: TransportClass,
+    locality: LocalityClassification,
+}
+
+impl ProviderStoreFile {
+    fn from_runtime(runtime: &ProviderRuntime) -> Self {
+        Self {
+            version: PROVIDER_STORE_VERSION,
+            next_connection: runtime.next_connection,
+            connections: runtime
+                .records
+                .values()
+                .map(StoredConnectionRecord::from_record)
+                .collect(),
+        }
+    }
+}
+
+impl StoredConnectionRecord {
+    fn from_record(record: &ConnectionRecord) -> Self {
+        Self {
+            provider_id: record.provider_id,
+            connection_id: record.connection_id.as_str().to_string(),
+            label: record.label.clone(),
+            endpoint: record
+                .endpoint
+                .as_ref()
+                .map(StoredEndpointOrigin::from_endpoint),
+            approval_state: record.approval_state,
+            credential_requirement: record.credential_requirement,
+            credential_configured: record.credential_configured,
+            disabled_reason: record.disabled_reason.clone(),
+            stale_inventory_count: record.stale_inventory_count,
+            created_at: record.created_at,
+            updated_at: record.updated_at,
+        }
+    }
+
+    fn try_into_record(self) -> ConnectionRecord {
+        let connection_id = ConnectionId::new(self.connection_id);
+        let credential_binding = match self.provider_id {
+            ProviderId::Gemini => Some(CredentialBindingRef::GeminiApiKey),
+            ProviderId::CustomOpenAi => {
+                Some(CredentialBindingRef::CustomOpenAi(connection_id.clone()))
+            }
+            ProviderId::Ollama | ProviderId::LmStudio => None,
+        };
+        ConnectionRecord {
+            provider_id: self.provider_id,
+            connection_id,
+            label: safe_label(&self.label, self.provider_id.display_name()),
+            endpoint: self.endpoint.map(StoredEndpointOrigin::into_endpoint),
+            approval_state: self.approval_state,
+            credential_requirement: self.credential_requirement,
+            credential_binding,
+            credential_configured: self.credential_configured,
+            disabled_reason: self.disabled_reason.map(|detail| sanitize_detail(&detail)),
+            stale_inventory_count: self.stale_inventory_count,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+
+impl StoredEndpointOrigin {
+    fn from_endpoint(endpoint: &EndpointOrigin) -> Self {
+        Self {
+            normalized_origin: endpoint.normalized_origin.clone(),
+            base_path: endpoint.base_path.clone(),
+            transport_class: endpoint.transport_class,
+            locality: endpoint.locality,
+        }
+    }
+
+    fn into_endpoint(self) -> EndpointOrigin {
+        EndpointOrigin {
+            normalized_origin: self.normalized_origin,
+            base_path: self.base_path,
+            transport_class: self.transport_class,
+            locality: self.locality,
+        }
+    }
 }
 
 impl ProviderRuntime {
@@ -533,14 +703,111 @@ impl ProviderRuntime {
         }
     }
 
+    fn apply_migration(
+        &mut self,
+        request: ProviderMigrationRequest,
+    ) -> Result<MigrationCounters, ProviderErrorDto> {
+        let mut next = ProviderRuntime::new();
+        let mut counters = MigrationCounters::default();
+        for legacy in request.provider_connections {
+            let Some(provider_id) = normalize_legacy_provider_id(&legacy) else {
+                if is_legacy_sidecar(&legacy) {
+                    counters.skipped_sidecar_entries += 1;
+                }
+                continue;
+            };
+            match provider_id {
+                ProviderId::Ollama | ProviderId::LmStudio => {
+                    migrate_default_local_connection(&mut next, provider_id, legacy, &mut counters);
+                }
+                ProviderId::CustomOpenAi => {
+                    migrate_custom_connection(&mut next, legacy, &mut counters);
+                }
+                ProviderId::Gemini => {
+                    migrate_gemini_connection(&mut next, legacy, &mut counters);
+                }
+            }
+        }
+        if request
+            .active_provider_id
+            .as_deref()
+            .is_some_and(is_sidecar_alias)
+        {
+            counters.skipped_sidecar_entries += 1;
+        }
+        if request
+            .active_model_id
+            .as_deref()
+            .is_some_and(is_sidecar_alias)
+        {
+            counters.skipped_sidecar_entries += 1;
+        }
+        *self = next;
+        Ok(counters)
+    }
+
+    fn load_store_file(&mut self, store: ProviderStoreFile) {
+        let mut next = ProviderRuntime {
+            records: BTreeMap::new(),
+            session: BTreeMap::new(),
+            next_connection: store.next_connection.max(1),
+        };
+        for stored in store.connections {
+            let record = stored.try_into_record();
+            next.session.insert(
+                record.connection_id.clone(),
+                SessionConnectionState::default(),
+            );
+            next.records.insert(record.connection_id.clone(), record);
+        }
+        let defaults = ProviderRuntime::new();
+        for provider_id in [ProviderId::Ollama, ProviderId::LmStudio, ProviderId::Gemini] {
+            if !next
+                .records
+                .values()
+                .any(|record| record.provider_id == provider_id)
+            {
+                for record in defaults
+                    .records
+                    .values()
+                    .filter(|record| record.provider_id == provider_id)
+                {
+                    next.session.insert(
+                        record.connection_id.clone(),
+                        SessionConnectionState::default(),
+                    );
+                    next.records
+                        .insert(record.connection_id.clone(), record.clone());
+                }
+            }
+        }
+        *self = next;
+    }
+
     fn connection_dto(&self, record: &ConnectionRecord) -> ConnectionDto {
         let session = self
             .session
             .get(&record.connection_id)
             .cloned()
             .unwrap_or_default();
+        let inventory = if session.inventory.state == InventoryKind::Unknown {
+            record
+                .stale_inventory_count
+                .map(|count| ModelInventoryState {
+                    state: InventoryKind::Stale,
+                    count,
+                    last_refresh_at: None,
+                })
+                .unwrap_or_else(|| session.inventory.clone())
+        } else {
+            session.inventory.clone()
+        };
         let readiness = if record.approval_state == ConnectionApprovalState::Disabled {
             ReadinessState::ConfigurationDisabled
+        } else if session.readiness == ReadinessState::Unknown
+            && record.stale_inventory_count.is_some()
+        {
+            ReadinessState::Stale
         } else {
             session.readiness
         };
@@ -562,7 +829,7 @@ impl ProviderRuntime {
             last_explicit_check_at: session.last_explicit_check_at,
             check_in_progress: session.check_in_progress,
             refresh_in_progress: session.refresh_in_progress,
-            inventory: session.inventory,
+            inventory,
             safe_failure_category: session.failure_category.or_else(|| {
                 record
                     .disabled_reason
@@ -1125,6 +1392,26 @@ pub fn provider_credential_status(
     state.lock()?.credential_status(request)
 }
 
+#[tauri::command]
+pub fn provider_migrate_legacy_config(
+    app: AppHandle,
+    state: State<'_, ProviderRuntimeState>,
+    request: ProviderMigrationRequest,
+) -> Result<ProviderMigrationResult, ProviderErrorDto> {
+    let config_dir = provider_config_dir(&app)?;
+    let mut runtime = state.lock()?;
+    let counters = runtime.apply_migration(request)?;
+    let backup_created = write_store_to_dir(&config_dir, &runtime)?;
+    Ok(ProviderMigrationResult {
+        migrated_connections: counters.migrated_connections,
+        disabled_connections: counters.disabled_connections,
+        skipped_sidecar_entries: counters.skipped_sidecar_entries,
+        backup_created,
+        recovery_detail: None,
+        snapshot: runtime.snapshot(),
+    })
+}
+
 fn validate_endpoint(
     provider_id: ProviderId,
     raw_endpoint: &str,
@@ -1392,6 +1679,318 @@ fn credential_is_present(binding: &CredentialBindingRef) -> bool {
         .unwrap_or(false)
 }
 
+fn provider_config_dir(app: &AppHandle) -> Result<PathBuf, ProviderErrorDto> {
+    app.path().app_config_dir().map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_unavailable",
+            "Provider store is unavailable.",
+            "Unable to resolve the Tauri app configuration directory.",
+        )
+    })
+}
+
+fn write_store_to_dir(
+    config_dir: &Path,
+    runtime: &ProviderRuntime,
+) -> Result<bool, ProviderErrorDto> {
+    std::fs::create_dir_all(config_dir).map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_write_failed",
+            "Provider store could not be written.",
+            "Unable to create provider configuration directory.",
+        )
+    })?;
+    let target = config_dir.join(PROVIDER_STORE_FILE);
+    let temp = config_dir.join(format!("{PROVIDER_STORE_FILE}.tmp"));
+    let data =
+        serde_json::to_vec_pretty(&ProviderStoreFile::from_runtime(runtime)).map_err(|_| {
+            ProviderErrorDto::new(
+                "provider_store_serialize_failed",
+                "Provider store could not be written.",
+                "Unable to serialize provider configuration.",
+            )
+        })?;
+    std::fs::write(&temp, data).map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_write_failed",
+            "Provider store could not be written.",
+            "Unable to write temporary provider configuration.",
+        )
+    })?;
+    let backup_created = if target.exists() {
+        let backup = config_dir.join(format!(
+            "provider-runtime.v{}.{}.bak",
+            PROVIDER_STORE_VERSION,
+            now_millis()
+        ));
+        std::fs::rename(&target, &backup).map_err(|_| {
+            ProviderErrorDto::new(
+                "provider_store_backup_failed",
+                "Provider store backup could not be created.",
+                "Unable to move existing provider configuration to backup.",
+            )
+        })?;
+        true
+    } else {
+        false
+    };
+    std::fs::rename(&temp, &target).map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_commit_failed",
+            "Provider store could not be committed.",
+            "Unable to atomically move temporary provider configuration into place.",
+        )
+    })?;
+    Ok(backup_created)
+}
+
+fn read_store_from_dir(config_dir: &Path) -> Result<Option<ProviderStoreFile>, ProviderErrorDto> {
+    let target = config_dir.join(PROVIDER_STORE_FILE);
+    if !target.exists() {
+        return Ok(None);
+    }
+    let data = std::fs::read(&target).map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_read_failed",
+            "Provider store could not be read.",
+            "Unable to read provider configuration.",
+        )
+    })?;
+    let store = serde_json::from_slice::<ProviderStoreFile>(&data).map_err(|_| {
+        ProviderErrorDto::new(
+            "provider_store_corrupt",
+            "Provider store is corrupt.",
+            "Provider configuration could not be parsed; safe defaults are required.",
+        )
+    })?;
+    if store.version != PROVIDER_STORE_VERSION {
+        return Err(ProviderErrorDto::new(
+            "provider_store_version_unsupported",
+            "Provider store version is unsupported.",
+            "Provider configuration version does not match this runtime.",
+        ));
+    }
+    Ok(Some(store))
+}
+
+fn load_store_or_defaults(
+    config_dir: &Path,
+    runtime: &mut ProviderRuntime,
+) -> Result<Option<String>, ProviderErrorDto> {
+    match read_store_from_dir(config_dir) {
+        Ok(Some(store)) => {
+            runtime.load_store_file(store);
+            Ok(None)
+        }
+        Ok(None) => Ok(None),
+        Err(err)
+            if err.code == "provider_store_corrupt"
+                || err.code == "provider_store_version_unsupported" =>
+        {
+            *runtime = ProviderRuntime::new();
+            Ok(Some(
+                "Provider store could not be loaded; safe defaults were restored.".to_string(),
+            ))
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn normalize_legacy_provider_id(legacy: &LegacyProviderConnection) -> Option<ProviderId> {
+    for value in [legacy.id.as_deref(), legacy.provider_kind.as_deref()]
+        .into_iter()
+        .flatten()
+    {
+        let normalized = value.trim().to_ascii_lowercase();
+        if is_sidecar_alias(&normalized) {
+            return None;
+        }
+        match normalized.as_str() {
+            "ollama" => return Some(ProviderId::Ollama),
+            "lmstudio" | "lm-studio" => return Some(ProviderId::LmStudio),
+            "custom-openai" | "openai-compatible" | "custom" => {
+                return Some(ProviderId::CustomOpenAi)
+            }
+            "gemini" => return Some(ProviderId::Gemini),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_legacy_sidecar(legacy: &LegacyProviderConnection) -> bool {
+    [legacy.id.as_deref(), legacy.provider_kind.as_deref()]
+        .into_iter()
+        .flatten()
+        .any(is_sidecar_alias)
+}
+
+fn is_sidecar_alias(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "sidecar" | "agent-sidecar" | "experimental-sidecar" | "adk" | "gemini-adk"
+    )
+}
+
+fn migrate_default_local_connection(
+    runtime: &mut ProviderRuntime,
+    provider_id: ProviderId,
+    legacy: LegacyProviderConnection,
+    counters: &mut MigrationCounters,
+) {
+    let connection_id = match provider_id {
+        ProviderId::Ollama => ConnectionId::new("ollama:local-default"),
+        ProviderId::LmStudio => ConnectionId::new("lmstudio:local-default"),
+        ProviderId::CustomOpenAi | ProviderId::Gemini => return,
+    };
+    let stale_count = non_empty_model_count(&legacy);
+    let Some(record) = runtime.records.get_mut(&connection_id) else {
+        return;
+    };
+    if let Some(label) = legacy.label.as_deref() {
+        record.label = safe_label(label, provider_id.display_name());
+    }
+    if let Some(count) = stale_count {
+        record.stale_inventory_count = Some(count);
+    }
+    match legacy.base_url.as_deref() {
+        Some(base_url) => match validate_endpoint(provider_id, base_url) {
+            Ok(endpoint) if endpoint.locality == LocalityClassification::LocalLoopback => {
+                record.endpoint = Some(endpoint);
+                record.approval_state = ConnectionApprovalState::Approved;
+                record.disabled_reason = None;
+                counters.migrated_connections += 1;
+            }
+            Ok(_) | Err(_) => {
+                disable_migrated_record(
+                    record,
+                    "Legacy endpoint was invalid or unsafe and was disabled.",
+                );
+                counters.disabled_connections += 1;
+            }
+        },
+        None => {
+            counters.migrated_connections += 1;
+        }
+    }
+}
+
+fn migrate_gemini_connection(
+    runtime: &mut ProviderRuntime,
+    legacy: LegacyProviderConnection,
+    counters: &mut MigrationCounters,
+) {
+    let connection_id = ConnectionId::new("gemini:fixed");
+    let Some(record) = runtime.records.get_mut(&connection_id) else {
+        return;
+    };
+    if let Some(count) = non_empty_model_count(&legacy) {
+        record.stale_inventory_count = Some(count);
+    }
+    let api_key_env = legacy.api_key_env.as_deref().unwrap_or("").trim();
+    if !api_key_env.is_empty() && api_key_env != "GEMINI_API_KEY" {
+        disable_migrated_record(
+            record,
+            "Legacy credential mapping was arbitrary and requires explicit re-entry.",
+        );
+        counters.disabled_connections += 1;
+    } else {
+        counters.migrated_connections += 1;
+    }
+}
+
+fn migrate_custom_connection(
+    runtime: &mut ProviderRuntime,
+    legacy: LegacyProviderConnection,
+    counters: &mut MigrationCounters,
+) {
+    let label = legacy
+        .label
+        .as_deref()
+        .unwrap_or(ProviderId::CustomOpenAi.display_name());
+    let stale_count = non_empty_model_count(&legacy);
+    let api_key_env = legacy.api_key_env.as_deref().unwrap_or("").trim();
+    let arbitrary_secret_mapping = !api_key_env.is_empty();
+    let (endpoint, mut approval_state, mut disabled_reason, credential_requirement) =
+        match legacy.base_url.as_deref() {
+            Some(base_url) => match validate_endpoint(ProviderId::CustomOpenAi, base_url) {
+                Ok(endpoint) => {
+                    let credential_requirement =
+                        if endpoint.transport_class == TransportClass::RemoteHttps {
+                            CredentialRequirement::Required
+                        } else {
+                            CredentialRequirement::None
+                        };
+                    let approval_state = if endpoint.transport_class == TransportClass::LoopbackHttp
+                    {
+                        ConnectionApprovalState::Approved
+                    } else {
+                        ConnectionApprovalState::PendingApproval
+                    };
+                    (Some(endpoint), approval_state, None, credential_requirement)
+                }
+                Err(_) => (
+                    None,
+                    ConnectionApprovalState::Disabled,
+                    Some("Legacy endpoint was invalid or unsafe and was disabled.".to_string()),
+                    CredentialRequirement::None,
+                ),
+            },
+            None => (
+                None,
+                ConnectionApprovalState::Disabled,
+                Some("Legacy endpoint was missing and was disabled.".to_string()),
+                CredentialRequirement::None,
+            ),
+        };
+    if arbitrary_secret_mapping {
+        approval_state = ConnectionApprovalState::Disabled;
+        disabled_reason = Some(
+            "Legacy credential mapping was arbitrary and requires explicit re-entry.".to_string(),
+        );
+    }
+    let connection_id = runtime.next_connection_id();
+    let now = now_millis();
+    let record = ConnectionRecord {
+        provider_id: ProviderId::CustomOpenAi,
+        connection_id: connection_id.clone(),
+        label: safe_label(label, ProviderId::CustomOpenAi.display_name()),
+        endpoint,
+        approval_state,
+        credential_requirement,
+        credential_binding: Some(CredentialBindingRef::CustomOpenAi(connection_id.clone())),
+        credential_configured: false,
+        disabled_reason,
+        stale_inventory_count: stale_count,
+        created_at: now,
+        updated_at: now,
+    };
+    if record.approval_state == ConnectionApprovalState::Disabled {
+        counters.disabled_connections += 1;
+    } else {
+        counters.migrated_connections += 1;
+    }
+    runtime
+        .session
+        .insert(connection_id.clone(), SessionConnectionState::default());
+    runtime.records.insert(connection_id, record);
+}
+
+fn disable_migrated_record(record: &mut ConnectionRecord, detail: &str) {
+    record.approval_state = ConnectionApprovalState::Disabled;
+    record.disabled_reason = Some(detail.to_string());
+    record.updated_at = now_millis();
+}
+
+fn non_empty_model_count(legacy: &LegacyProviderConnection) -> Option<usize> {
+    let count = legacy
+        .models
+        .iter()
+        .filter(|model| !model.id.trim().is_empty())
+        .count();
+    (count > 0).then_some(count)
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1602,5 +2201,256 @@ mod tests {
             )
             .expect_err("Ollama should not expose credential binding");
         assert_eq!(err.code, "credential_not_supported");
+    }
+
+    #[test]
+    fn valid_local_migration_preserves_stale_inventory_without_chat_authority() {
+        let mut runtime = ProviderRuntime::new();
+        let counters = runtime
+            .apply_migration(ProviderMigrationRequest {
+                provider_connections: vec![
+                    LegacyProviderConnection {
+                        id: Some("ollama".to_string()),
+                        label: Some("Local Ollama".to_string()),
+                        provider_kind: Some("ollama".to_string()),
+                        base_url: Some("http://localhost:11434".to_string()),
+                        api_key_env: None,
+                        models: vec![LegacyModelInventoryEntry {
+                            id: "llama3.1".to_string(),
+                        }],
+                    },
+                    LegacyProviderConnection {
+                        id: Some("custom-openai".to_string()),
+                        label: Some("Local compatible".to_string()),
+                        provider_kind: Some("openai-compatible".to_string()),
+                        base_url: Some("http://127.0.0.1:8000/v1".to_string()),
+                        api_key_env: None,
+                        models: vec![LegacyModelInventoryEntry {
+                            id: "local-model".to_string(),
+                        }],
+                    },
+                ],
+                active_provider_id: None,
+                active_model_id: None,
+            })
+            .expect("migration should apply");
+        assert_eq!(counters.migrated_connections, 2);
+
+        let snapshot = runtime.snapshot();
+        let ollama = snapshot
+            .connections
+            .iter()
+            .find(|connection| connection.connection_id == "ollama:local-default")
+            .expect("Ollama connection");
+        assert_eq!(ollama.readiness, ReadinessState::Stale);
+        assert_eq!(ollama.inventory.state, InventoryKind::Stale);
+        assert_eq!(ollama.inventory.count, 1);
+
+        let request = ProviderStreamChatRequest {
+            provider_id: ProviderId::Ollama,
+            connection_id: "ollama:local-default".to_string(),
+            model_id: "llama3.1".to_string(),
+            messages: Vec::new(),
+            tuning: ProviderTuningValues {
+                temperature: 0.7,
+                num_ctx: 8192,
+            },
+            operation_intent: "chat".to_string(),
+        };
+        let eligibility = runtime.chat_eligibility(&request).expect("eligibility");
+        assert!(!eligibility.eligible);
+        assert_eq!(eligibility.category, "current_session_check_required");
+    }
+
+    #[test]
+    fn remote_custom_migrates_pending_approval_not_chat_eligible() {
+        let mut runtime = ProviderRuntime::new();
+        runtime
+            .apply_migration(ProviderMigrationRequest {
+                provider_connections: vec![LegacyProviderConnection {
+                    id: Some("custom-openai".to_string()),
+                    label: Some("Remote".to_string()),
+                    provider_kind: Some("openai-compatible".to_string()),
+                    base_url: Some("https://api.example.com/v1".to_string()),
+                    api_key_env: None,
+                    models: vec![LegacyModelInventoryEntry {
+                        id: "gpt-compatible".to_string(),
+                    }],
+                }],
+                active_provider_id: None,
+                active_model_id: None,
+            })
+            .expect("migration should apply");
+        let custom = runtime
+            .snapshot()
+            .connections
+            .into_iter()
+            .find(|connection| connection.provider_id == ProviderId::CustomOpenAi)
+            .expect("custom connection");
+        assert_eq!(
+            custom.approval_state,
+            ConnectionApprovalState::PendingApproval
+        );
+        assert_eq!(custom.locality, Some(LocalityClassification::RemotePublic));
+        assert_eq!(custom.readiness, ReadinessState::Stale);
+
+        let request = ProviderStreamChatRequest {
+            provider_id: ProviderId::CustomOpenAi,
+            connection_id: custom.connection_id,
+            model_id: "gpt-compatible".to_string(),
+            messages: Vec::new(),
+            tuning: ProviderTuningValues {
+                temperature: 0.7,
+                num_ctx: 8192,
+            },
+            operation_intent: "chat".to_string(),
+        };
+        let eligibility = runtime.chat_eligibility(&request).expect("eligibility");
+        assert!(!eligibility.eligible);
+        assert_eq!(eligibility.category, "connection_not_approved");
+    }
+
+    #[test]
+    fn invalid_endpoint_and_arbitrary_api_key_env_migrate_disabled() {
+        let mut runtime = ProviderRuntime::new();
+        let counters = runtime
+            .apply_migration(ProviderMigrationRequest {
+                provider_connections: vec![
+                    LegacyProviderConnection {
+                        id: Some("custom-openai".to_string()),
+                        label: Some("Bad endpoint".to_string()),
+                        provider_kind: Some("openai-compatible".to_string()),
+                        base_url: Some("https://203.0.113.10".to_string()),
+                        api_key_env: None,
+                        models: Vec::new(),
+                    },
+                    LegacyProviderConnection {
+                        id: Some("custom-openai".to_string()),
+                        label: Some("Legacy key env".to_string()),
+                        provider_kind: Some("openai-compatible".to_string()),
+                        base_url: Some("https://api.example.com/v1".to_string()),
+                        api_key_env: Some("OPENAI_API_KEY".to_string()),
+                        models: Vec::new(),
+                    },
+                ],
+                active_provider_id: None,
+                active_model_id: None,
+            })
+            .expect("migration should apply");
+        assert_eq!(counters.disabled_connections, 2);
+        let disabled = runtime
+            .snapshot()
+            .connections
+            .iter()
+            .filter(|connection| {
+                connection.provider_id == ProviderId::CustomOpenAi
+                    && connection.approval_state == ConnectionApprovalState::Disabled
+            })
+            .count();
+        assert_eq!(disabled, 2);
+    }
+
+    #[test]
+    fn sidecar_aliases_do_not_become_provider_connections() {
+        let mut runtime = ProviderRuntime::new();
+        let counters = runtime
+            .apply_migration(ProviderMigrationRequest {
+                provider_connections: vec![LegacyProviderConnection {
+                    id: Some("agent-sidecar".to_string()),
+                    label: Some("Sidecar".to_string()),
+                    provider_kind: Some("sidecar".to_string()),
+                    base_url: Some("http://127.0.0.1:8787".to_string()),
+                    api_key_env: None,
+                    models: vec![LegacyModelInventoryEntry {
+                        id: "sidecar-model".to_string(),
+                    }],
+                }],
+                active_provider_id: Some("sidecar".to_string()),
+                active_model_id: Some("sidecar-model".to_string()),
+            })
+            .expect("migration should apply");
+        assert_eq!(counters.skipped_sidecar_entries, 2);
+        assert!(!runtime
+            .snapshot()
+            .connections
+            .iter()
+            .any(|connection| connection.connection_id.contains("sidecar")));
+    }
+
+    #[test]
+    fn migration_is_idempotent_for_same_input() {
+        let request = ProviderMigrationRequest {
+            provider_connections: vec![LegacyProviderConnection {
+                id: Some("ollama".to_string()),
+                label: Some("Ollama".to_string()),
+                provider_kind: Some("ollama".to_string()),
+                base_url: Some("http://127.0.0.1:11434".to_string()),
+                api_key_env: None,
+                models: Vec::new(),
+            }],
+            active_provider_id: None,
+            active_model_id: None,
+        };
+        let mut first = ProviderRuntime::new();
+        let mut second = ProviderRuntime::new();
+        first
+            .apply_migration(request.clone())
+            .expect("first migration should apply");
+        second
+            .apply_migration(request)
+            .expect("second migration should apply");
+        assert_eq!(
+            serde_json::to_string(&first.snapshot()).expect("first snapshot"),
+            serde_json::to_string(&second.snapshot()).expect("second snapshot")
+        );
+    }
+
+    #[test]
+    fn provider_store_writes_backup_and_no_secret_material() {
+        let dir = temp_provider_dir("store-backup");
+        let runtime = ProviderRuntime::new();
+        let first_backup = write_store_to_dir(&dir, &runtime).expect("first write");
+        assert!(!first_backup);
+        let second_backup = write_store_to_dir(&dir, &runtime).expect("second write");
+        assert!(second_backup);
+        let store = read_store_from_dir(&dir)
+            .expect("store read")
+            .expect("store should exist");
+        let serialized = serde_json::to_string(&store).expect("serialize store");
+        for forbidden in [
+            "sk-",
+            "Bearer",
+            "Authorization",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "apiKeyEnv",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "store should not contain {forbidden}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn corrupt_store_recovers_to_safe_defaults() {
+        let dir = temp_provider_dir("corrupt-store");
+        std::fs::create_dir_all(&dir).expect("create temp provider dir");
+        std::fs::write(dir.join(PROVIDER_STORE_FILE), b"{not-json").expect("write corrupt store");
+        let mut runtime = ProviderRuntime::new();
+        runtime.records.clear();
+        let recovery = load_store_or_defaults(&dir, &mut runtime).expect("safe recovery");
+        assert!(recovery.is_some());
+        assert!(runtime
+            .snapshot()
+            .connections
+            .iter()
+            .any(|connection| connection.connection_id == "ollama:local-default"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn temp_provider_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("codename-r1-{label}-{}", now_millis()))
     }
 }

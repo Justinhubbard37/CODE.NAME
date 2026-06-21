@@ -712,6 +712,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "provider_migrate_legacy_config",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::Low, RiskLevel::Low, RiskLevel::None, RiskLevel::None),
+        rationale: "Migrates untrusted legacy provider configuration into Rust-owned records without secrets or execution authority.",
+        priority: PolicyPriority::Critical,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "get_log_dir",
         required_gates: LOG_DIR_REVIEW,
         risk: risk(RiskLevel::None, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
