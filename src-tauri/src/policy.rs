@@ -688,6 +688,30 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "provider_store_credential",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::High, RiskLevel::None, RiskLevel::None, RiskLevel::None),
+        rationale: "Writes provider credential material to Rust-owned secure storage without frontend-selected secret names.",
+        priority: PolicyPriority::Critical,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "provider_clear_credential",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::High, RiskLevel::None, RiskLevel::None, RiskLevel::None),
+        rationale: "Clears provider credential material from Rust-owned secure storage using fixed bindings only.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
+        command: "provider_credential_status",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::Low, RiskLevel::None, RiskLevel::None, RiskLevel::None),
+        rationale: "Returns provider credential presence only, never raw secret values or binding references.",
+        priority: PolicyPriority::High,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "get_log_dir",
         required_gates: LOG_DIR_REVIEW,
         risk: risk(RiskLevel::None, RiskLevel::None, RiskLevel::Low, RiskLevel::None),
@@ -957,6 +981,21 @@ mod tests {
             "secret_delete",
         ] {
             let policy = policy_for_command(command).expect("secret command policy");
+            assert!(
+                policy.risk.is_secret_related(),
+                "{command} should be secret-related"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_credential_commands_are_secret_related() {
+        for command in [
+            "provider_store_credential",
+            "provider_clear_credential",
+            "provider_credential_status",
+        ] {
+            let policy = policy_for_command(command).expect("provider credential command policy");
             assert!(
                 policy.risk.is_secret_related(),
                 "{command} should be secret-related"

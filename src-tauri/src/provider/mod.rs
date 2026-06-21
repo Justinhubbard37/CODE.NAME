@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+const PROVIDER_SECRET_SERVICE: &str = "com.codename.harness.provider";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProviderId {
     Ollama,
@@ -123,6 +125,17 @@ enum CredentialBindingRef {
     CustomOpenAi(ConnectionId),
 }
 
+impl CredentialBindingRef {
+    fn account_name(&self) -> String {
+        match self {
+            CredentialBindingRef::GeminiApiKey => "PROVIDER_GEMINI_API_KEY".to_string(),
+            CredentialBindingRef::CustomOpenAi(connection_id) => {
+                format!("PROVIDER_CUSTOM_OPENAI_{}", connection_id.as_str())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialRequirement {
@@ -204,6 +217,7 @@ struct ConnectionRecord {
     approval_state: ConnectionApprovalState,
     credential_requirement: CredentialRequirement,
     credential_binding: Option<CredentialBindingRef>,
+    credential_configured: bool,
     disabled_reason: Option<String>,
     stale_inventory_count: Option<usize>,
     created_at: u64,
@@ -365,6 +379,23 @@ pub struct ProviderCancelStreamRequest {
     pub operation_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderCredentialStoreRequest {
+    pub provider_id: ProviderId,
+    pub connection_id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderCredentialStatus {
+    pub provider_id: ProviderId,
+    pub connection_id: String,
+    pub required: bool,
+    pub configured: bool,
+}
+
 pub struct ProviderRuntimeState {
     inner: Mutex<ProviderRuntime>,
 }
@@ -420,6 +451,7 @@ impl ProviderRuntime {
             approval_state: ConnectionApprovalState::Approved,
             credential_requirement: CredentialRequirement::None,
             credential_binding: None,
+            credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
             created_at: now,
@@ -436,6 +468,7 @@ impl ProviderRuntime {
             approval_state: ConnectionApprovalState::Approved,
             credential_requirement: CredentialRequirement::None,
             credential_binding: None,
+            credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
             created_at: now,
@@ -454,6 +487,7 @@ impl ProviderRuntime {
             approval_state: ConnectionApprovalState::Approved,
             credential_requirement: CredentialRequirement::Required,
             credential_binding: Some(CredentialBindingRef::GeminiApiKey),
+            credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
             created_at: now,
@@ -522,7 +556,7 @@ impl ProviderRuntime {
                 .map(|endpoint| endpoint.transport_class),
             locality: record.endpoint.as_ref().map(|endpoint| endpoint.locality),
             credential_required: record.credential_requirement == CredentialRequirement::Required,
-            credential_configured: false,
+            credential_configured: record.credential_configured,
             readiness,
             checked_this_session: session.checked_this_session,
             last_explicit_check_at: session.last_explicit_check_at,
@@ -582,6 +616,7 @@ impl ProviderRuntime {
             approval_state: ConnectionApprovalState::PendingApproval,
             credential_requirement,
             credential_binding,
+            credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
             created_at: now,
@@ -687,6 +722,63 @@ impl ProviderRuntime {
         record.updated_at = now_millis();
         let record = self.connection_record(request.provider_id, &connection_id)?;
         Ok(self.connection_dto(record))
+    }
+
+    fn credential_status(
+        &mut self,
+        request: ProviderConnectionSelector,
+    ) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
+        let connection_id = ConnectionId::new(request.connection_id);
+        let (binding, provider_id, required, connection_id_string) = {
+            let record = self.connection_record(request.provider_id, &connection_id)?;
+            (
+                record.credential_binding.clone(),
+                record.provider_id,
+                record.credential_requirement == CredentialRequirement::Required,
+                record.connection_id.as_str().to_string(),
+            )
+        };
+        let configured = binding.as_ref().map(credential_is_present).unwrap_or(false);
+        let record = self.connection_record_mut(request.provider_id, &connection_id)?;
+        record.credential_configured = configured;
+        Ok(ProviderCredentialStatus {
+            provider_id,
+            connection_id: connection_id_string,
+            required,
+            configured,
+        })
+    }
+
+    fn credential_binding(
+        &self,
+        provider_id: ProviderId,
+        connection_id: &ConnectionId,
+    ) -> Result<CredentialBindingRef, ProviderErrorDto> {
+        let record = self.connection_record(provider_id, connection_id)?;
+        record.credential_binding.clone().ok_or_else(|| {
+            ProviderErrorDto::new(
+                "credential_not_supported",
+                "Provider connection does not use credentials.",
+                "This provider connection has no Rust-owned credential binding.",
+            )
+        })
+    }
+
+    fn mark_credential_configured(
+        &mut self,
+        provider_id: ProviderId,
+        connection_id: &ConnectionId,
+        configured: bool,
+    ) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
+        let record = self.connection_record_mut(provider_id, connection_id)?;
+        record.credential_configured = configured;
+        record.updated_at = now_millis();
+        Ok(ProviderCredentialStatus {
+            provider_id: record.provider_id,
+            connection_id: record.connection_id.as_str().to_string(),
+            required: record.credential_requirement == CredentialRequirement::Required,
+            configured,
+        })
     }
 
     fn check_connection(
@@ -993,6 +1085,46 @@ pub fn provider_cancel_stream(
     })
 }
 
+#[tauri::command]
+pub fn provider_store_credential(
+    state: State<'_, ProviderRuntimeState>,
+    request: ProviderCredentialStoreRequest,
+) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
+    let connection_id = ConnectionId::new(request.connection_id.clone());
+    let binding = {
+        let runtime = state.lock()?;
+        runtime.credential_binding(request.provider_id, &connection_id)?
+    };
+    store_credential(&binding, &request.value)?;
+    state
+        .lock()?
+        .mark_credential_configured(request.provider_id, &connection_id, true)
+}
+
+#[tauri::command]
+pub fn provider_clear_credential(
+    state: State<'_, ProviderRuntimeState>,
+    request: ProviderConnectionSelector,
+) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
+    let connection_id = ConnectionId::new(request.connection_id.clone());
+    let binding = {
+        let runtime = state.lock()?;
+        runtime.credential_binding(request.provider_id, &connection_id)?
+    };
+    clear_credential(&binding)?;
+    state
+        .lock()?
+        .mark_credential_configured(request.provider_id, &connection_id, false)
+}
+
+#[tauri::command]
+pub fn provider_credential_status(
+    state: State<'_, ProviderRuntimeState>,
+    request: ProviderConnectionSelector,
+) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
+    state.lock()?.credential_status(request)
+}
+
 fn validate_endpoint(
     provider_id: ProviderId,
     raw_endpoint: &str,
@@ -1207,6 +1339,59 @@ fn sanitize_detail(detail: &str) -> String {
     }
 }
 
+fn store_credential(binding: &CredentialBindingRef, value: &str) -> Result<(), ProviderErrorDto> {
+    let secret = value.trim();
+    if secret.is_empty() {
+        return Err(ProviderErrorDto::new(
+            "credential_empty",
+            "Credential is required.",
+            "Provider credential cannot be empty.",
+        ));
+    }
+    let account = binding.account_name();
+    let entry = keyring::Entry::new(PROVIDER_SECRET_SERVICE, &account).map_err(|_| {
+        ProviderErrorDto::new(
+            "credential_store_unavailable",
+            "Credential storage is unavailable.",
+            "Unable to open secure provider credential storage.",
+        )
+    })?;
+    entry.set_password(secret).map_err(|_| {
+        ProviderErrorDto::new(
+            "credential_store_failed",
+            "Credential could not be stored.",
+            "Secure provider credential storage rejected the write.",
+        )
+    })
+}
+
+fn clear_credential(binding: &CredentialBindingRef) -> Result<(), ProviderErrorDto> {
+    let account = binding.account_name();
+    let entry = keyring::Entry::new(PROVIDER_SECRET_SERVICE, &account).map_err(|_| {
+        ProviderErrorDto::new(
+            "credential_store_unavailable",
+            "Credential storage is unavailable.",
+            "Unable to open secure provider credential storage.",
+        )
+    })?;
+    match entry.delete_password() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err(ProviderErrorDto::new(
+            "credential_clear_failed",
+            "Credential could not be cleared.",
+            "Secure provider credential storage rejected the delete.",
+        )),
+    }
+}
+
+fn credential_is_present(binding: &CredentialBindingRef) -> bool {
+    let account = binding.account_name();
+    keyring::Entry::new(PROVIDER_SECRET_SERVICE, &account)
+        .and_then(|entry| entry.get_password())
+        .map(|secret| !secret.is_empty())
+        .unwrap_or(false)
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1366,5 +1551,56 @@ mod tests {
                 "snapshot should not expose {forbidden}"
             );
         }
+    }
+
+    #[test]
+    fn credential_store_request_rejects_frontend_secret_names() {
+        let payload = serde_json::json!({
+            "providerId": "gemini",
+            "connectionId": "gemini:fixed",
+            "value": "test-secret",
+            "keyName": "GEMINI_API_KEY"
+        });
+        let parsed = serde_json::from_value::<ProviderCredentialStoreRequest>(payload);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn credential_bindings_are_fixed_inside_rust() {
+        let mut runtime = ProviderRuntime::new();
+        let gemini_binding = runtime
+            .credential_binding(ProviderId::Gemini, &ConnectionId::new("gemini:fixed"))
+            .expect("Gemini should have fixed binding");
+        assert_eq!(gemini_binding.account_name(), "PROVIDER_GEMINI_API_KEY");
+
+        let custom = runtime
+            .create_connection(ProviderCreateConnectionRequest {
+                provider_id: ProviderId::CustomOpenAi,
+                label: "Remote".to_string(),
+                endpoint: "https://api.example.com/v1".to_string(),
+            })
+            .expect("custom connection should be created");
+        let binding = runtime
+            .credential_binding(
+                ProviderId::CustomOpenAi,
+                &ConnectionId::new(custom.connection_id.clone()),
+            )
+            .expect("custom connection should have binding");
+        assert_eq!(
+            binding.account_name(),
+            format!("PROVIDER_CUSTOM_OPENAI_{}", custom.connection_id)
+        );
+    }
+
+    #[test]
+    fn provider_without_binding_cannot_store_credentials() {
+        let runtime = ProviderRuntime::new();
+        let err = runtime
+            .credential_binding(
+                ProviderId::Ollama,
+                &ConnectionId::new("ollama:local-default"),
+            )
+            .expect_err("Ollama should not expose credential binding");
+        assert_eq!(err.code, "credential_not_supported");
     }
 }
