@@ -3,6 +3,7 @@ mod kb;
 mod logging;
 mod model;
 mod policy;
+mod provider;
 mod secrets;
 mod sidecar;
 use sidecar::SidecarManager;
@@ -14,6 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(SidecarManager::default())
         .manage(sidecar::GateState::default())
+        .manage(provider::ProviderRuntimeState::default())
         .invoke_handler(tauri::generate_handler![
             sidecar::sidecar_info,
             sidecar::sidecar_restart,
@@ -31,6 +33,16 @@ pub fn run() {
             secrets::secret_present,
             secrets::secret_set,
             secrets::secret_delete,
+            provider::provider_list_runtime_state,
+            provider::provider_create_connection,
+            provider::provider_edit_connection,
+            provider::provider_disable_connection,
+            provider::provider_delete_connection,
+            provider::provider_approve_connection,
+            provider::provider_check_connection,
+            provider::provider_refresh_models,
+            provider::provider_stream_chat,
+            provider::provider_cancel_stream,
             model::gemini_model_list,
             model::model_list,
             model::model_stream,
