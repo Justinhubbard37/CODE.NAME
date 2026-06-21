@@ -34,6 +34,7 @@ pub fn run() {
             secrets::secret_set,
             secrets::secret_delete,
             provider::provider_list_runtime_state,
+            provider::provider_chat_eligibility,
             provider::provider_create_connection,
             provider::provider_edit_connection,
             provider::provider_disable_connection,

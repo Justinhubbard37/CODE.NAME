@@ -54,11 +54,6 @@ function normalizeToken(value: unknown): string {
     .replace(/^-|-$/g, '');
 }
 
-function isOllamaCloudTaggedModel(id: string): boolean {
-  const lowered = id.toLowerCase();
-  return lowered.endsWith(':cloud') || lowered.endsWith('-cloud');
-}
-
 function normalizeModelForProvider(
   model: ModelInventoryEntry,
   providerId: CanonicalProviderId,
@@ -66,7 +61,6 @@ function normalizeModelForProvider(
   if (providerId === 'ollama') {
     return {
       ...model,
-      executionClass: isOllamaCloudTaggedModel(model.id) ? 'cloud' : 'local',
       source: model.source === 'configured' ? 'ollama' : model.source,
     };
   }
@@ -134,11 +128,20 @@ export function canonicalProviderIdFromFields(fields: {
 
 export function canonicalProviderIdForReference(
   providerId: string | undefined,
-  providers: Pick<ProviderConnection, 'id' | 'label' | 'providerKind'>[] = [],
-): CanonicalProviderId | '' {
+  providers: Pick<ProviderConnection, 'id' | 'connectionId' | 'label' | 'providerKind'>[] = [],
+): string {
   const provider = providers.find((candidate) => candidate.id === providerId);
   const canonical = canonicalProviderIdFromFields(provider ?? { id: providerId });
-  return canonical && canonical !== 'sidecar' ? canonical : '';
+  if (!canonical || canonical === 'sidecar') return '';
+  if (
+    provider &&
+    canonical === 'custom-openai' &&
+    provider.connectionId &&
+    provider.id === provider.connectionId
+  ) {
+    return provider.id;
+  }
+  return canonical;
 }
 
 function canonicalDefault(providerId: CanonicalProviderId): ProviderConnection {
@@ -171,7 +174,8 @@ function mergeProvider(
   if (providerId === 'ollama') {
     return {
       ...merged,
-      baseUrl: base.baseUrl,
+      baseUrl: incoming.baseUrl || incoming.displayEndpoint || current.baseUrl || base.baseUrl,
+      displayEndpoint: incoming.displayEndpoint ?? current.displayEndpoint,
       requiresNetwork: false,
       requiresSecret: false,
       secretRequirement: 'none',
@@ -183,7 +187,8 @@ function mergeProvider(
   if (providerId === 'gemini') {
     return {
       ...merged,
-      baseUrl: base.baseUrl,
+      baseUrl: incoming.baseUrl || incoming.displayEndpoint || current.baseUrl || base.baseUrl,
+      displayEndpoint: incoming.displayEndpoint ?? current.displayEndpoint,
       requiresNetwork: true,
       requiresSecret: true,
       secretRequirement: 'keychain',
@@ -193,25 +198,61 @@ function mergeProvider(
   }
 
   if (providerId === 'custom-openai') {
+    const hasRustConnection = !!(incoming.connectionId ?? current.connectionId);
     return {
       ...merged,
       providerKind: 'openai-compatible',
-      baseUrl: incoming.baseUrl || current.baseUrl || base.baseUrl,
-      requiresNetwork: incoming.requiresNetwork ?? current.requiresNetwork,
-      requiresSecret: incoming.requiresSecret ?? current.requiresSecret,
-      secretRequirement: incoming.secretRequirement ?? current.secretRequirement,
-      apiKeyEnv: incoming.apiKeyEnv,
+      baseUrl: hasRustConnection ? incoming.baseUrl || incoming.displayEndpoint || current.baseUrl || base.baseUrl : base.baseUrl,
+      displayEndpoint: hasRustConnection ? incoming.displayEndpoint ?? incoming.baseUrl ?? current.displayEndpoint ?? current.baseUrl : undefined,
+      requiresNetwork: hasRustConnection ? incoming.requiresNetwork ?? current.requiresNetwork : false,
+      requiresSecret: hasRustConnection ? incoming.requiresSecret ?? current.requiresSecret : false,
+      secretRequirement: hasRustConnection ? incoming.secretRequirement ?? current.secretRequirement : 'none',
+      apiKeyEnv: undefined,
       userEditable: true,
+      models: hasRustConnection
+        ? merged.models
+        : merged.models.map((model) => ({
+            ...model,
+            executionClass: 'unknown',
+            availability: 'stale',
+          })),
     };
   }
 
   return {
     ...merged,
-    baseUrl: incoming.baseUrl || current.baseUrl || base.baseUrl,
+    baseUrl: incoming.baseUrl || incoming.displayEndpoint || current.baseUrl || base.baseUrl,
+    displayEndpoint: incoming.displayEndpoint ?? current.displayEndpoint,
     requiresNetwork: false,
     requiresSecret: false,
     secretRequirement: 'none',
     userEditable: incoming.userEditable ?? current.userEditable,
+  };
+}
+
+function isAdditionalCustomConnection(provider: ProviderConnection): boolean {
+  const canonicalId = canonicalProviderIdFromFields(provider);
+  if (canonicalId !== 'custom-openai') return false;
+  if (!provider.connectionId) return false;
+  const connectionId = provider.connectionId ?? provider.id;
+  return provider.id !== 'custom-openai' && connectionId !== 'custom-openai';
+}
+
+function mergeAdditionalCustomConnection(provider: ProviderConnection): ProviderConnection {
+  const merged = mergeProvider(canonicalDefault('custom-openai'), provider, 'custom-openai');
+  const connectionId = provider.connectionId ?? provider.id;
+  return {
+    ...merged,
+    id: provider.id || connectionId,
+    connectionId,
+    label: provider.label || connectionId,
+    baseUrl: provider.baseUrl || provider.displayEndpoint || '',
+    displayEndpoint: provider.displayEndpoint ?? provider.baseUrl,
+    requiresNetwork: provider.requiresNetwork,
+    requiresSecret: provider.requiresSecret,
+    secretRequirement: provider.secretRequirement,
+    apiKeyEnv: undefined,
+    userEditable: true,
   };
 }
 
@@ -221,14 +262,20 @@ export function normalizeProviderConnections(
   const canonical = new Map<CanonicalProviderId, ProviderConnection>(
     CANONICAL_PROVIDER_IDS.map((id) => [id, canonicalDefault(id)]),
   );
+  const additionalCustom = new Map<string, ProviderConnection>();
 
   for (const provider of providers ?? []) {
     const canonicalId = canonicalProviderIdFromFields(provider);
     if (!canonicalId || canonicalId === 'sidecar') continue;
+    if (isAdditionalCustomConnection(provider)) {
+      const merged = mergeAdditionalCustomConnection(provider);
+      additionalCustom.set(merged.connectionId ?? merged.id, merged);
+      continue;
+    }
     canonical.set(canonicalId, mergeProvider(canonical.get(canonicalId)!, provider, canonicalId));
   }
 
-  return CANONICAL_PROVIDER_IDS.map((id) => {
+  const normalProviders = CANONICAL_PROVIDER_IDS.map((id) => {
     const provider = canonical.get(id)!;
     return {
       ...provider,
@@ -236,10 +283,20 @@ export function normalizeProviderConnections(
       lastFailure: undefined,
     };
   });
+  return [
+    ...normalProviders,
+    ...Array.from(additionalCustom.values()).map((provider) => ({
+      ...provider,
+      detail: provider.detail || 'Model inventory has not been refreshed.',
+      lastFailure: undefined,
+    })),
+  ];
 }
 
 export function normalProviderMenuProviders(providers: ProviderConnection[]): ProviderConnection[] {
-  return normalizeProviderConnections(providers);
+  return normalizeProviderConnections(providers).filter((provider) =>
+    CANONICAL_PROVIDER_IDS.includes(provider.id as CanonicalProviderId),
+  );
 }
 
 export function providerMenuActionTarget(actionId: ProviderMenuActionId): SettingsView {

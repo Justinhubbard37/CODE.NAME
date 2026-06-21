@@ -187,6 +187,33 @@ pub struct ModelInventoryState {
     pub last_refresh_at: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModelDto {
+    pub id: String,
+    pub display_label: String,
+    pub availability: ProviderModelAvailability,
+    pub execution_class: ProviderModelExecutionClass,
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderModelAvailability {
+    Available,
+    Stale,
+    Unavailable,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderModelExecutionClass {
+    Local,
+    Cloud,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InventoryKind {
@@ -235,6 +262,7 @@ struct ConnectionRecord {
     credential_configured: bool,
     disabled_reason: Option<String>,
     stale_inventory_count: Option<usize>,
+    stale_inventory_models: Vec<String>,
     created_at: u64,
     updated_at: u64,
 }
@@ -304,6 +332,9 @@ pub struct ConnectionDto {
     pub check_in_progress: bool,
     pub refresh_in_progress: bool,
     pub inventory: ModelInventoryState,
+    pub models: Vec<ProviderModelDto>,
+    pub chat_eligibility: ChatEligibility,
+    pub display_endpoint: Option<String>,
     pub safe_failure_category: Option<String>,
     pub safe_detail: Option<String>,
 }
@@ -361,6 +392,14 @@ pub struct ProviderConnectionSelector {
 pub struct ProviderModelOperationRequest {
     pub provider_id: ProviderId,
     pub connection_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderChatEligibilityRequest {
+    pub provider_id: ProviderId,
+    pub connection_id: String,
+    pub model_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -538,6 +577,7 @@ struct StoredConnectionRecord {
     credential_configured: bool,
     disabled_reason: Option<String>,
     stale_inventory_count: Option<usize>,
+    stale_inventory_models: Vec<String>,
     created_at: u64,
     updated_at: u64,
 }
@@ -580,6 +620,7 @@ impl StoredConnectionRecord {
             credential_configured: record.credential_configured,
             disabled_reason: record.disabled_reason.clone(),
             stale_inventory_count: record.stale_inventory_count,
+            stale_inventory_models: record.stale_inventory_models.clone(),
             created_at: record.created_at,
             updated_at: record.updated_at,
         }
@@ -605,6 +646,7 @@ impl StoredConnectionRecord {
             credential_configured: self.credential_configured,
             disabled_reason: self.disabled_reason.map(|detail| sanitize_detail(&detail)),
             stale_inventory_count: self.stale_inventory_count,
+            stale_inventory_models: self.stale_inventory_models,
             created_at: self.created_at,
             updated_at: self.updated_at,
         }
@@ -659,6 +701,7 @@ impl ProviderRuntime {
             credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
+            stale_inventory_models: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -676,6 +719,7 @@ impl ProviderRuntime {
             credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
+            stale_inventory_models: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -695,6 +739,7 @@ impl ProviderRuntime {
             credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
+            stale_inventory_models: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -866,6 +911,16 @@ impl ProviderRuntime {
             check_in_progress: session.check_in_progress,
             refresh_in_progress: session.refresh_in_progress,
             inventory,
+            models: model_dtos_for_record(record, &session),
+            chat_eligibility: ineligible(
+                ReadinessState::ModelUnavailable,
+                "model_unavailable",
+                "Select a current-session model to check chat eligibility.",
+            ),
+            display_endpoint: record
+                .endpoint
+                .as_ref()
+                .map(|endpoint| endpoint.normalized_origin.clone()),
             safe_failure_category: session.failure_category.or_else(|| {
                 record
                     .disabled_reason
@@ -922,6 +977,7 @@ impl ProviderRuntime {
             credential_configured: false,
             disabled_reason: None,
             stale_inventory_count: None,
+            stale_inventory_models: Vec::new(),
             created_at: now,
             updated_at: now,
         };
@@ -1260,6 +1316,24 @@ impl ProviderRuntime {
         })
     }
 
+    fn chat_eligibility_for(
+        &self,
+        request: ProviderChatEligibilityRequest,
+    ) -> Result<ChatEligibility, ProviderErrorDto> {
+        self.chat_eligibility(&ProviderStreamChatRequest {
+            provider_id: request.provider_id,
+            connection_id: request.connection_id,
+            model_id: request.model_id,
+            messages: Vec::new(),
+            tuning: ProviderTuningValues {
+                temperature: 0.0,
+                num_ctx: 1,
+            },
+            operation_intent: "chat".to_string(),
+            operation_id: None,
+        })
+    }
+
     fn resolve_for_chat(
         &mut self,
         request: &ProviderStreamChatRequest,
@@ -1382,43 +1456,71 @@ pub fn provider_list_runtime_state(
 }
 
 #[tauri::command]
+pub fn provider_chat_eligibility(
+    state: State<'_, ProviderRuntimeState>,
+    request: ProviderChatEligibilityRequest,
+) -> Result<ChatEligibility, ProviderErrorDto> {
+    state.lock()?.chat_eligibility_for(request)
+}
+
+#[tauri::command]
 pub fn provider_create_connection(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderCreateConnectionRequest,
 ) -> Result<ConnectionDto, ProviderErrorDto> {
-    state.lock()?.create_connection(request)
+    let mut runtime = state.lock()?;
+    let dto = runtime.create_connection(request)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(dto)
 }
 
 #[tauri::command]
 pub fn provider_edit_connection(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderEditConnectionRequest,
 ) -> Result<ConnectionDto, ProviderErrorDto> {
-    state.lock()?.edit_connection(request)
+    let mut runtime = state.lock()?;
+    let dto = runtime.edit_connection(request)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(dto)
 }
 
 #[tauri::command]
 pub fn provider_disable_connection(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderConnectionSelector,
 ) -> Result<ConnectionDto, ProviderErrorDto> {
-    state.lock()?.disable_connection(request)
+    let mut runtime = state.lock()?;
+    let dto = runtime.disable_connection(request)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(dto)
 }
 
 #[tauri::command]
 pub fn provider_delete_connection(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderConnectionSelector,
 ) -> Result<ProviderOperationResult, ProviderErrorDto> {
-    state.lock()?.delete_connection(request)
+    let mut runtime = state.lock()?;
+    let result = runtime.delete_connection(request)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn provider_approve_connection(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderConnectionSelector,
 ) -> Result<ConnectionDto, ProviderErrorDto> {
-    state.lock()?.approve_connection(request)
+    let mut runtime = state.lock()?;
+    let dto = runtime.approve_connection(request)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(dto)
 }
 
 #[tauri::command]
@@ -1506,6 +1608,7 @@ pub fn provider_cancel_stream(
 
 #[tauri::command]
 pub fn provider_store_credential(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderCredentialStoreRequest,
 ) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
@@ -1515,13 +1618,15 @@ pub fn provider_store_credential(
         runtime.credential_binding(request.provider_id, &connection_id)?
     };
     store_credential(&binding, &request.value)?;
-    state
-        .lock()?
-        .mark_credential_configured(request.provider_id, &connection_id, true)
+    let mut runtime = state.lock()?;
+    let status = runtime.mark_credential_configured(request.provider_id, &connection_id, true)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(status)
 }
 
 #[tauri::command]
 pub fn provider_clear_credential(
+    app: AppHandle,
     state: State<'_, ProviderRuntimeState>,
     request: ProviderConnectionSelector,
 ) -> Result<ProviderCredentialStatus, ProviderErrorDto> {
@@ -1531,9 +1636,10 @@ pub fn provider_clear_credential(
         runtime.credential_binding(request.provider_id, &connection_id)?
     };
     clear_credential(&binding)?;
-    state
-        .lock()?
-        .mark_credential_configured(request.provider_id, &connection_id, false)
+    let mut runtime = state.lock()?;
+    let status = runtime.mark_credential_configured(request.provider_id, &connection_id, false)?;
+    persist_runtime_to_app(&app, &runtime)?;
+    Ok(status)
 }
 
 #[tauri::command]
@@ -2802,6 +2908,14 @@ fn provider_config_dir(app: &AppHandle) -> Result<PathBuf, ProviderErrorDto> {
     })
 }
 
+fn persist_runtime_to_app(
+    app: &AppHandle,
+    runtime: &ProviderRuntime,
+) -> Result<bool, ProviderErrorDto> {
+    let config_dir = provider_config_dir(app)?;
+    write_store_to_dir(&config_dir, runtime)
+}
+
 fn write_store_to_dir(
     config_dir: &Path,
     runtime: &ProviderRuntime,
@@ -2965,6 +3079,7 @@ fn migrate_default_local_connection(
     }
     if let Some(count) = stale_count {
         record.stale_inventory_count = Some(count);
+        record.stale_inventory_models = non_empty_model_ids(&legacy);
     }
     match legacy.base_url.as_deref() {
         Some(base_url) => match validate_endpoint(provider_id, base_url) {
@@ -2999,6 +3114,7 @@ fn migrate_gemini_connection(
     };
     if let Some(count) = non_empty_model_count(&legacy) {
         record.stale_inventory_count = Some(count);
+        record.stale_inventory_models = non_empty_model_ids(&legacy);
     }
     let api_key_env = legacy.api_key_env.as_deref().unwrap_or("").trim();
     if !api_key_env.is_empty() && api_key_env != "GEMINI_API_KEY" {
@@ -3075,6 +3191,7 @@ fn migrate_custom_connection(
         credential_configured: false,
         disabled_reason,
         stale_inventory_count: stale_count,
+        stale_inventory_models: non_empty_model_ids(&legacy),
         created_at: now,
         updated_at: now,
     };
@@ -3104,6 +3221,17 @@ fn non_empty_model_count(legacy: &LegacyProviderConnection) -> Option<usize> {
     (count > 0).then_some(count)
 }
 
+fn non_empty_model_ids(legacy: &LegacyProviderConnection) -> Vec<String> {
+    legacy
+        .models
+        .iter()
+        .filter_map(|model| {
+            let id = model.id.trim();
+            (!id.is_empty()).then(|| id.to_string())
+        })
+        .collect()
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3117,6 +3245,52 @@ fn ineligible(state: ReadinessState, category: &str, detail: &str) -> ChatEligib
         state,
         category: category.to_string(),
         detail: sanitize_detail(detail),
+    }
+}
+
+fn model_dtos_for_record(
+    record: &ConnectionRecord,
+    session: &SessionConnectionState,
+) -> Vec<ProviderModelDto> {
+    if session.inventory.state == InventoryKind::CurrentSession {
+        return session
+            .current_session_models
+            .iter()
+            .map(|id| model_dto(record, id, ProviderModelAvailability::Available))
+            .collect();
+    }
+    record
+        .stale_inventory_models
+        .iter()
+        .map(|id| model_dto(record, id, ProviderModelAvailability::Stale))
+        .collect()
+}
+
+fn model_dto(
+    record: &ConnectionRecord,
+    id: &str,
+    availability: ProviderModelAvailability,
+) -> ProviderModelDto {
+    ProviderModelDto {
+        id: id.to_string(),
+        display_label: id.to_string(),
+        availability,
+        execution_class: execution_class_for_record(record),
+        capabilities: Vec::new(),
+    }
+}
+
+fn execution_class_for_record(record: &ConnectionRecord) -> ProviderModelExecutionClass {
+    match record
+        .endpoint
+        .as_ref()
+        .map(|endpoint| endpoint.locality)
+        .unwrap_or(LocalityClassification::FixedRemote)
+    {
+        LocalityClassification::LocalLoopback => ProviderModelExecutionClass::Local,
+        LocalityClassification::RemotePublic | LocalityClassification::FixedRemote => {
+            ProviderModelExecutionClass::Cloud
+        }
     }
 }
 
@@ -3247,15 +3421,14 @@ mod tests {
     }
 
     #[test]
-    fn safe_dtos_do_not_expose_endpoints_or_credential_bindings() {
+    fn safe_dtos_do_not_expose_credentials_or_binding_references() {
         let runtime = ProviderRuntime::new();
         let serialized = serde_json::to_string(&runtime.snapshot()).expect("serialize snapshot");
         for forbidden in [
-            "127.0.0.1",
-            "localhost",
-            "generativelanguage",
             "CredentialBindingRef",
             "GEMINI_API_KEY",
+            "PROVIDER_GEMINI_API_KEY",
+            "PROVIDER_CUSTOM_OPENAI_",
             "Authorization",
             "Bearer",
         ] {

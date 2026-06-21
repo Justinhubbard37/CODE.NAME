@@ -93,7 +93,7 @@ describe('config runtime migration and normalization', () => {
     expect(providers.some((provider) => provider.id === 'ollama-cloud')).toBe(false);
     expect(providers.find((provider) => provider.id === 'ollama')?.models).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'gpt-oss:120b-cloud', executionClass: 'cloud' }),
+        expect.objectContaining({ id: 'gpt-oss:120b-cloud', executionClass: 'unknown', availability: 'stale' }),
       ]),
     );
     expect(providers.find((provider) => provider.id === 'ollama')).toMatchObject({
@@ -228,14 +228,14 @@ describe('config runtime migration and normalization', () => {
     expect(custom).toMatchObject({
       label: 'Custom OpenAI-compatible',
       providerKind: 'openai-compatible',
-      baseUrl: 'https://models.example.test',
-      requiresNetwork: true,
-      requiresSecret: true,
-      secretRequirement: 'keychain',
-      apiKeyEnv: 'CUSTOM_API_KEY',
+      baseUrl: '',
+      requiresNetwork: false,
+      requiresSecret: false,
+      secretRequirement: 'none',
       userEditable: true,
     });
-    expect(custom?.models).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'custom-model' })]));
+    expect(custom?.apiKeyEnv).toBeUndefined();
+    expect(custom?.models).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'custom-model', availability: 'stale' })]));
     expect(loadProfiles()[0]).toMatchObject({
       providerId: 'custom-openai',
       modelId: 'custom-model',

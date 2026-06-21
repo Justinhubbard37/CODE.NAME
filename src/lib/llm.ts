@@ -1,8 +1,8 @@
 /**
- * Canonical runtime LLM transport.
+ * Canonical runtime LLM bridge.
  *
- * Normal chat requests route through the active Runtime Profile snapshot. This
- * module never falls back to synthetic generation after provider failure.
+ * R1 provider execution authority lives in Rust/Tauri. This module sends only
+ * logical provider/connection/model intent plus messages and tuning values.
  */
 import type {
   ExecutionClass,
@@ -12,9 +12,9 @@ import type {
   ProviderFailure,
   ProviderFailureCategory,
   ProviderKind,
+  ProviderStatus,
   RuntimeRequestSnapshot,
 } from '../types';
-import { secretPresent } from './secrets';
 
 export interface ChatTurn {
   role: 'user' | 'assistant' | 'system';
@@ -26,6 +26,59 @@ export interface StreamCallbacks {
   onActivity?: (kind: 'network' | 'reasoning' | 'tool' | 'system', text: string) => void;
   onModel?: (model: string) => void;
   signal?: AbortSignal;
+}
+
+interface ProviderOperationResult {
+  ok: boolean;
+  state: ProviderStatus;
+  category: ProviderFailureCategory | string;
+  detail: string;
+}
+
+interface RustInventoryState {
+  state: 'unknown' | 'stale' | 'current_session' | 'refreshing' | 'failed';
+  count: number;
+  lastRefreshAt?: number;
+}
+
+interface RustModelDto {
+  id: string;
+  displayLabel: string;
+  availability: 'available' | 'stale' | 'unavailable' | 'unknown';
+  executionClass: 'local' | 'cloud' | 'unknown';
+  capabilities: string[];
+}
+
+export interface RustChatEligibility {
+  eligible: boolean;
+  state: ProviderStatus;
+  category: string;
+  detail: string;
+}
+
+interface RustConnectionDto {
+  providerId: string;
+  connectionId: string;
+  label: string;
+  approvalState: 'approved' | 'pending_approval' | 'disabled';
+  transportClass?: 'loopback_http' | 'remote_https' | 'fixed_provider_api';
+  locality?: 'local_loopback' | 'remote_public' | 'fixed_remote';
+  credentialRequired: boolean;
+  credentialConfigured: boolean;
+  readiness: ProviderStatus;
+  checkedThisSession: boolean;
+  checkInProgress: boolean;
+  refreshInProgress: boolean;
+  inventory: RustInventoryState;
+  models: RustModelDto[];
+  chatEligibility: RustChatEligibility;
+  displayEndpoint?: string;
+  safeFailureCategory?: string;
+  safeDetail?: string;
+}
+
+interface RustProviderSnapshot {
+  connections: RustConnectionDto[];
 }
 
 export class ProviderRequestError extends Error {
@@ -49,26 +102,43 @@ export function isOllamaCloudModel(modelId: string): boolean {
 
 export function executionClassForModel(provider: ProviderConnection, modelId: string): ExecutionClass {
   if (!provider.id || !modelId) return 'unknown';
-  if (provider.providerKind === 'ollama') return isOllamaCloudModel(modelId) ? 'cloud' : 'local';
+  const rustModel = provider.models.find((model) => model.id === modelId);
+  if (rustModel) return rustModel.executionClass;
   if (provider.providerKind === 'gemini') return 'cloud';
+  if (provider.locality === 'local_loopback') return 'local';
+  if (provider.locality === 'remote_public' || provider.locality === 'fixed_remote') return 'cloud';
   if (provider.requiresNetwork) return 'cloud';
-  return 'local';
+  return 'unknown';
 }
 
 export function reachesNetwork(provider: ProviderConnection, modelId?: string): boolean {
-  return provider.requiresNetwork || (provider.providerKind === 'ollama' && !!modelId && isOllamaCloudModel(modelId));
+  const rustModel = modelId ? provider.models.find((model) => model.id === modelId) : undefined;
+  if (rustModel) return rustModel.executionClass === 'cloud';
+  return provider.locality === 'remote_public' || provider.locality === 'fixed_remote' || provider.requiresNetwork;
 }
 
 export function providerStatusLabel(status: ProviderConnection['status']): string {
   const labels: Record<ProviderConnection['status'], string> = {
     ready: 'Ready',
-    available: 'Available',
+    stale: 'Stale',
+    checking: 'Checking',
     requires_api_key: 'Requires API key',
     requires_sign_in: 'Requires sign-in',
-    server_offline: 'Server offline',
-    unavailable: 'Unavailable',
+    endpoint_unavailable: 'Endpoint unavailable',
+    authentication_failed: 'Authentication failed',
+    permission_denied: 'Permission denied',
+    quota_exhausted: 'Quota exhausted',
+    model_unavailable: 'Model unavailable',
+    connection_check_failed: 'Check failed',
+    refresh_failed: 'Refresh failed',
+    configuration_disabled: 'Disabled',
+    policy_denied: 'Policy denied',
+    network_denied: 'Network denied',
     unknown: 'Unknown',
-    configuring: 'Unavailable',
+    configuring: 'Checking',
+    available: 'Available',
+    server_offline: 'Endpoint unavailable',
+    unavailable: 'Unavailable',
   };
   return labels[status];
 }
@@ -76,6 +146,7 @@ export function providerStatusLabel(status: ProviderConnection['status']): strin
 export function modelAvailabilityLabel(status: ModelAvailability): string {
   const labels: Record<ModelAvailability, string> = {
     available: 'Available',
+    stale: 'Stale',
     ready: 'Ready',
     requires_api_key: 'Requires API key',
     requires_sign_in: 'Requires sign-in',
@@ -93,12 +164,6 @@ export function executionClassLabel(executionClass: ExecutionClass): string {
   return 'Unknown';
 }
 
-export function keyNameForProvider(provider: ProviderConnection): string | undefined {
-  if (provider.apiKeyEnv) return provider.apiKeyEnv;
-  if (provider.providerKind === 'gemini') return 'GEMINI_API_KEY';
-  return undefined;
-}
-
 export function modelEntryForSelection(
   provider: ProviderConnection | undefined,
   modelId: string,
@@ -113,10 +178,10 @@ export function modelEntryForSelection(
     availability:
       provider.status === 'requires_api_key'
         ? 'requires_api_key'
-        : provider.status === 'server_offline'
-          ? 'server_offline'
-          : provider.status === 'requires_sign_in'
-            ? 'requires_sign_in'
+        : provider.status === 'requires_sign_in'
+          ? 'requires_sign_in'
+          : provider.status === 'endpoint_unavailable' || provider.status === 'server_offline'
+            ? 'server_offline'
             : 'unavailable',
     source: 'configured',
     discoveredAt: 0,
@@ -131,190 +196,321 @@ export function isModelSelectable(model: ModelInventoryEntry): boolean {
 export function canSendWithRuntime(
   provider: ProviderConnection | undefined,
   model: ModelInventoryEntry | undefined,
+  eligibility?: RustChatEligibility,
 ): { ok: boolean; reason: string } {
   if (!provider?.id) return { ok: false, reason: 'Select a provider.' };
   if (!model?.id) return { ok: false, reason: 'Select a model.' };
-  if (provider.status === 'requires_api_key' || model.availability === 'requires_api_key') {
-    return { ok: false, reason: 'API key is missing.' };
-  }
-  if (provider.status === 'requires_sign_in' || model.availability === 'requires_sign_in') {
-    return { ok: false, reason: 'Provider sign-in is required.' };
-  }
-  if (provider.status === 'server_offline' || model.availability === 'server_offline') {
-    return { ok: false, reason: 'Provider server is unavailable.' };
-  }
-  if (model.availability === 'unavailable') {
-    return { ok: false, reason: 'Selected model is unavailable.' };
-  }
+  if (!eligibility) return { ok: false, reason: 'Provider eligibility has not been checked.' };
+  if (!eligibility.eligible) return { ok: false, reason: eligibility.detail || providerStatusLabel(eligibility.state) };
   return { ok: true, reason: '' };
 }
 
-function safeBase(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, '');
+function canonicalProviderId(provider: ProviderConnection): string {
+  if (provider.providerKind === 'openai-compatible' || provider.providerKind === 'custom') return 'custom-openai';
+  return provider.id;
 }
 
-function providerKindForShell(kind: ProviderKind): string {
-  if (kind === 'openai-compatible') return 'custom';
-  return kind;
+export function connectionIdForProvider(provider: ProviderConnection): string {
+  if (provider.connectionId) return provider.connectionId;
+  if (provider.id.includes(':') || provider.id.startsWith('conn-')) return provider.id;
+  if (provider.providerKind === 'ollama') return 'ollama:local-default';
+  if (provider.providerKind === 'lmstudio') return 'lmstudio:local-default';
+  if (provider.providerKind === 'gemini') return 'gemini:fixed';
+  return provider.id;
 }
 
-function nowModel(
-  id: string,
+function rustModelToInventory(
+  model: RustModelDto,
   provider: ProviderConnection,
-  source: ModelInventoryEntry['source'],
 ): ModelInventoryEntry {
   return {
-    id,
-    displayName: id,
-    executionClass: executionClassForModel(provider, id),
-    availability: 'available',
-    source,
+    id: model.id,
+    displayName: model.displayLabel || model.id,
+    executionClass: model.executionClass === 'local' || model.executionClass === 'cloud' ? model.executionClass : 'unknown',
+    availability: model.availability === 'stale' ? 'stale' : model.availability === 'available' ? 'available' : 'unknown',
+    source: sourceForProvider(provider),
     discoveredAt: Date.now(),
-    capabilities: [],
+    capabilities: model.capabilities,
   };
 }
 
-function geminiModelFromShell(raw: Record<string, unknown>): ModelInventoryEntry {
-  const id = String(raw.id ?? raw.name ?? '');
-  const methods = Array.isArray(raw.supportedGenerationMethods)
-    ? raw.supportedGenerationMethods.map(String)
-    : [];
+function sourceForProvider(provider: ProviderConnection): ModelInventoryEntry['source'] {
+  if (provider.providerKind === 'ollama') return 'ollama';
+  if (provider.providerKind === 'lmstudio') return 'lmstudio';
+  if (provider.providerKind === 'gemini') return 'gemini';
+  return 'openai-compatible';
+}
+
+function failureCategoryFromState(state: string): ProviderFailureCategory {
+  if (state === 'requires_api_key') return 'api_key_missing';
+  if (state === 'requires_sign_in') return 'sign_in_required';
+  if (state === 'endpoint_unavailable') return 'endpoint_unreachable';
+  if (state === 'authentication_failed') return 'authentication_failed';
+  if (state === 'permission_denied') return 'permission_denied';
+  if (state === 'quota_exhausted') return 'quota_exhausted';
+  if (state === 'model_unavailable') return 'model_unavailable';
+  if (state === 'connection_check_failed') return 'connection_check_failed';
+  if (state === 'refresh_failed') return 'refresh_failed';
+  if (state === 'configuration_disabled') return 'configuration_disabled';
+  if (state === 'policy_denied') return 'policy_denied';
+  if (state === 'network_denied') return 'network_denied';
+  return 'provider_error';
+}
+
+function failureFromResult(
+  result: ProviderOperationResult,
+  provider: ProviderConnection,
+  modelId: string,
+  executionClass: ExecutionClass,
+): ProviderFailure {
+  const category = failureCategoryFromState(result.state) || failureCategoryFromState(result.category);
   return {
-    id,
-    displayName: String(raw.displayName ?? id),
-    executionClass: 'cloud',
-    availability: 'available',
-    source: 'gemini',
-    discoveredAt: Date.now(),
-    capabilities: methods,
-    inputTokenLimit: typeof raw.inputTokenLimit === 'number' ? raw.inputTokenLimit : undefined,
-    outputTokenLimit: typeof raw.outputTokenLimit === 'number' ? raw.outputTokenLimit : undefined,
-    maxTemperature: typeof raw.maxTemperature === 'number' ? raw.maxTemperature : undefined,
-    thinkingSupported: raw.thinkingSupported === true,
+    category,
+    safeMessage: result.detail || providerStatusLabel(result.state),
+    retryable: category !== 'api_key_missing' && category !== 'configuration_disabled',
+    providerId: provider.id,
+    modelId,
+    executionClass,
+    nextStep: 'Use Provider Manager to check the connection or refresh models.',
   };
 }
 
-async function shellModelList(provider: ProviderConnection, modelId = ''): Promise<string[]> {
+async function invokeRust<T>(command: string, args: Record<string, unknown>): Promise<T> {
+  if (!isTauri()) throw new Error('Provider runtime is available in the desktop app.');
   const { invoke } = await import('@tauri-apps/api/core');
-  return invoke<string[]>('model_list', {
-    kind: providerKindForShell(provider.providerKind),
-    baseUrl: provider.baseUrl,
-    keyName: keyNameForProvider(provider),
-    model: modelId,
-    networkClass: provider.requiresNetwork ? 'cloud-capable' : 'local-only',
-    runsLocalOnly: !provider.requiresNetwork,
-    usesCloud: provider.providerKind === 'ollama' && isOllamaCloudModel(modelId),
+  return invoke<T>(command, args);
+}
+
+async function providerSnapshot(): Promise<RustProviderSnapshot> {
+  return invokeRust<RustProviderSnapshot>('provider_list_runtime_state', {});
+}
+
+function connectionFromSnapshot(
+  snapshot: RustProviderSnapshot,
+  provider: ProviderConnection,
+): RustConnectionDto | undefined {
+  const connectionId = connectionIdForProvider(provider);
+  return snapshot.connections.find((connection) => connection.connectionId === connectionId)
+    ?? snapshot.connections.find((connection) => connection.providerId === canonicalProviderId(provider));
+}
+
+function resultFromConnection(
+  provider: ProviderConnection,
+  connection: RustConnectionDto | undefined,
+  fallback: ProviderOperationResult,
+): Pick<ProviderConnection, 'status' | 'detail' | 'models' | 'lastFailure'> {
+  const status = connection?.readiness ?? fallback.state;
+  const models = (connection?.models ?? []).map((model) => rustModelToInventory(model, provider));
+  const failure = fallback.ok
+    ? undefined
+    : failureFromResult(fallback, provider, provider.models[0]?.id ?? '', executionClassForModel(provider, provider.models[0]?.id ?? ''));
+  return {
+    status,
+    detail: connection?.safeDetail ?? fallback.detail,
+    models,
+    lastFailure: failure,
+  };
+}
+
+export async function loadProviderRuntimeState(current: ProviderConnection[]): Promise<ProviderConnection[]> {
+  const snapshot = await providerSnapshot();
+  const mapped: ProviderConnection[] = current.map((provider): ProviderConnection => {
+    const connection = connectionFromSnapshot(snapshot, provider);
+    if (!connection) return { ...provider, status: 'unknown', detail: 'No Rust provider connection is approved.' };
+    const requiresNetwork = connection.locality === 'remote_public' || connection.locality === 'fixed_remote';
+    return {
+      ...provider,
+      connectionId: connection.connectionId,
+      baseUrl: connection.displayEndpoint ?? '',
+      displayEndpoint: connection.displayEndpoint ?? '',
+      approvalState: connection.approvalState,
+      transportClass: connection.transportClass,
+      locality: connection.locality,
+      requiresSecret: connection.credentialRequired,
+      credentialConfigured: connection.credentialConfigured,
+      requiresNetwork,
+      status: connection.readiness,
+      detail: connection.safeDetail ?? providerStatusLabel(connection.readiness),
+      checkedThisSession: connection.checkedThisSession,
+      checkInProgress: connection.checkInProgress,
+      refreshInProgress: connection.refreshInProgress,
+      inventoryState: connection.inventory.state,
+      inventoryCount: connection.inventory.count,
+      chatEligibility: connection.chatEligibility,
+      models: connection.models.map((model) => rustModelToInventory(model, provider)),
+    };
   });
+  const knownConnectionIds = new Set(mapped.map((provider) => provider.connectionId).filter(Boolean));
+  const customTemplate = current.find((provider) => canonicalProviderId(provider) === 'custom-openai');
+  for (const connection of snapshot.connections) {
+    if (connection.providerId !== 'custom-openai' || knownConnectionIds.has(connection.connectionId)) continue;
+    const requiresNetwork = connection.locality === 'remote_public' || connection.locality === 'fixed_remote';
+    const base = customTemplate ?? {
+      id: 'custom-openai',
+      label: 'Custom OpenAI-compatible',
+      providerKind: 'openai-compatible' as const,
+      baseUrl: '',
+      requiresNetwork: false,
+      requiresSecret: false,
+      secretRequirement: 'none' as const,
+      status: 'unknown' as const,
+      models: [],
+    };
+    mapped.push({
+      ...base,
+      id: connection.connectionId,
+      connectionId: connection.connectionId,
+      label: connection.label,
+      baseUrl: connection.displayEndpoint ?? '',
+      displayEndpoint: connection.displayEndpoint ?? '',
+      approvalState: connection.approvalState,
+      transportClass: connection.transportClass,
+      locality: connection.locality,
+      requiresSecret: connection.credentialRequired,
+      credentialConfigured: connection.credentialConfigured,
+      requiresNetwork,
+      status: connection.readiness,
+      detail: connection.safeDetail ?? providerStatusLabel(connection.readiness),
+      checkedThisSession: connection.checkedThisSession,
+      checkInProgress: connection.checkInProgress,
+      refreshInProgress: connection.refreshInProgress,
+      inventoryState: connection.inventory.state,
+      inventoryCount: connection.inventory.count,
+      chatEligibility: connection.chatEligibility,
+      models: connection.models.map((model) => rustModelToInventory(model, base)),
+    });
+  }
+  return mapped;
+}
+
+export async function providerChatEligibility(
+  provider: ProviderConnection,
+  modelId: string,
+): Promise<RustChatEligibility> {
+  return invokeRust<RustChatEligibility>('provider_chat_eligibility', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+      modelId,
+    },
+  });
+}
+
+export async function createProviderConnection(input: {
+  providerId: 'custom-openai';
+  label: string;
+  endpoint: string;
+}): Promise<void> {
+  await invokeRust<RustConnectionDto>('provider_create_connection', {
+    request: {
+      providerId: input.providerId,
+      label: input.label,
+      endpoint: input.endpoint,
+    },
+  });
+}
+
+export async function editProviderConnection(
+  provider: ProviderConnection,
+  input: { label?: string; endpoint?: string },
+): Promise<void> {
+  const request: Record<string, unknown> = {
+    providerId: canonicalProviderId(provider),
+    connectionId: connectionIdForProvider(provider),
+  };
+  if (input.label !== undefined) request.label = input.label;
+  if (input.endpoint !== undefined) request.endpoint = input.endpoint;
+  await invokeRust<RustConnectionDto>('provider_edit_connection', {
+    request,
+  });
+}
+
+export async function disableProviderConnection(provider: ProviderConnection): Promise<void> {
+  await invokeRust<RustConnectionDto>('provider_disable_connection', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+}
+
+export async function deleteProviderConnection(provider: ProviderConnection): Promise<void> {
+  await invokeRust<ProviderOperationResult>('provider_delete_connection', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+}
+
+export async function approveProviderConnection(provider: ProviderConnection): Promise<void> {
+  await invokeRust<RustConnectionDto>('provider_approve_connection', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+}
+
+export async function storeProviderCredential(
+  provider: ProviderConnection,
+  value: string,
+): Promise<void> {
+  await invokeRust('provider_store_credential', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+      value,
+    },
+  });
+}
+
+export async function clearProviderCredential(provider: ProviderConnection): Promise<void> {
+  await invokeRust('provider_clear_credential', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+}
+
+export async function refreshProviderCredentialStatus(provider: ProviderConnection): Promise<void> {
+  await invokeRust('provider_credential_status', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+}
+
+export async function checkProviderConnection(
+  provider: ProviderConnection,
+): Promise<Pick<ProviderConnection, 'status' | 'detail' | 'models' | 'lastFailure'>> {
+  const result = await invokeRust<ProviderOperationResult>('provider_check_connection', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+  const snapshot = await providerSnapshot();
+  return resultFromConnection(provider, connectionFromSnapshot(snapshot, provider), result);
 }
 
 export async function discoverProviderModels(
   provider: ProviderConnection,
-  networkOpen: boolean,
+  _networkOpen: boolean,
 ): Promise<Pick<ProviderConnection, 'status' | 'detail' | 'models' | 'lastFailure'>> {
-  if (provider.requiresNetwork && !networkOpen) {
-    return {
-      status: 'unavailable',
-      detail: 'Network gate closed.',
-      models: [],
-      lastFailure: classifyProviderFailure(new Error('network gate closed'), provider, '', 'cloud'),
-    };
-  }
-
-  const keyName = keyNameForProvider(provider);
-  if (provider.requiresSecret && keyName && !(await secretPresent(keyName))) {
-    return {
-      status: 'requires_api_key',
-      detail: 'API key is missing.',
-      models: [],
-      lastFailure: undefined,
-    };
-  }
-
-  try {
-    if (provider.providerKind === 'gemini') {
-      if (!isTauri()) {
-        return {
-          status: 'unavailable',
-          detail: 'Gemini discovery is available in the desktop app.',
-          models: [],
-          lastFailure: undefined,
-        };
-      }
-      const { invoke } = await import('@tauri-apps/api/core');
-      const raw = await invoke<Record<string, unknown>[]>('gemini_model_list', {
-        keyName: keyName ?? 'GEMINI_API_KEY',
-      });
-      const models = raw
-        .map(geminiModelFromShell)
-        .filter((model) => model.id && model.capabilities.includes('generateContent'));
-      return {
-        status: models.length ? 'available' : 'unavailable',
-        detail: models.length ? `${models.length} compatible model(s).` : 'No generateContent models returned.',
-        models,
-        lastFailure: undefined,
-      };
-    }
-
-    if ((provider.requiresNetwork || isTauri()) && provider.providerKind !== 'ollama') {
-      const models = await shellModelList(provider);
-      return {
-        status: models.length ? 'available' : 'unavailable',
-        detail: models.length ? `${models.length} model(s).` : 'No models returned.',
-        models: models.map((id) =>
-          nowModel(
-            id,
-            provider,
-            provider.providerKind === 'lmstudio' ? 'lmstudio' : provider.providerKind === 'custom' ? 'custom' : 'openai-compatible',
-          ),
-        ),
-        lastFailure: undefined,
-      };
-    }
-
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 5000);
-    const url =
-      provider.providerKind === 'ollama'
-        ? `${safeBase(provider.baseUrl)}/api/tags`
-        : `${safeBase(provider.baseUrl)}/v1/models`;
-    const res = await fetch(url, { signal: ctl.signal });
-    clearTimeout(timer);
-    if (!res.ok) {
-      const failure = classifyProviderFailure({ status: res.status }, provider, '', 'unknown');
-      return {
-        status: failure.category === 'endpoint_unreachable' ? 'server_offline' : 'unavailable',
-        detail: failure.safeMessage,
-        models: [],
-        lastFailure: failure,
-      };
-    }
-    const body = (await res.json()) as { models?: { name?: string }[]; data?: { id?: string }[] };
-    const ids =
-      provider.providerKind === 'ollama'
-        ? (body.models ?? []).map((m) => m.name).filter((id): id is string => !!id)
-        : (body.data ?? []).map((m) => m.id).filter((id): id is string => !!id);
-    const source = provider.providerKind === 'ollama' ? 'ollama' : provider.providerKind === 'lmstudio' ? 'lmstudio' : 'openai-compatible';
-    return {
-      status: ids.length ? 'available' : 'unavailable',
-      detail: ids.length ? `${ids.length} model(s).` : 'No models returned.',
-      models: ids.map((id) => nowModel(id, provider, source)),
-      lastFailure: undefined,
-    };
-  } catch (err) {
-    const failure = classifyProviderFailure(err, provider, '', 'unknown');
-    return {
-      status: failure.category === 'timeout' ? 'unavailable' : 'server_offline',
-      detail: failure.safeMessage,
-      models: [],
-      lastFailure: failure,
-    };
-  }
+  const result = await invokeRust<ProviderOperationResult>('provider_refresh_models', {
+    request: {
+      providerId: canonicalProviderId(provider),
+      connectionId: connectionIdForProvider(provider),
+    },
+  });
+  const snapshot = await providerSnapshot();
+  return resultFromConnection(provider, connectionFromSnapshot(snapshot, provider), result);
 }
 
 function httpStatusFromUnknown(err: unknown): number | undefined {
-  if (typeof err === 'object' && err && 'status' in err && typeof (err as { status?: unknown }).status === 'number') {
-    return (err as { status: number }).status;
-  }
   const message = err instanceof Error ? err.message : String(err ?? '');
   const match = message.match(/HTTP\s+(\d{3})/i);
   return match ? Number(match[1]) : undefined;
@@ -323,36 +519,26 @@ function httpStatusFromUnknown(err: unknown): number | undefined {
 function categoryFromError(
   err: unknown,
   provider: ProviderConnection,
-  modelId: string,
+  _modelId: string,
   executionClass: ExecutionClass,
 ): ProviderFailureCategory {
+  if (err instanceof ProviderRequestError) return err.failure.category;
   const status = httpStatusFromUnknown(err);
   const message = err instanceof Error ? err.message : String(err ?? '');
   const lower = message.toLowerCase();
-  if (lower.includes('api_key_missing') || lower.includes('no api key') || lower.includes('api key is missing')) {
-    return 'api_key_missing';
-  }
-  if (
-    provider.providerKind === 'ollama' &&
-    executionClass === 'cloud' &&
-    (status === 401 || status === 403 || lower.includes('sign in') || lower.includes('signin'))
-  ) {
-    return 'sign_in_required';
-  }
+  if (lower.includes('requires_api_key') || lower.includes('api_key_missing') || lower.includes('api key')) return 'api_key_missing';
+  if (provider.providerKind === 'ollama' && executionClass === 'cloud' && (status === 401 || status === 403)) return 'sign_in_required';
   if (status === 401) return 'authentication_failed';
   if (status === 403) return 'permission_denied';
   if (status === 429) return 'quota_exhausted';
-  if (status === 404 || /model.*(missing|not found|unavailable)|no such model/.test(lower)) return 'model_unavailable';
-  if (status === 400) return 'request_invalid';
-  if (lower.includes('timeout') || lower.includes('timed out') || (err instanceof DOMException && err.name === 'AbortError')) {
-    return 'timeout';
-  }
-  if (/connection refused|dns|failed to fetch|networkerror|unreachable|could not connect|connection reset/.test(lower)) {
-    return 'endpoint_unreachable';
-  }
-  if (/invalid stream|stream_error|sse|ndjson|unexpected token|json parse|unterminated string/.test(lower)) {
-    return 'stream_error';
-  }
+  if (status === 404 || lower.includes('model_unavailable')) return 'model_unavailable';
+  if (lower.includes('network_denied') || lower.includes('network gate')) return 'network_denied';
+  if (lower.includes('configuration_disabled')) return 'configuration_disabled';
+  if (lower.includes('refresh_failed')) return 'refresh_failed';
+  if (lower.includes('connection_check_failed')) return 'connection_check_failed';
+  if (lower.includes('timeout') || lower.includes('timed out')) return 'timeout';
+  if (/connection refused|dns|failed|unreachable|could not connect|connection reset/.test(lower)) return 'endpoint_unreachable';
+  if (/stream|sse|ndjson|unexpected token|json parse/.test(lower)) return 'stream_error';
   if (status && status >= 400) return 'provider_error';
   return 'unknown';
 }
@@ -363,79 +549,27 @@ export function classifyProviderFailure(
   modelId: string,
   executionClass: ExecutionClass,
 ): ProviderFailure {
+  if (err instanceof ProviderRequestError) return err.failure;
   const category = categoryFromError(err, provider, modelId, executionClass);
   const httpStatus = httpStatusFromUnknown(err);
   const messages: Record<ProviderFailureCategory, { safeMessage: string; retryable: boolean; nextStep?: string }> = {
-    api_key_missing: {
-      safeMessage: 'API key is missing.',
-      retryable: false,
-      nextStep: 'Open Provider Manager to add an API key.',
-    },
-    sign_in_required: {
-      safeMessage: 'Ollama sign-in required for this cloud model.',
-      retryable: false,
-      nextStep: 'Sign in to Ollama, then retry.',
-    },
-    authentication_failed: {
-      safeMessage: 'Provider authentication failed.',
-      retryable: false,
-      nextStep: 'Check the provider credential in Provider Manager.',
-    },
-    permission_denied: {
-      safeMessage: 'Provider permission denied.',
-      retryable: false,
-      nextStep: 'Check account access for this provider and model.',
-    },
-    quota_exhausted: {
-      safeMessage: 'Provider quota is exhausted.',
-      retryable: true,
-      nextStep: 'Wait for quota to reset or choose another model.',
-    },
-    model_unavailable: {
-      safeMessage: 'Selected model is unavailable.',
-      retryable: false,
-      nextStep: 'Choose an available model from the model selector.',
-    },
-    endpoint_unreachable: {
-      safeMessage:
-        provider.providerKind === 'lmstudio'
-          ? 'LM Studio server is unavailable.'
-          : provider.providerKind === 'ollama'
-            ? 'Ollama server is unavailable.'
-            : 'Provider endpoint is unreachable.',
-      retryable: true,
-      nextStep:
-        provider.providerKind === 'lmstudio'
-          ? 'Start the LM Studio local server, then retry.'
-          : provider.providerKind === 'ollama'
-            ? 'Start the Ollama local daemon, then retry.'
-            : 'Check the provider endpoint, then retry.',
-    },
-    request_invalid: {
-      safeMessage: 'Provider rejected the request.',
-      retryable: false,
-      nextStep: 'Check model settings and request content.',
-    },
-    timeout: {
-      safeMessage: 'Provider request timed out.',
-      retryable: true,
-      nextStep: 'Retry or choose a different model.',
-    },
-    stream_error: {
-      safeMessage: 'Provider stream was invalid.',
-      retryable: true,
-      nextStep: 'Retry or refresh the provider connection.',
-    },
-    provider_error: {
-      safeMessage: 'Provider returned an error.',
-      retryable: true,
-      nextStep: 'Retry or choose another model.',
-    },
-    unknown: {
-      safeMessage: 'Provider request failed.',
-      retryable: true,
-      nextStep: 'Retry or check Provider Manager.',
-    },
+    api_key_missing: { safeMessage: 'API key is missing.', retryable: false, nextStep: 'Open Provider Manager to add an API key.' },
+    sign_in_required: { safeMessage: 'Provider sign-in is required.', retryable: false },
+    authentication_failed: { safeMessage: 'Provider authentication failed.', retryable: false },
+    permission_denied: { safeMessage: 'Provider permission denied.', retryable: false },
+    quota_exhausted: { safeMessage: 'Provider quota is exhausted.', retryable: true },
+    model_unavailable: { safeMessage: 'Selected model is unavailable.', retryable: false },
+    endpoint_unreachable: { safeMessage: 'Provider endpoint is unreachable.', retryable: true },
+    connection_check_failed: { safeMessage: 'Provider connection check failed.', retryable: true },
+    refresh_failed: { safeMessage: 'Provider model refresh failed.', retryable: true },
+    configuration_disabled: { safeMessage: 'Provider connection is disabled.', retryable: false },
+    policy_denied: { safeMessage: 'Provider request was denied by policy.', retryable: false },
+    network_denied: { safeMessage: 'Network gate is closed.', retryable: false },
+    request_invalid: { safeMessage: 'Provider rejected the request.', retryable: false },
+    timeout: { safeMessage: 'Provider request timed out.', retryable: true },
+    stream_error: { safeMessage: 'Provider stream was invalid.', retryable: true },
+    provider_error: { safeMessage: 'Provider returned an error.', retryable: true },
+    unknown: { safeMessage: 'Provider request failed.', retryable: true },
   };
   return {
     category,
@@ -445,34 +579,6 @@ export function classifyProviderFailure(
     executionClass,
     ...messages[category],
   };
-}
-
-function throwFailure(
-  err: unknown,
-  provider: ProviderConnection,
-  modelId: string,
-  executionClass: ExecutionClass,
-): never {
-  if (err instanceof ProviderRequestError) throw err;
-  throw new ProviderRequestError(classifyProviderFailure(err, provider, modelId, executionClass));
-}
-
-function modelForWire(modelId: string): string {
-  return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId;
-}
-
-async function httpError(res: Response): Promise<Error> {
-  let safe = `HTTP ${res.status}`;
-  try {
-    const text = (await res.text()).slice(0, 500);
-    const parsed = JSON.parse(text) as { error?: unknown };
-    const error = parsed.error as string | { message?: string } | undefined;
-    const detail = typeof error === 'string' ? error : error?.message;
-    if (detail) safe = `HTTP ${res.status}: ${detail.slice(0, 200)}`;
-  } catch {
-    /* keep status-only failure */
-  }
-  return new Error(safe);
 }
 
 export function budgetConversationTurns(turns: ChatTurn[], contextWindow: number): ChatTurn[] {
@@ -490,153 +596,6 @@ export function budgetConversationTurns(turns: ChatTurn[], contextWindow: number
   return [...systemTurns, ...kept];
 }
 
-async function readLines(
-  body: ReadableStream<Uint8Array>,
-  signal: AbortSignal | undefined,
-  onLine: (line: string) => void,
-): Promise<void> {
-  const reader = body.getReader();
-  const dec = new TextDecoder();
-  let buf = '';
-  while (true) {
-    if (signal?.aborted) {
-      await reader.cancel().catch(() => {});
-      throw new Error('timeout');
-    }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, idx);
-      buf = buf.slice(idx + 1);
-      onLine(line);
-    }
-  }
-  if (buf.trim()) onLine(buf);
-}
-
-async function streamOllama(
-  provider: ProviderConnection,
-  snapshot: RuntimeRequestSnapshot,
-  turns: ChatTurn[],
-  cb: StreamCallbacks,
-): Promise<string> {
-  const res = await fetch(`${safeBase(provider.baseUrl)}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: cb.signal,
-    body: JSON.stringify({
-      model: modelForWire(snapshot.modelId),
-      messages: turns.filter((turn) => turn.role !== 'system'),
-      stream: true,
-      options: {
-        temperature: snapshot.temperature,
-        num_ctx: snapshot.contextWindow,
-      },
-    }),
-  });
-  if (!res.ok) throw await httpError(res);
-  if (!res.body) throw new Error('invalid stream: no response body');
-  let full = '';
-  let reported = false;
-  let parsed = false;
-  await readLines(res.body, cb.signal, (line) => {
-    if (!line.trim()) return;
-    const json = JSON.parse(line) as { model?: string; message?: { content?: string } };
-    parsed = true;
-    if (!reported && json.model) {
-      reported = true;
-      cb.onModel?.(json.model);
-    }
-    const token = json.message?.content ?? '';
-    if (token) {
-      full += token;
-      cb.onToken(token);
-    }
-  });
-  if (!parsed) throw new Error('invalid stream: NDJSON response was empty');
-  return full;
-}
-
-async function streamOpenAICompatible(
-  provider: ProviderConnection,
-  snapshot: RuntimeRequestSnapshot,
-  turns: ChatTurn[],
-  cb: StreamCallbacks,
-): Promise<string> {
-  const res = await fetch(`${safeBase(provider.baseUrl)}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: cb.signal,
-    body: JSON.stringify({
-      model: snapshot.modelId,
-      messages: turns,
-      stream: true,
-      temperature: snapshot.temperature,
-    }),
-  });
-  if (!res.ok) throw await httpError(res);
-  if (!res.body) throw new Error('invalid stream: no response body');
-  let full = '';
-  let reported = false;
-  let parsed = false;
-  await readLines(res.body, cb.signal, (line) => {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith('data:')) return;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === '[DONE]') return;
-    const json = JSON.parse(payload) as {
-      model?: string;
-      choices?: { delta?: { content?: string } }[];
-    };
-    parsed = true;
-    if (!reported && json.model) {
-      reported = true;
-      cb.onModel?.(json.model);
-    }
-    const token = json.choices?.[0]?.delta?.content ?? '';
-    if (token) {
-      full += token;
-      cb.onToken(token);
-    }
-  });
-  if (!parsed) throw new Error('invalid stream: SSE response was empty');
-  return full;
-}
-
-async function streamModelViaShell(
-  provider: ProviderConnection,
-  snapshot: RuntimeRequestSnapshot,
-  turns: ChatTurn[],
-  cb: StreamCallbacks,
-): Promise<string> {
-  const { invoke, Channel } = await import('@tauri-apps/api/core');
-  const channel = new Channel<string>();
-  let full = '';
-  channel.onmessage = (token) => {
-    full += token;
-    cb.onToken(token);
-  };
-  const served = await invoke<string>('model_stream', {
-    req: {
-      kind: providerKindForShell(provider.providerKind),
-      baseUrl: provider.baseUrl,
-      model: snapshot.modelId,
-      keyName: keyNameForProvider(provider),
-      networkClass: reachesNetwork(provider, snapshot.modelId) ? 'cloud-capable' : 'local-only',
-      runsLocalOnly: !reachesNetwork(provider, snapshot.modelId),
-      usesCloud: provider.providerKind === 'ollama' && isOllamaCloudModel(snapshot.modelId),
-      temperature: snapshot.temperature,
-      numCtx: snapshot.contextWindow,
-      messages: turns,
-    },
-    onEvent: channel,
-  });
-  if (served) cb.onModel?.(served);
-  return full;
-}
-
 export async function streamChat(
   provider: ProviderConnection,
   snapshot: RuntimeRequestSnapshot,
@@ -644,29 +603,64 @@ export async function streamChat(
   cb: StreamCallbacks,
 ): Promise<string> {
   const executionClass = snapshot.executionClass;
+  if (cb.signal?.aborted) {
+    throw new ProviderRequestError({
+      category: 'request_invalid',
+      safeMessage: 'Provider request was cancelled before it started.',
+      retryable: false,
+      providerId: provider.id,
+      modelId: snapshot.modelId,
+      executionClass,
+    });
+  }
   const budgetedTurns = budgetConversationTurns(turns, snapshot.contextWindow);
-  cb.onActivity?.('network', `${provider.label} · ${snapshot.modelId} · ${executionClassLabel(executionClass)}`);
+  const operationId = `provider-stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  cb.onActivity?.(
+    executionClass === 'cloud' ? 'network' : 'system',
+    `${provider.label} - ${snapshot.modelId} - ${executionClassLabel(executionClass)}`,
+  );
+  const { invoke, Channel } = await import('@tauri-apps/api/core');
+  const channel = new Channel<string>();
+  let full = '';
+  channel.onmessage = (token) => {
+    full += token;
+    cb.onToken(token);
+  };
+  const cancel = () => {
+    invoke('provider_cancel_stream', { request: { operationId } }).catch(() => {});
+  };
+  cb.signal?.addEventListener('abort', cancel, { once: true });
   try {
-    if (provider.providerKind === 'gemini') {
-      if (!isTauri()) throw new Error('Gemini generation is available in the desktop app.');
-      return await streamModelViaShell(provider, snapshot, budgetedTurns, cb);
-    }
-    if (provider.providerKind === 'ollama') {
-      return await streamOllama(provider, snapshot, budgetedTurns, cb);
-    }
-    if (reachesNetwork(provider, snapshot.modelId) && isTauri()) {
-      return await streamModelViaShell(provider, snapshot, budgetedTurns, cb);
-    }
-    return await streamOpenAICompatible(provider, snapshot, budgetedTurns, cb);
+    const result = await invoke<ProviderOperationResult>('provider_stream_chat', {
+      request: {
+        providerId: canonicalProviderId(provider),
+        connectionId: connectionIdForProvider(provider),
+        modelId: snapshot.modelId,
+        messages: budgetedTurns,
+        tuning: {
+          temperature: snapshot.temperature,
+          numCtx: snapshot.contextWindow,
+        },
+        operationIntent: 'chat',
+        operationId,
+      },
+      onEvent: channel,
+    });
+    if (!result.ok) throw new ProviderRequestError(failureFromResult(result, provider, snapshot.modelId, executionClass));
+    cb.onModel?.(snapshot.modelId);
+    return full;
   } catch (err) {
-    throwFailure(err, provider, snapshot.modelId, executionClass);
+    if (err instanceof ProviderRequestError) throw err;
+    throw new ProviderRequestError(classifyProviderFailure(err, provider, snapshot.modelId, executionClass));
+  } finally {
+    cb.signal?.removeEventListener('abort', cancel);
   }
 }
 
 export async function pingEndpoint(provider: ProviderConnection): Promise<{ ok: boolean; detail: string }> {
-  const result = await discoverProviderModels(provider, true);
+  const result = await checkProviderConnection(provider);
   return {
-    ok: result.status === 'ready' || result.status === 'available',
+    ok: result.status === 'ready',
     detail: result.detail ?? providerStatusLabel(result.status),
   };
 }

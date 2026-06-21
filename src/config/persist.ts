@@ -132,7 +132,7 @@ function modelInventoryFromStrings(
       id,
       displayName: id,
       executionClass: executionFor(id),
-      availability: 'available' as const,
+      availability: 'stale' as const,
       source,
       discoveredAt,
       capabilities: [],
@@ -141,11 +141,6 @@ function modelInventoryFromStrings(
 
 function legacyModelIds(endpoint: LegacyEndpoint): string[] {
   return Array.from(new Set([...(endpoint.models ?? []), endpoint.model].filter((id): id is string => !!id)));
-}
-
-function isOllamaCloudModel(id: string): boolean {
-  const lowered = id.toLowerCase();
-  return lowered.endsWith(':cloud') || lowered.endsWith('-cloud');
 }
 
 function defaultProvider(id: string): ProviderConnection | undefined {
@@ -161,9 +156,7 @@ function providerFromLegacyEndpoint(endpoint: LegacyEndpoint): ProviderConnectio
     const base = defaultProvider('ollama')!;
     return {
       ...base,
-      models: modelInventoryFromStrings(legacyModelIds(endpoint), 'migration', (modelId) =>
-        isOllamaCloudModel(modelId) ? 'cloud' : 'local',
-      ),
+      models: modelInventoryFromStrings(legacyModelIds(endpoint), 'migration', () => 'unknown'),
     };
   }
   if (canonicalId === 'lmstudio') {
@@ -199,9 +192,7 @@ function providerFromLegacyEndpoint(endpoint: LegacyEndpoint): ProviderConnectio
       userEditable: true,
       status: 'unknown',
       detail: 'Model inventory has not been refreshed.',
-      models: modelInventoryFromStrings(legacyModelIds(endpoint), 'migration', () =>
-        requiresNetwork ? 'cloud' : 'local',
-      ),
+      models: modelInventoryFromStrings(legacyModelIds(endpoint), 'migration', () => 'unknown'),
     };
   }
   return null;
@@ -242,7 +233,7 @@ function migrateProfile(profile: LegacyProfile, endpoints: LegacyEndpoint[]): Ru
 
 function normalizeProfileProviderRefs(
   profiles: RuntimeProfile[],
-  providers: Pick<ProviderConnection, 'id' | 'label' | 'providerKind'>[],
+  providers: Pick<ProviderConnection, 'id' | 'connectionId' | 'label' | 'providerKind'>[],
 ): RuntimeProfile[] {
   return profiles.map((profile) => {
     const providerId = canonicalProviderIdForReference(profile.providerId, providers);

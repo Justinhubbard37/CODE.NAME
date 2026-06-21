@@ -52,15 +52,28 @@ export type ExecutionClass = 'local' | 'cloud' | 'sidecar' | 'unknown';
 export type SecretRequirement = 'none' | 'optional' | 'keychain';
 export type ProviderStatus =
   | 'ready'
-  | 'available'
+  | 'stale'
+  | 'checking'
   | 'requires_api_key'
   | 'requires_sign_in'
-  | 'server_offline'
-  | 'unavailable'
+  | 'endpoint_unavailable'
+  | 'authentication_failed'
+  | 'permission_denied'
+  | 'quota_exhausted'
+  | 'model_unavailable'
+  | 'connection_check_failed'
+  | 'refresh_failed'
+  | 'configuration_disabled'
+  | 'policy_denied'
+  | 'network_denied'
   | 'unknown'
-  | 'configuring';
+  | 'configuring'
+  | 'available'
+  | 'server_offline'
+  | 'unavailable';
 export type ModelAvailability =
   | 'available'
+  | 'stale'
   | 'ready'
   | 'requires_api_key'
   | 'requires_sign_in'
@@ -83,6 +96,11 @@ export type ProviderFailureCategory =
   | 'quota_exhausted'
   | 'model_unavailable'
   | 'endpoint_unreachable'
+  | 'connection_check_failed'
+  | 'refresh_failed'
+  | 'configuration_disabled'
+  | 'policy_denied'
+  | 'network_denied'
   | 'request_invalid'
   | 'timeout'
   | 'stream_error'
@@ -117,15 +135,34 @@ export interface ProviderFailure {
 
 export interface ProviderConnection {
   id: string;
+  connectionId?: string;
   label: string;
   providerKind: ProviderKind;
+  /** Rust-owned safe display metadata only. Never used as a runtime endpoint override. */
   baseUrl: string;
+  displayEndpoint?: string;
+  approvalState?: 'approved' | 'pending_approval' | 'disabled';
+  transportClass?: 'loopback_http' | 'remote_https' | 'fixed_provider_api';
+  locality?: 'local_loopback' | 'remote_public' | 'fixed_remote';
   requiresNetwork: boolean;
   requiresSecret: boolean;
+  credentialConfigured?: boolean;
   secretRequirement: SecretRequirement;
   status: ProviderStatus;
   detail?: string;
+  checkedThisSession?: boolean;
+  checkInProgress?: boolean;
+  refreshInProgress?: boolean;
+  inventoryState?: 'unknown' | 'stale' | 'current_session' | 'refreshing' | 'failed';
+  inventoryCount?: number;
+  chatEligibility?: {
+    eligible: boolean;
+    state: ProviderStatus;
+    category: string;
+    detail: string;
+  };
   models: ModelInventoryEntry[];
+  /** Legacy display/migration hint only. The frontend never selects Rust credential bindings. */
   apiKeyEnv?: string;
   userEditable?: boolean;
   lastFailure?: ProviderFailure;
@@ -160,8 +197,6 @@ export interface RuntimeProvenance {
 export interface RuntimeRequestSnapshot extends RuntimeProvenance {
   temperature: number;
   contextWindow: number;
-  providerBaseUrl: string;
-  providerKind: ProviderKind;
 }
 
 /* Compatibility names for older imports while the runtime UI uses the

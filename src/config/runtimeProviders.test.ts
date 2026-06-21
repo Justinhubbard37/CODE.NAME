@@ -75,10 +75,50 @@ describe('canonical provider registry and menu model', () => {
     expect(providers.find((item) => item.id === 'ollama')?.models).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'qwen3.5:latest', executionClass: 'local' }),
-        expect.objectContaining({ id: 'gpt-oss:cloud', executionClass: 'cloud' }),
+        expect.objectContaining({ id: 'gpt-oss:cloud', executionClass: 'local' }),
       ]),
     );
     expect(providers.some((item) => item.label.includes('Sidecar'))).toBe(false);
+  });
+
+  it('keeps multiple Custom OpenAI-compatible connections distinct outside the normal menu', () => {
+    const providers = normalizeProviderConnections([
+      provider({
+        id: 'custom-openai:1',
+        connectionId: 'custom-openai:1',
+        label: 'Remote A',
+        providerKind: 'openai-compatible',
+        baseUrl: 'https://api-a.example.com/v1',
+        requiresNetwork: true,
+        requiresSecret: true,
+        secretRequirement: 'keychain',
+      }),
+      provider({
+        id: 'custom-openai:2',
+        connectionId: 'custom-openai:2',
+        label: 'Remote B',
+        providerKind: 'openai-compatible',
+        baseUrl: 'https://api-b.example.com/v1',
+        requiresNetwork: true,
+        requiresSecret: true,
+        secretRequirement: 'keychain',
+      }),
+    ]);
+
+    expect(providers.map((item) => item.id)).toEqual([
+      'ollama',
+      'lmstudio',
+      'custom-openai',
+      'gemini',
+      'custom-openai:1',
+      'custom-openai:2',
+    ]);
+    expect(normalProviderMenuProviders(providers).map((item) => item.id)).toEqual([
+      'ollama',
+      'lmstudio',
+      'custom-openai',
+      'gemini',
+    ]);
   });
 
   it('builds the normal provider menu in the required canonical order', () => {

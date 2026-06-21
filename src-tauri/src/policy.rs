@@ -616,6 +616,14 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         replacement: None,
     },
     CommandPolicy {
+        command: "provider_chat_eligibility",
+        required_gates: NO_GATES,
+        risk: risk(RiskLevel::Low, RiskLevel::Low, RiskLevel::None, RiskLevel::None),
+        rationale: "Returns Rust-authoritative chat eligibility for a provider, connection, and model without endpoint authority.",
+        priority: PolicyPriority::Critical,
+        replacement: None,
+    },
+    CommandPolicy {
         command: "provider_create_connection",
         required_gates: NO_GATES,
         risk: risk(RiskLevel::Low, RiskLevel::Medium, RiskLevel::None, RiskLevel::None),

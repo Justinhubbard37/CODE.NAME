@@ -57,15 +57,18 @@ import { canonicalProviderIdForReference, normalizeProviderConnections } from '.
 import { hashFile } from '../lib/hash';
 import {
   canSendWithRuntime,
+  checkProviderConnection,
   classifyProviderFailure,
   discoverProviderModels,
   executionClassForModel,
   executionClassLabel,
+  loadProviderRuntimeState,
   modelEntryForSelection,
+  providerChatEligibility,
   providerStatusLabel,
-  reachesNetwork,
   streamChat,
   type ChatTurn,
+  type RustChatEligibility,
 } from '../lib/llm';
 import {
   RETRIEVAL_CHAT_RESULT_LIMIT,
@@ -239,6 +242,8 @@ interface AppStateValue {
   addProfile: () => void;
   deleteProfile: (id: string) => void;
   refreshEndpoints: () => Promise<void>;
+  reloadProviderRuntimeState: () => Promise<void>;
+  checkProviderConnectionStatus: (providerId: string) => Promise<void>;
   refreshProviderModels: (providerId: string) => Promise<void>;
   gates: SecurityGates;
   toggleGate: (k: keyof SecurityGates) => void;
@@ -694,6 +699,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const endpointsRef = useRef(endpoints);
   endpointsRef.current = endpoints;
+  const reloadProviderRuntimeState = useCallback(async () => {
+    const hydrated = await loadProviderRuntimeState(endpointsRef.current);
+    setEndpoints(normalizeProviderConnections(hydrated));
+  }, []);
   const [profiles, setProfiles] = useState<ConfigProfile[]>(() => loadProfiles());
   const [activeProfileId, setActiveProfileId] = useState<string>(() => loadActiveProfileId());
   const [gates, setGates] = useState<SecurityGates>(() => loadGates());
@@ -723,6 +732,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     saveConfig({ providerConnections: endpoints, runtimeProfiles: profiles, activeProfileId, gates });
   }, [endpoints, profiles, activeProfileId, gates]);
+
+  useEffect(() => {
+    reloadProviderRuntimeState().catch(() => {});
+  }, [reloadProviderRuntimeState]);
 
   // Mirror the gate state into the Rust shell so it enforces the gates at the
   // process level (Phase 1.3), not just in the UI. No-op in a plain browser.
@@ -778,6 +791,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => modelEntryForSelection(activeEndpoint, activeProfile.modelId),
     [activeEndpoint, activeProfile.modelId],
   );
+  const [activeChatEligibility, setActiveChatEligibility] = useState<RustChatEligibility | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setActiveChatEligibility(null);
+    if (!activeEndpoint.id || !activeModel?.id) return () => {
+      cancelled = true;
+    };
+    providerChatEligibility(activeEndpoint, activeModel.id)
+      .then((eligibility) => {
+        if (!cancelled) setActiveChatEligibility(eligibility);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const detail = err instanceof Error ? err.message : 'Rust provider eligibility is unavailable.';
+        setActiveChatEligibility({
+          eligible: false,
+          state: 'connection_check_failed',
+          category: 'eligibility_failed',
+          detail,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeEndpoint.id,
+    activeEndpoint.connectionId,
+    activeEndpoint.status,
+    activeEndpoint.inventoryState,
+    activeEndpoint.inventoryCount,
+    activeEndpoint.checkInProgress,
+    activeEndpoint.refreshInProgress,
+    activeModel?.id,
+  ]);
   const effectiveTuning = useMemo(
     () =>
       resolveEffectiveRuntimeTuning({
@@ -788,7 +835,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   );
   const effectiveTemperature = effectiveTuning.temperature;
   const effectiveContextWindow = effectiveTuning.contextWindow;
-  const canSendState = canSendWithRuntime(activeEndpoint, activeModel);
+  const canSendState = canSendWithRuntime(activeEndpoint, activeModel, activeChatEligibility);
   const activeRuntimeLabel = activeModel
     ? `${activeEndpoint.label} · ${activeModel.displayName}`
     : `${activeEndpoint.label} · No model`;
@@ -890,30 +937,113 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         eps.map((e) => (e.id === providerId ? { ...e, status: 'configuring', detail: 'Refreshing model inventory.' } : e)),
       ),
     );
-    const result = await discoverProviderModels(provider, gatesRef.current.network);
+    try {
+      const result = await discoverProviderModels(provider, gatesRef.current.network);
+      setEndpoints((eps) =>
+        normalizeProviderConnections(
+          eps.map((e) =>
+            e.id === providerId
+              ? {
+                  ...e,
+                  status: result.status,
+                  detail: result.detail,
+                  models: result.models,
+                  lastFailure: result.lastFailure,
+                }
+              : e,
+          ),
+        ),
+      );
+      await reloadProviderRuntimeState();
+      pushActivity(
+        activeTaskIdRef.current,
+        result.lastFailure ? 'system' : 'network',
+        result.lastFailure
+          ? `${provider.label}: ${result.lastFailure.safeMessage}`
+          : `${provider.label}: ${result.detail ?? providerStatusLabel(result.status)}`,
+      );
+    } catch (err) {
+      const failure = classifyProviderFailure(
+        err,
+        provider,
+        provider.models[0]?.id ?? '',
+        executionClassForModel(provider, provider.models[0]?.id ?? ''),
+      );
+      setEndpoints((eps) =>
+        normalizeProviderConnections(
+          eps.map((e) =>
+            e.id === providerId
+              ? {
+                  ...e,
+                  status: 'refresh_failed',
+                  detail: failure.safeMessage,
+                  lastFailure: failure,
+                }
+              : e,
+          ),
+        ),
+      );
+      pushActivity(activeTaskIdRef.current, 'system', `${provider.label}: ${failure.safeMessage}`);
+    }
+  }, [pushActivity, reloadProviderRuntimeState]);
+
+  const checkProviderConnectionStatus = useCallback(async (providerId: string) => {
+    const provider = endpointsRef.current.find((e) => e.id === providerId);
+    if (!provider) return;
     setEndpoints((eps) =>
       normalizeProviderConnections(
-        eps.map((e) =>
-          e.id === providerId
-            ? {
-                ...e,
-                status: result.status,
-                detail: result.detail,
-                models: result.models,
-                lastFailure: result.lastFailure,
-              }
-            : e,
-        ),
+        eps.map((e) => (e.id === providerId ? { ...e, status: 'checking', detail: 'Checking connection.' } : e)),
       ),
     );
-    pushActivity(
-      activeTaskIdRef.current,
-      result.lastFailure ? 'system' : 'network',
-      result.lastFailure
-        ? `${provider.label}: ${result.lastFailure.safeMessage}`
-        : `${provider.label}: ${result.detail ?? providerStatusLabel(result.status)}`,
-    );
-  }, [pushActivity]);
+    try {
+      const result = await checkProviderConnection(provider);
+      setEndpoints((eps) =>
+        normalizeProviderConnections(
+          eps.map((e) =>
+            e.id === providerId
+              ? {
+                  ...e,
+                  status: result.status,
+                  detail: result.detail,
+                  models: result.models,
+                  lastFailure: result.lastFailure,
+                }
+              : e,
+          ),
+        ),
+      );
+      await reloadProviderRuntimeState();
+      pushActivity(
+        activeTaskIdRef.current,
+        result.lastFailure ? 'system' : 'network',
+        result.lastFailure
+          ? `${provider.label}: ${result.lastFailure.safeMessage}`
+          : `${provider.label}: ${result.detail ?? providerStatusLabel(result.status)}`,
+      );
+    } catch (err) {
+      const failure = classifyProviderFailure(
+        err,
+        provider,
+        provider.models[0]?.id ?? '',
+        executionClassForModel(provider, provider.models[0]?.id ?? ''),
+      );
+      setEndpoints((eps) =>
+        normalizeProviderConnections(
+          eps.map((e) =>
+            e.id === providerId
+              ? {
+                  ...e,
+                  status: 'connection_check_failed',
+                  detail: failure.safeMessage,
+                  lastFailure: failure,
+                }
+              : e,
+          ),
+        ),
+      );
+      pushActivity(activeTaskIdRef.current, 'system', `${provider.label}: ${failure.safeMessage}`);
+    }
+  }, [pushActivity, reloadProviderRuntimeState]);
 
   const refreshEndpoints = useCallback(async () => {
     await Promise.all(endpointsRef.current.map((provider) => refreshProviderModels(provider.id)));
@@ -927,8 +1057,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         profile.id === activeProfileId ? { ...profile, providerId: canonicalProviderId } : profile,
       ),
     );
-    await refreshProviderModels(canonicalProviderId);
-  }, [activeProfileId, refreshProviderModels]);
+  }, [activeProfileId]);
 
   /* ---- chat ---- */
   const [sending, setSending] = useState(false);
@@ -1193,7 +1322,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const taskId = activeTaskId;
       const provider = activeEndpoint;
       const model = activeModel;
-      const sendable = canSendWithRuntime(provider, model);
+      const sendable = canSendWithRuntime(provider, model, activeChatEligibility);
       const requestStartedAt = Date.now();
       const executionClass = model?.executionClass ?? executionClassForModel(provider, activeProfile.modelId);
       const modelId = model?.id ?? activeProfile.modelId;
@@ -1213,8 +1342,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       };
       const snapshot: RuntimeRequestSnapshot = {
         ...runtime,
-        providerBaseUrl: provider.baseUrl,
-        providerKind: provider.providerKind,
         temperature,
         contextWindow: effectiveContextWindow,
       };
@@ -1326,20 +1453,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const ctl = new AbortController();
       abortRef.current = ctl;
 
-      if (!gates.network && reachesNetwork(provider, modelId)) {
-        const failure = classifyProviderFailure(new Error('permission denied: network gate closed'), provider, modelId, executionClass);
-        finishWithFailure({
-          ...failure,
-          category: 'permission_denied',
-          safeMessage: 'Network gate is closed.',
-          retryable: false,
-          nextStep: 'Open the Network gate or choose a local model.',
-        });
-        setSending(false);
-        abortRef.current = null;
-        return;
-      }
-
       let servedModel = '';
       try {
         await streamChat(provider, snapshot, turns, {
@@ -1422,6 +1535,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeTaskId,
       activeEndpoint,
       activeModel,
+      activeChatEligibility,
       activeProfile,
       effectiveTemperature,
       effectiveContextWindow,
@@ -1903,6 +2017,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     addProfile,
     deleteProfile,
     refreshEndpoints,
+    reloadProviderRuntimeState,
+    checkProviderConnectionStatus,
     refreshProviderModels,
     gates: effectiveGateState,
     toggleGate,
