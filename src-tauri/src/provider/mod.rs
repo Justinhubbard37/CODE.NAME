@@ -1,18 +1,28 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
+
+use crate::policy::{Gate, PolicyError};
+use crate::sidecar::GateState;
 
 const PROVIDER_SECRET_SERVICE: &str = "com.codename.harness.provider";
 const PROVIDER_STORE_VERSION: u32 = 1;
 const PROVIDER_STORE_FILE: &str = "provider-runtime.json";
+const GEMINI_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
+const CHECK_TIMEOUT_SECS: u64 = 10;
+const REFRESH_TIMEOUT_SECS: u64 = 20;
+const STREAM_TIMEOUT_SECS: u64 = 120;
+const MAX_JSON_BODY_BYTES: usize = 1024 * 1024;
+const MAX_ERROR_BODY_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ProviderId {
@@ -376,6 +386,8 @@ pub struct ProviderStreamChatRequest {
     pub messages: Vec<ProviderChatMessage>,
     pub tuning: ProviderTuningValues,
     pub operation_intent: String,
+    #[serde(default)]
+    pub operation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -474,7 +486,29 @@ impl ProviderRuntimeState {
 struct ProviderRuntime {
     records: BTreeMap<ConnectionId, ConnectionRecord>,
     session: BTreeMap<ConnectionId, SessionConnectionState>,
+    active_streams: BTreeMap<String, bool>,
     next_connection: u64,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedConnection {
+    record: ConnectionRecord,
+}
+
+impl ResolvedConnection {
+    fn endpoint(&self) -> Result<&EndpointOrigin, ProviderErrorDto> {
+        self.record.endpoint.as_ref().ok_or_else(|| {
+            ProviderErrorDto::new(
+                "configuration_disabled",
+                "Connection endpoint is unavailable.",
+                "Rust-owned connection record does not contain a usable endpoint.",
+            )
+        })
+    }
+
+    fn connection_id(&self) -> &ConnectionId {
+        &self.record.connection_id
+    }
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -602,6 +636,7 @@ impl ProviderRuntime {
         let mut runtime = Self {
             records: BTreeMap::new(),
             session: BTreeMap::new(),
+            active_streams: BTreeMap::new(),
             next_connection: 1,
         };
         runtime.insert_default_records();
@@ -750,6 +785,7 @@ impl ProviderRuntime {
         let mut next = ProviderRuntime {
             records: BTreeMap::new(),
             session: BTreeMap::new(),
+            active_streams: BTreeMap::new(),
             next_connection: store.next_connection.max(1),
         };
         for stored in store.connections {
@@ -1048,12 +1084,15 @@ impl ProviderRuntime {
         })
     }
 
-    fn check_connection(
+    fn begin_check_connection(
         &mut self,
         request: ProviderModelOperationRequest,
-    ) -> Result<ProviderOperationResult, ProviderErrorDto> {
+    ) -> Result<ResolvedConnection, ProviderErrorDto> {
         let connection_id = ConnectionId::new(request.connection_id);
         self.require_approved(request.provider_id, &connection_id)?;
+        let record = self
+            .connection_record(request.provider_id, &connection_id)?
+            .clone();
         let state = self.session.entry(connection_id).or_default();
         if state.check_in_progress {
             return Err(ProviderErrorDto::new(
@@ -1062,27 +1101,45 @@ impl ProviderRuntime {
                 "Duplicate connection checks are blocked.",
             ));
         }
-        state.readiness = ReadinessState::EndpointUnavailable;
+        state.check_in_progress = true;
+        state.readiness = ReadinessState::Checking;
         state.checked_this_session = false;
         state.last_explicit_check_at = Some(now_millis());
-        state.failure_category = Some("adapter_unavailable".to_string());
-        state.safe_detail =
-            Some("Provider adapter transport is not active in this foundation commit.".to_string());
-        Ok(ProviderOperationResult {
-            ok: false,
-            state: ReadinessState::EndpointUnavailable,
-            category: "adapter_unavailable".to_string(),
-            detail: "Provider adapter transport is not active in this foundation commit."
-                .to_string(),
-        })
+        state.failure_category = None;
+        state.safe_detail = None;
+        Ok(ResolvedConnection { record })
     }
 
-    fn refresh_models(
+    fn finish_check_connection(
+        &mut self,
+        connection_id: &ConnectionId,
+        result: &ProviderOperationResult,
+    ) {
+        let state = self.session.entry(connection_id.clone()).or_default();
+        state.check_in_progress = false;
+        state.last_explicit_check_at = Some(now_millis());
+        if result.ok {
+            state.readiness = ReadinessState::Ready;
+            state.checked_this_session = true;
+            state.failure_category = None;
+            state.safe_detail = Some(result.detail.clone());
+        } else {
+            state.readiness = result.state;
+            state.checked_this_session = false;
+            state.failure_category = Some(result.category.clone());
+            state.safe_detail = Some(result.detail.clone());
+        }
+    }
+
+    fn begin_refresh_models(
         &mut self,
         request: ProviderModelOperationRequest,
-    ) -> Result<ProviderOperationResult, ProviderErrorDto> {
+    ) -> Result<ResolvedConnection, ProviderErrorDto> {
         let connection_id = ConnectionId::new(request.connection_id);
         self.require_approved(request.provider_id, &connection_id)?;
+        let record = self
+            .connection_record(request.provider_id, &connection_id)?
+            .clone();
         let state = self.session.entry(connection_id).or_default();
         if state.refresh_in_progress {
             return Err(ProviderErrorDto::new(
@@ -1091,22 +1148,44 @@ impl ProviderRuntime {
                 "Duplicate model refresh operations are blocked.",
             ));
         }
+        state.refresh_in_progress = true;
         state.inventory = ModelInventoryState {
-            state: InventoryKind::Failed,
-            count: 0,
-            last_refresh_at: Some(now_millis()),
+            state: InventoryKind::Refreshing,
+            count: state.inventory.count,
+            last_refresh_at: state.inventory.last_refresh_at,
         };
-        state.readiness = ReadinessState::RefreshFailed;
-        state.failure_category = Some("adapter_unavailable".to_string());
-        state.safe_detail =
-            Some("Provider adapter transport is not active in this foundation commit.".to_string());
-        Ok(ProviderOperationResult {
-            ok: false,
-            state: ReadinessState::RefreshFailed,
-            category: "adapter_unavailable".to_string(),
-            detail: "Provider adapter transport is not active in this foundation commit."
-                .to_string(),
-        })
+        state.failure_category = None;
+        state.safe_detail = None;
+        Ok(ResolvedConnection { record })
+    }
+
+    fn finish_refresh_models(
+        &mut self,
+        connection_id: &ConnectionId,
+        result: &ProviderOperationResult,
+        models: Vec<String>,
+    ) {
+        let state = self.session.entry(connection_id.clone()).or_default();
+        state.refresh_in_progress = false;
+        if result.ok {
+            state.inventory = ModelInventoryState {
+                state: InventoryKind::CurrentSession,
+                count: models.len(),
+                last_refresh_at: Some(now_millis()),
+            };
+            state.current_session_models = models;
+            state.failure_category = None;
+            state.safe_detail = Some(result.detail.clone());
+        } else {
+            state.inventory = ModelInventoryState {
+                state: InventoryKind::Failed,
+                count: 0,
+                last_refresh_at: Some(now_millis()),
+            };
+            state.readiness = result.state;
+            state.failure_category = Some(result.category.clone());
+            state.safe_detail = Some(result.detail.clone());
+        }
     }
 
     fn chat_eligibility(
@@ -1179,6 +1258,48 @@ impl ProviderRuntime {
             category: "eligible".to_string(),
             detail: "Chat is eligible.".to_string(),
         })
+    }
+
+    fn resolve_for_chat(
+        &mut self,
+        request: &ProviderStreamChatRequest,
+    ) -> Result<(ResolvedConnection, ChatEligibility, String), ProviderErrorDto> {
+        let eligibility = self.chat_eligibility(request)?;
+        let operation_id = request
+            .operation_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .map(|id| safe_label(id, "provider-stream"))
+            .unwrap_or_else(|| format!("provider-stream-{}", now_millis()));
+        let connection_id = ConnectionId::new(request.connection_id.clone());
+        let record = self
+            .connection_record(request.provider_id, &connection_id)?
+            .clone();
+        if eligibility.eligible {
+            self.active_streams.insert(operation_id.clone(), true);
+        }
+        Ok((ResolvedConnection { record }, eligibility, operation_id))
+    }
+
+    fn stream_is_active(&self, operation_id: &str) -> bool {
+        self.active_streams
+            .get(operation_id)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    fn finish_stream(&mut self, operation_id: &str) {
+        self.active_streams.remove(operation_id);
+    }
+
+    fn cancel_stream(&mut self, operation_id: &str) -> bool {
+        match self.active_streams.get_mut(operation_id) {
+            Some(active) => {
+                *active = false;
+                true
+            }
+            None => false,
+        }
     }
 
     fn connection_record(
@@ -1301,39 +1422,65 @@ pub fn provider_approve_connection(
 }
 
 #[tauri::command]
-pub fn provider_check_connection(
+pub async fn provider_check_connection(
     state: State<'_, ProviderRuntimeState>,
+    gates: State<'_, GateState>,
     request: ProviderModelOperationRequest,
 ) -> Result<ProviderOperationResult, ProviderErrorDto> {
-    state.lock()?.check_connection(request)
+    let connection = state.lock()?.begin_check_connection(request)?;
+    let result = run_provider_check(&connection, &gates).await;
+    state
+        .lock()?
+        .finish_check_connection(connection.connection_id(), &result);
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn provider_refresh_models(
+pub async fn provider_refresh_models(
     state: State<'_, ProviderRuntimeState>,
+    gates: State<'_, GateState>,
     request: ProviderModelOperationRequest,
 ) -> Result<ProviderOperationResult, ProviderErrorDto> {
-    state.lock()?.refresh_models(request)
+    let connection = state.lock()?.begin_refresh_models(request)?;
+    let (result, models) = run_provider_refresh(&connection, &gates).await;
+    state
+        .lock()?
+        .finish_refresh_models(connection.connection_id(), &result, models);
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn provider_stream_chat(
+pub async fn provider_stream_chat(
     state: State<'_, ProviderRuntimeState>,
+    gates: State<'_, GateState>,
     request: ProviderStreamChatRequest,
+    on_event: Channel<String>,
 ) -> Result<ProviderOperationResult, ProviderErrorDto> {
-    let runtime = state.lock()?;
-    let eligibility = runtime.chat_eligibility(&request)?;
-    Ok(ProviderOperationResult {
-        ok: eligibility.eligible,
-        state: eligibility.state,
-        category: eligibility.category,
-        detail: eligibility.detail,
-    })
+    let (connection, eligibility, operation_id) = state.lock()?.resolve_for_chat(&request)?;
+    if !eligibility.eligible {
+        return Ok(ProviderOperationResult {
+            ok: false,
+            state: eligibility.state,
+            category: eligibility.category,
+            detail: eligibility.detail,
+        });
+    }
+    let result = run_provider_stream(
+        &state,
+        &connection,
+        &request,
+        &operation_id,
+        on_event,
+        &gates,
+    )
+    .await;
+    state.lock()?.finish_stream(&operation_id);
+    Ok(result)
 }
 
 #[tauri::command]
 pub fn provider_cancel_stream(
-    _state: State<'_, ProviderRuntimeState>,
+    state: State<'_, ProviderRuntimeState>,
     request: ProviderCancelStreamRequest,
 ) -> Result<ProviderOperationResult, ProviderErrorDto> {
     let operation_id = request.operation_id.trim();
@@ -1344,11 +1491,16 @@ pub fn provider_cancel_stream(
             "Operation ID is required for cancellation.",
         ));
     }
+    let cancelled = state.lock()?.cancel_stream(operation_id);
     Ok(ProviderOperationResult {
-        ok: true,
+        ok: cancelled,
         state: ReadinessState::Unknown,
         category: "cancelled".to_string(),
-        detail: "No active provider stream matched the cancellation request.".to_string(),
+        detail: if cancelled {
+            "Stream cancellation was requested.".to_string()
+        } else {
+            "No active provider stream matched the cancellation request.".to_string()
+        },
     })
 }
 
@@ -1676,6 +1828,967 @@ fn credential_is_present(binding: &CredentialBindingRef) -> bool {
     keyring::Entry::new(PROVIDER_SECRET_SERVICE, &account)
         .and_then(|entry| entry.get_password())
         .map(|secret| !secret.is_empty())
+        .unwrap_or(false)
+}
+
+fn enforce_provider_policy(
+    command: &str,
+    connection: &ResolvedConnection,
+    gates: &GateState,
+) -> Result<(), ProviderErrorDto> {
+    let endpoint = connection.endpoint()?;
+    if matches!(
+        endpoint.locality,
+        LocalityClassification::RemotePublic | LocalityClassification::FixedRemote
+    ) && !gates.network_open()
+    {
+        let detail = PolicyError::gate_closed(command, Gate::Network).to_string();
+        return Err(ProviderErrorDto::new(
+            "network_denied",
+            "Network access is disabled.",
+            &detail,
+        ));
+    }
+    Ok(())
+}
+
+fn read_bound_credential(
+    connection: &ResolvedConnection,
+) -> Result<Option<String>, ProviderOperationResult> {
+    let Some(binding) = connection.record.credential_binding.as_ref() else {
+        return Ok(None);
+    };
+    let account = binding.account_name();
+    let entry = keyring::Entry::new(PROVIDER_SECRET_SERVICE, &account).map_err(|_| {
+        operation_result(
+            false,
+            ReadinessState::RequiresApiKey,
+            "requires_api_key",
+            "Provider credential storage is unavailable.",
+        )
+    })?;
+    match entry.get_password() {
+        Ok(secret) if !secret.is_empty() => Ok(Some(secret)),
+        _ if connection.record.credential_requirement == CredentialRequirement::Required => {
+            Err(operation_result(
+                false,
+                ReadinessState::RequiresApiKey,
+                "requires_api_key",
+                "Provider credential is required before this operation.",
+            ))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn provider_client(timeout_secs: u64) -> Result<reqwest::Client, ProviderOperationResult> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(CHECK_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| {
+            operation_result(
+                false,
+                ReadinessState::ConnectionCheckFailed,
+                "connection_check_failed",
+                "Provider HTTP client could not be initialized.",
+            )
+        })
+}
+
+fn operation_result(
+    ok: bool,
+    state: ReadinessState,
+    category: &str,
+    detail: &str,
+) -> ProviderOperationResult {
+    ProviderOperationResult {
+        ok,
+        state,
+        category: category.to_string(),
+        detail: sanitize_detail(detail),
+    }
+}
+
+async fn provider_error_result(
+    state: ReadinessState,
+    category: &str,
+    response: reqwest::Response,
+) -> ProviderOperationResult {
+    let status = response.status();
+    let safe_state = match status.as_u16() {
+        401 => ReadinessState::AuthenticationFailed,
+        403 => ReadinessState::PermissionDenied,
+        429 => ReadinessState::QuotaExhausted,
+        404 => ReadinessState::EndpointUnavailable,
+        _ => state,
+    };
+    let safe_category = match status.as_u16() {
+        401 => "authentication_failed",
+        403 => "permission_denied",
+        429 => "quota_exhausted",
+        404 => "endpoint_unavailable",
+        _ => category,
+    };
+    let body = response
+        .bytes()
+        .await
+        .ok()
+        .map(|bytes| {
+            String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_ERROR_BODY_BYTES)]).to_string()
+        })
+        .unwrap_or_default();
+    let detail = if body.trim().is_empty() {
+        format!("Provider returned HTTP {}.", status.as_u16())
+    } else {
+        format!("Provider returned HTTP {}.", status.as_u16())
+    };
+    operation_result(false, safe_state, safe_category, &detail)
+}
+
+async fn limited_json(
+    response: reqwest::Response,
+) -> Result<serde_json::Value, ProviderOperationResult> {
+    let status = response.status();
+    if status.is_redirection() {
+        return Err(operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "redirect_rejected",
+            "Provider attempted to redirect the request.",
+        ));
+    }
+    if !status.is_success() {
+        return Err(provider_error_result(
+            ReadinessState::ConnectionCheckFailed,
+            "connection_check_failed",
+            response,
+        )
+        .await);
+    }
+    let bytes = response.bytes().await.map_err(|_| {
+        operation_result(
+            false,
+            ReadinessState::ConnectionCheckFailed,
+            "connection_check_failed",
+            "Provider response could not be read.",
+        )
+    })?;
+    if bytes.len() > MAX_JSON_BODY_BYTES {
+        return Err(operation_result(
+            false,
+            ReadinessState::ConnectionCheckFailed,
+            "response_too_large",
+            "Provider response exceeded the configured size limit.",
+        ));
+    }
+    serde_json::from_slice(&bytes).map_err(|_| {
+        operation_result(
+            false,
+            ReadinessState::ConnectionCheckFailed,
+            "provider_response_invalid",
+            "Provider response was not valid JSON.",
+        )
+    })
+}
+
+fn provider_route(
+    connection: &ResolvedConnection,
+    suffix: &str,
+) -> Result<String, ProviderErrorDto> {
+    let endpoint = connection.endpoint()?;
+    Ok(format!(
+        "{}{}",
+        endpoint.normalized_origin.trim_end_matches('/'),
+        suffix
+    ))
+}
+
+fn openai_route(connection: &ResolvedConnection, suffix: &str) -> Result<String, ProviderErrorDto> {
+    let endpoint = connection.endpoint()?;
+    let base = endpoint.normalized_origin.trim_end_matches('/');
+    if base.ends_with("/v1") {
+        Ok(format!("{base}{suffix}"))
+    } else {
+        Ok(format!("{base}/v1{suffix}"))
+    }
+}
+
+fn enforce_remote_resolution(
+    connection: &ResolvedConnection,
+) -> Result<(), ProviderOperationResult> {
+    let endpoint = connection.endpoint().map_err(|err| {
+        operation_result(
+            false,
+            ReadinessState::ConfigurationDisabled,
+            &err.code,
+            &err.detail,
+        )
+    })?;
+    if endpoint.locality == LocalityClassification::LocalLoopback {
+        return Ok(());
+    }
+    let url = reqwest::Url::parse(&endpoint.normalized_origin).map_err(|_| {
+        operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "endpoint_unavailable",
+            "Provider endpoint could not be parsed.",
+        )
+    })?;
+    let host = url.host_str().ok_or_else(|| {
+        operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "endpoint_unavailable",
+            "Provider endpoint host is missing.",
+        )
+    })?;
+    if host.parse::<IpAddr>().is_ok() {
+        return Err(operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "remote_ip_literal_rejected",
+            "Remote provider endpoint host must be a DNS hostname.",
+        ));
+    }
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addrs = (host, port).to_socket_addrs().map_err(|_| {
+        operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "endpoint_unavailable",
+            "Provider endpoint hostname could not be resolved.",
+        )
+    })?;
+    for addr in addrs {
+        if !is_public_resolved_ip(addr.ip()) {
+            return Err(operation_result(
+                false,
+                ReadinessState::EndpointUnavailable,
+                "endpoint_unavailable",
+                "Provider endpoint resolved to a non-public address.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn is_public_resolved_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => {
+            !(ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_multicast()
+                || ip.is_broadcast()
+                || ip.is_unspecified()
+                || ip.octets()[0] == 0
+                || ip.octets()[0] == 10
+                || ip.octets()[0] == 127
+                || (ip.octets()[0] == 100 && (64..=127).contains(&ip.octets()[1]))
+                || (ip.octets()[0] == 169 && ip.octets()[1] == 254)
+                || (ip.octets()[0] == 172 && (16..=31).contains(&ip.octets()[1]))
+                || (ip.octets()[0] == 192 && ip.octets()[1] == 168)
+                || (ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 0)
+                || (ip.octets()[0] == 192 && ip.octets()[1] == 0 && ip.octets()[2] == 2)
+                || (ip.octets()[0] == 198 && (18..=19).contains(&ip.octets()[1]))
+                || (ip.octets()[0] == 198 && ip.octets()[1] == 51 && ip.octets()[2] == 100)
+                || (ip.octets()[0] == 203 && ip.octets()[1] == 0 && ip.octets()[2] == 113)
+                || ip.octets()[0] >= 224)
+        }
+        IpAddr::V6(ip) => {
+            !(ip.is_loopback()
+                || ip.is_unspecified()
+                || ip.is_multicast()
+                || ip.is_unique_local()
+                || ip.is_unicast_link_local())
+        }
+    }
+}
+
+fn parse_ollama_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("models")
+        .and_then(|models| models.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| model.get("name").and_then(|name| name.as_str()))
+                .filter(|name| !name.trim().is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_openai_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("data")
+        .and_then(|models| models.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| model.get("id").and_then(|name| name.as_str()))
+                .filter(|name| !name.trim().is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_gemini_models(value: &serde_json::Value) -> Vec<String> {
+    value
+        .get("models")
+        .and_then(|models| models.as_array())
+        .map(|models| {
+            models
+                .iter()
+                .filter_map(|model| model.get("name").and_then(|name| name.as_str()))
+                .filter(|name| !name.trim().is_empty())
+                .map(|name| name.trim_start_matches("models/").to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn run_provider_check(
+    connection: &ResolvedConnection,
+    gates: &GateState,
+) -> ProviderOperationResult {
+    if let Err(err) = enforce_provider_policy("provider_check_connection", connection, gates) {
+        return operation_result(false, ReadinessState::NetworkDenied, &err.code, &err.detail);
+    }
+    if let Err(result) = enforce_remote_resolution(connection) {
+        return result;
+    }
+    let credential = match read_bound_credential(connection) {
+        Ok(credential) => credential,
+        Err(result) => return result,
+    };
+    match connection.record.provider_id {
+        ProviderId::Ollama => {
+            adapter_get_json(connection, "/api/version", credential, CHECK_TIMEOUT_SECS)
+                .await
+                .map(|_| {
+                    operation_result(
+                        true,
+                        ReadinessState::Ready,
+                        "ready",
+                        "Connection check succeeded.",
+                    )
+                })
+                .unwrap_or_else(|result| result)
+        }
+        ProviderId::LmStudio | ProviderId::CustomOpenAi => {
+            adapter_get_json(connection, "/models", credential, CHECK_TIMEOUT_SECS)
+                .await
+                .map(|_| {
+                    operation_result(
+                        true,
+                        ReadinessState::Ready,
+                        "ready",
+                        "Connection check succeeded.",
+                    )
+                })
+                .unwrap_or_else(|result| result)
+        }
+        ProviderId::Gemini => {
+            let Some(key) = credential else {
+                return operation_result(
+                    false,
+                    ReadinessState::RequiresApiKey,
+                    "requires_api_key",
+                    "Gemini credential is required.",
+                );
+            };
+            let client = match provider_client(CHECK_TIMEOUT_SECS) {
+                Ok(client) => client,
+                Err(result) => return result,
+            };
+            let response = client
+                .get(format!("{GEMINI_BASE}/models?pageSize=1"))
+                .header("x-goog-api-key", key)
+                .send()
+                .await;
+            match response {
+                Ok(response) => limited_json(response)
+                    .await
+                    .map(|_| {
+                        operation_result(
+                            true,
+                            ReadinessState::Ready,
+                            "ready",
+                            "Connection check succeeded.",
+                        )
+                    })
+                    .unwrap_or_else(|result| result),
+                Err(_) => operation_result(
+                    false,
+                    ReadinessState::EndpointUnavailable,
+                    "endpoint_unavailable",
+                    "Provider endpoint was unavailable.",
+                ),
+            }
+        }
+    }
+}
+
+async fn run_provider_refresh(
+    connection: &ResolvedConnection,
+    gates: &GateState,
+) -> (ProviderOperationResult, Vec<String>) {
+    if let Err(err) = enforce_provider_policy("provider_refresh_models", connection, gates) {
+        return (
+            operation_result(false, ReadinessState::NetworkDenied, &err.code, &err.detail),
+            Vec::new(),
+        );
+    }
+    if let Err(result) = enforce_remote_resolution(connection) {
+        return (result, Vec::new());
+    }
+    let credential = match read_bound_credential(connection) {
+        Ok(credential) => credential,
+        Err(result) => return (result, Vec::new()),
+    };
+    let response = match connection.record.provider_id {
+        ProviderId::Ollama => {
+            adapter_get_json(connection, "/api/tags", credential, REFRESH_TIMEOUT_SECS)
+                .await
+                .map(|json| parse_ollama_models(&json))
+        }
+        ProviderId::LmStudio | ProviderId::CustomOpenAi => {
+            adapter_get_json(connection, "/models", credential, REFRESH_TIMEOUT_SECS)
+                .await
+                .map(|json| parse_openai_models(&json))
+        }
+        ProviderId::Gemini => {
+            let Some(key) = credential else {
+                return (
+                    operation_result(
+                        false,
+                        ReadinessState::RequiresApiKey,
+                        "requires_api_key",
+                        "Gemini credential is required.",
+                    ),
+                    Vec::new(),
+                );
+            };
+            let client = match provider_client(REFRESH_TIMEOUT_SECS) {
+                Ok(client) => client,
+                Err(result) => return (result, Vec::new()),
+            };
+            match client
+                .get(format!("{GEMINI_BASE}/models"))
+                .header("x-goog-api-key", key)
+                .send()
+                .await
+            {
+                Ok(response) => limited_json(response)
+                    .await
+                    .map(|json| parse_gemini_models(&json)),
+                Err(_) => Err(operation_result(
+                    false,
+                    ReadinessState::RefreshFailed,
+                    "refresh_failed",
+                    "Provider model refresh failed.",
+                )),
+            }
+        }
+    };
+    match response {
+        Ok(models) if !models.is_empty() => (
+            operation_result(
+                true,
+                ReadinessState::Ready,
+                "ready",
+                "Model refresh succeeded.",
+            ),
+            models,
+        ),
+        Ok(_) => (
+            operation_result(
+                false,
+                ReadinessState::ModelUnavailable,
+                "model_unavailable",
+                "Provider returned no models.",
+            ),
+            Vec::new(),
+        ),
+        Err(result) => (result, Vec::new()),
+    }
+}
+
+async fn adapter_get_json(
+    connection: &ResolvedConnection,
+    suffix: &str,
+    credential: Option<String>,
+    timeout_secs: u64,
+) -> Result<serde_json::Value, ProviderOperationResult> {
+    let client = provider_client(timeout_secs)?;
+    let url = match connection.record.provider_id {
+        ProviderId::Ollama => provider_route(connection, suffix),
+        ProviderId::LmStudio | ProviderId::CustomOpenAi => openai_route(connection, suffix),
+        ProviderId::Gemini => unreachable!("Gemini uses fixed routes"),
+    }
+    .map_err(|err| {
+        operation_result(
+            false,
+            ReadinessState::ConfigurationDisabled,
+            &err.code,
+            &err.detail,
+        )
+    })?;
+    let mut request = client.get(url);
+    if let Some(secret) = credential {
+        request = request.bearer_auth(secret);
+    }
+    match request.send().await {
+        Ok(response) => limited_json(response).await,
+        Err(_) => Err(operation_result(
+            false,
+            ReadinessState::EndpointUnavailable,
+            "endpoint_unavailable",
+            "Provider endpoint was unavailable.",
+        )),
+    }
+}
+
+async fn run_provider_stream(
+    state: &ProviderRuntimeState,
+    connection: &ResolvedConnection,
+    request: &ProviderStreamChatRequest,
+    operation_id: &str,
+    on_event: Channel<String>,
+    gates: &GateState,
+) -> ProviderOperationResult {
+    if let Err(err) = enforce_provider_policy("provider_stream_chat", connection, gates) {
+        return operation_result(false, ReadinessState::NetworkDenied, &err.code, &err.detail);
+    }
+    if let Err(result) = enforce_remote_resolution(connection) {
+        return result;
+    }
+    let credential = match read_bound_credential(connection) {
+        Ok(credential) => credential,
+        Err(result) => return result,
+    };
+    match connection.record.provider_id {
+        ProviderId::Ollama => {
+            stream_ollama(
+                state,
+                connection,
+                request,
+                operation_id,
+                on_event,
+                credential,
+            )
+            .await
+        }
+        ProviderId::LmStudio | ProviderId::CustomOpenAi => {
+            stream_openai_compatible(
+                state,
+                connection,
+                request,
+                operation_id,
+                on_event,
+                credential,
+            )
+            .await
+        }
+        ProviderId::Gemini => {
+            let Some(key) = credential else {
+                return operation_result(
+                    false,
+                    ReadinessState::RequiresApiKey,
+                    "requires_api_key",
+                    "Gemini credential is required.",
+                );
+            };
+            stream_gemini(state, request, operation_id, on_event, key).await
+        }
+    }
+}
+
+async fn stream_ollama(
+    state: &ProviderRuntimeState,
+    connection: &ResolvedConnection,
+    request: &ProviderStreamChatRequest,
+    operation_id: &str,
+    on_event: Channel<String>,
+    credential: Option<String>,
+) -> ProviderOperationResult {
+    let client = match provider_client(STREAM_TIMEOUT_SECS) {
+        Ok(client) => client,
+        Err(result) => return result,
+    };
+    let url = match provider_route(connection, "/api/chat") {
+        Ok(url) => url,
+        Err(err) => {
+            return operation_result(
+                false,
+                ReadinessState::ConfigurationDisabled,
+                &err.code,
+                &err.detail,
+            )
+        }
+    };
+    let body = serde_json::json!({
+        "model": request.model_id,
+        "messages": request.messages,
+        "stream": true,
+        "options": {
+            "temperature": request.tuning.temperature,
+            "num_ctx": request.tuning.num_ctx
+        }
+    });
+    let mut http_request = client.post(url).json(&body);
+    if let Some(secret) = credential {
+        http_request = http_request.bearer_auth(secret);
+    }
+    let response = http_request.send().await;
+    let mut response = match response {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            return provider_error_result(
+                ReadinessState::ConnectionCheckFailed,
+                "provider_error",
+                response,
+            )
+            .await
+        }
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::EndpointUnavailable,
+                "endpoint_unavailable",
+                "Provider endpoint was unavailable.",
+            )
+        }
+    };
+    let mut served = String::new();
+    let mut buf = String::new();
+    while let Some(chunk) = match response.chunk().await {
+        Ok(chunk) => chunk,
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::ConnectionCheckFailed,
+                "stream_failed",
+                "Provider stream failed.",
+            )
+        }
+    } {
+        if !stream_active(state, operation_id) {
+            return operation_result(
+                false,
+                ReadinessState::Unknown,
+                "cancelled",
+                "Stream cancelled.",
+            );
+        }
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(idx) = buf.find('\n') {
+            let line = buf[..idx].trim().to_string();
+            buf = buf[idx + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                if served.is_empty() {
+                    if let Some(model) = json.get("model").and_then(|model| model.as_str()) {
+                        served = model.to_string();
+                        if served != request.model_id {
+                            return operation_result(
+                                false,
+                                ReadinessState::ModelUnavailable,
+                                "model_unavailable",
+                                "Provider reported a different model than requested.",
+                            );
+                        }
+                    }
+                }
+                if let Some(token) = json
+                    .get("message")
+                    .and_then(|message| message.get("content"))
+                    .and_then(|content| content.as_str())
+                {
+                    if !token.is_empty() && on_event.send(token.to_string()).is_err() {
+                        return operation_result(
+                            false,
+                            ReadinessState::ConnectionCheckFailed,
+                            "stream_failed",
+                            "Unable to deliver provider stream token.",
+                        );
+                    }
+                }
+            }
+        }
+    }
+    operation_result(
+        true,
+        ReadinessState::Ready,
+        "ready",
+        "Chat stream completed.",
+    )
+}
+
+async fn stream_openai_compatible(
+    state: &ProviderRuntimeState,
+    connection: &ResolvedConnection,
+    request: &ProviderStreamChatRequest,
+    operation_id: &str,
+    on_event: Channel<String>,
+    credential: Option<String>,
+) -> ProviderOperationResult {
+    let client = match provider_client(STREAM_TIMEOUT_SECS) {
+        Ok(client) => client,
+        Err(result) => return result,
+    };
+    let url = match openai_route(connection, "/chat/completions") {
+        Ok(url) => url,
+        Err(err) => {
+            return operation_result(
+                false,
+                ReadinessState::ConfigurationDisabled,
+                &err.code,
+                &err.detail,
+            )
+        }
+    };
+    let body = serde_json::json!({
+        "model": request.model_id,
+        "messages": request.messages,
+        "stream": true,
+        "temperature": request.tuning.temperature
+    });
+    let mut http_request = client.post(url).json(&body);
+    if let Some(secret) = credential {
+        http_request = http_request.bearer_auth(secret);
+    }
+    let response = http_request.send().await;
+    let mut response = match response {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            return provider_error_result(
+                ReadinessState::ConnectionCheckFailed,
+                "provider_error",
+                response,
+            )
+            .await
+        }
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::EndpointUnavailable,
+                "endpoint_unavailable",
+                "Provider endpoint was unavailable.",
+            )
+        }
+    };
+    let mut served = String::new();
+    let mut buf = String::new();
+    while let Some(chunk) = match response.chunk().await {
+        Ok(chunk) => chunk,
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::ConnectionCheckFailed,
+                "stream_failed",
+                "Provider stream failed.",
+            )
+        }
+    } {
+        if !stream_active(state, operation_id) {
+            return operation_result(
+                false,
+                ReadinessState::Unknown,
+                "cancelled",
+                "Stream cancelled.",
+            );
+        }
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(idx) = buf.find('\n') {
+            let line = buf[..idx].trim().to_string();
+            buf = buf[idx + 1..].to_string();
+            if !line.starts_with("data:") {
+                continue;
+            }
+            let payload = line[5..].trim();
+            if payload == "[DONE]" || payload.is_empty() {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) {
+                if served.is_empty() {
+                    if let Some(model) = json.get("model").and_then(|model| model.as_str()) {
+                        served = model.to_string();
+                        if served != request.model_id {
+                            return operation_result(
+                                false,
+                                ReadinessState::ModelUnavailable,
+                                "model_unavailable",
+                                "Provider reported a different model than requested.",
+                            );
+                        }
+                    }
+                }
+                if let Some(token) = json
+                    .get("choices")
+                    .and_then(|choices| choices.get(0))
+                    .and_then(|choice| choice.get("delta"))
+                    .and_then(|delta| delta.get("content"))
+                    .and_then(|content| content.as_str())
+                {
+                    if !token.is_empty() && on_event.send(token.to_string()).is_err() {
+                        return operation_result(
+                            false,
+                            ReadinessState::ConnectionCheckFailed,
+                            "stream_failed",
+                            "Unable to deliver provider stream token.",
+                        );
+                    }
+                }
+            }
+        }
+    }
+    operation_result(
+        true,
+        ReadinessState::Ready,
+        "ready",
+        "Chat stream completed.",
+    )
+}
+
+async fn stream_gemini(
+    state: &ProviderRuntimeState,
+    request: &ProviderStreamChatRequest,
+    operation_id: &str,
+    on_event: Channel<String>,
+    credential: String,
+) -> ProviderOperationResult {
+    let client = match provider_client(STREAM_TIMEOUT_SECS) {
+        Ok(client) => client,
+        Err(result) => return result,
+    };
+    let contents: Vec<serde_json::Value> = request
+        .messages
+        .iter()
+        .filter(|message| message.role != "system")
+        .map(|message| {
+            serde_json::json!({
+                "role": if message.role == "assistant" { "model" } else { "user" },
+                "parts": [{ "text": message.content }]
+            })
+        })
+        .collect();
+    if contents.is_empty() {
+        return operation_result(
+            false,
+            ReadinessState::ConnectionCheckFailed,
+            "request_invalid",
+            "Chat request did not include user-visible content.",
+        );
+    }
+    let model_path = if request.model_id.starts_with("models/") {
+        request.model_id.clone()
+    } else {
+        format!("models/{}", request.model_id)
+    };
+    let body = serde_json::json!({
+        "contents": contents,
+        "generationConfig": { "temperature": request.tuning.temperature }
+    });
+    let response = client
+        .post(format!(
+            "{GEMINI_BASE}/{model_path}:streamGenerateContent?alt=sse"
+        ))
+        .header("x-goog-api-key", credential)
+        .json(&body)
+        .send()
+        .await;
+    let mut response = match response {
+        Ok(response) if response.status().is_success() => response,
+        Ok(response) => {
+            return provider_error_result(
+                ReadinessState::ConnectionCheckFailed,
+                "provider_error",
+                response,
+            )
+            .await
+        }
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::EndpointUnavailable,
+                "endpoint_unavailable",
+                "Provider endpoint was unavailable.",
+            )
+        }
+    };
+    let mut buf = String::new();
+    while let Some(chunk) = match response.chunk().await {
+        Ok(chunk) => chunk,
+        Err(_) => {
+            return operation_result(
+                false,
+                ReadinessState::ConnectionCheckFailed,
+                "stream_failed",
+                "Provider stream failed.",
+            )
+        }
+    } {
+        if !stream_active(state, operation_id) {
+            return operation_result(
+                false,
+                ReadinessState::Unknown,
+                "cancelled",
+                "Stream cancelled.",
+            );
+        }
+        buf.push_str(&String::from_utf8_lossy(&chunk));
+        while let Some(idx) = buf.find('\n') {
+            let line = buf[..idx].trim().to_string();
+            buf = buf[idx + 1..].to_string();
+            let payload = line.strip_prefix("data:").unwrap_or(&line).trim();
+            if payload.is_empty() || payload == "[DONE]" {
+                continue;
+            }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) {
+                if let Some(parts) = json
+                    .get("candidates")
+                    .and_then(|candidates| candidates.get(0))
+                    .and_then(|candidate| candidate.get("content"))
+                    .and_then(|content| content.get("parts"))
+                    .and_then(|parts| parts.as_array())
+                {
+                    for part in parts {
+                        if let Some(token) = part.get("text").and_then(|text| text.as_str()) {
+                            if !token.is_empty() && on_event.send(token.to_string()).is_err() {
+                                return operation_result(
+                                    false,
+                                    ReadinessState::ConnectionCheckFailed,
+                                    "stream_failed",
+                                    "Unable to deliver provider stream token.",
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    operation_result(
+        true,
+        ReadinessState::Ready,
+        "ready",
+        "Chat stream completed.",
+    )
+}
+
+fn stream_active(state: &ProviderRuntimeState, operation_id: &str) -> bool {
+    state
+        .lock()
+        .map(|runtime| runtime.stream_is_active(operation_id))
         .unwrap_or(false)
 }
 
@@ -2124,6 +3237,7 @@ mod tests {
                 num_ctx: 8192,
             },
             operation_intent: "chat".to_string(),
+            operation_id: None,
         };
         let eligibility = runtime
             .chat_eligibility(&request)
@@ -2256,6 +3370,7 @@ mod tests {
                 num_ctx: 8192,
             },
             operation_intent: "chat".to_string(),
+            operation_id: None,
         };
         let eligibility = runtime.chat_eligibility(&request).expect("eligibility");
         assert!(!eligibility.eligible);
@@ -2304,6 +3419,7 @@ mod tests {
                 num_ctx: 8192,
             },
             operation_intent: "chat".to_string(),
+            operation_id: None,
         };
         let eligibility = runtime.chat_eligibility(&request).expect("eligibility");
         assert!(!eligibility.eligible);
@@ -2448,6 +3564,95 @@ mod tests {
             .iter()
             .any(|connection| connection.connection_id == "ollama:local-default"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn adapter_model_parsers_do_not_generate_text() {
+        let ollama = serde_json::json!({
+            "models": [{ "name": "llama3.1" }, { "name": "nomic" }]
+        });
+        assert_eq!(parse_ollama_models(&ollama), vec!["llama3.1", "nomic"]);
+
+        let openai = serde_json::json!({
+            "data": [{ "id": "local-model" }, { "id": "remote-model" }]
+        });
+        assert_eq!(
+            parse_openai_models(&openai),
+            vec!["local-model", "remote-model"]
+        );
+
+        let gemini = serde_json::json!({
+            "models": [{ "name": "models/gemini-2.5" }]
+        });
+        assert_eq!(parse_gemini_models(&gemini), vec!["gemini-2.5"]);
+    }
+
+    #[test]
+    fn adapter_routes_are_derived_from_rust_records_only() {
+        let mut runtime = ProviderRuntime::new();
+        let custom = runtime
+            .create_connection(ProviderCreateConnectionRequest {
+                provider_id: ProviderId::CustomOpenAi,
+                label: "Local".to_string(),
+                endpoint: "http://127.0.0.1:8000".to_string(),
+            })
+            .expect("custom connection");
+        let record = runtime
+            .connection_record(
+                ProviderId::CustomOpenAi,
+                &ConnectionId::new(custom.connection_id),
+            )
+            .expect("custom record")
+            .clone();
+        let resolved = ResolvedConnection { record };
+        assert_eq!(
+            openai_route(&resolved, "/models").expect("route"),
+            "http://127.0.0.1:8000/v1/models"
+        );
+    }
+
+    #[test]
+    fn remote_resolution_rejects_non_public_addresses() {
+        assert!(!is_public_resolved_ip(
+            "127.0.0.1".parse().expect("loopback")
+        ));
+        assert!(!is_public_resolved_ip("10.1.2.3".parse().expect("private")));
+        assert!(!is_public_resolved_ip("100.64.1.1".parse().expect("cgnat")));
+        assert!(!is_public_resolved_ip("203.0.113.10".parse().expect("doc")));
+        assert!(is_public_resolved_ip("8.8.8.8".parse().expect("public")));
+    }
+
+    #[test]
+    fn policy_denial_happens_before_credential_requirement() {
+        let mut runtime = ProviderRuntime::new();
+        let custom = runtime
+            .create_connection(ProviderCreateConnectionRequest {
+                provider_id: ProviderId::CustomOpenAi,
+                label: "Remote".to_string(),
+                endpoint: "https://api.example.com/v1".to_string(),
+            })
+            .expect("custom connection");
+        runtime
+            .approve_connection(ProviderConnectionSelector {
+                provider_id: ProviderId::CustomOpenAi,
+                connection_id: custom.connection_id.clone(),
+            })
+            .expect("approve");
+        let connection = ResolvedConnection {
+            record: runtime
+                .connection_record(
+                    ProviderId::CustomOpenAi,
+                    &ConnectionId::new(custom.connection_id),
+                )
+                .expect("record")
+                .clone(),
+        };
+        let gates = GateState::with_policy_ceiling(crate::policy::GatePolicyCeiling::new(
+            true, false, true,
+        ));
+        let err = enforce_provider_policy("provider_refresh_models", &connection, &gates)
+            .expect_err("network gate should deny before credential reads");
+        assert_eq!(err.code, "network_denied");
     }
 
     fn temp_provider_dir(label: &str) -> PathBuf {
