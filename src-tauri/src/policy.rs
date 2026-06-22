@@ -316,10 +316,6 @@ const SIDECAR_POOL_CREATE: &[GateRequirement] = &[
     GateRequirement::Always(Gate::Tools),
     GateRequirement::Always(Gate::Network),
 ];
-const MODEL_NETWORK_CONDITIONAL: &[GateRequirement] = &[GateRequirement::Conditional {
-    gate: Gate::Network,
-    reason: "provider endpoint may be cloud, internet, or a localhost proxy to cloud",
-}];
 const PROVIDER_NETWORK_CONDITIONAL: &[GateRequirement] = &[GateRequirement::Conditional {
     gate: Gate::Network,
     reason: "Rust-owned provider record may resolve to an approved remote endpoint",
@@ -445,30 +441,6 @@ pub const COMMAND_POLICIES: &[CommandPolicy] = &[
         risk: risk(RiskLevel::None, RiskLevel::Low, RiskLevel::None, RiskLevel::Low),
         rationale: "Status probe against loopback sidecar health endpoint.",
         priority: PolicyPriority::Normal,
-        replacement: None,
-    },
-    CommandPolicy {
-        command: "model_list",
-        required_gates: MODEL_NETWORK_CONDITIONAL,
-        risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),
-        rationale: "Lists provider models and may use secrets against cloud or cloud-proxy endpoints.",
-        priority: PolicyPriority::Critical,
-        replacement: None,
-    },
-    CommandPolicy {
-        command: "gemini_model_list",
-        required_gates: MODEL_NETWORK_CONDITIONAL,
-        risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),
-        rationale: "Lists Gemini models through Rust/Tauri using keychain-only API key access.",
-        priority: PolicyPriority::Critical,
-        replacement: None,
-    },
-    CommandPolicy {
-        command: "model_stream",
-        required_gates: MODEL_NETWORK_CONDITIONAL,
-        risk: risk(RiskLevel::High, RiskLevel::High, RiskLevel::None, RiskLevel::None),
-        rationale: "Streams chat through provider endpoint and may use secrets against cloud or cloud-proxy endpoints.",
-        priority: PolicyPriority::Critical,
         replacement: None,
     },
     CommandPolicy {
@@ -1056,7 +1028,7 @@ mod tests {
 
     #[test]
     fn conditional_network_requirement_is_represented() {
-        let requirements = required_gates_for("model_stream").expect("model_stream gates");
+        let requirements = required_gates_for("provider_stream_chat").expect("provider_stream_chat gates");
         assert!(requirements.iter().any(|req| matches!(
             req,
             GateRequirement::Conditional {
@@ -1064,6 +1036,38 @@ mod tests {
                 ..
             }
         )));
+    }
+
+    #[test]
+    fn legacy_model_commands_are_unregistered_and_unpoliced() {
+        let registered = registered_tauri_commands_from_lib_rs();
+        for command in ["model_list", "gemini_model_list", "model_stream"] {
+            assert!(
+                !registered.contains(&command.to_string()),
+                "legacy command {command} must not be registered in lib.rs"
+            );
+            assert!(
+                policy_for_command(command).is_none(),
+                "legacy command {command} must not have a policy entry"
+            );
+        }
+        for command in [
+            "provider_check_connection",
+            "provider_refresh_models",
+            "provider_stream_chat",
+            "provider_store_credential",
+            "provider_clear_credential",
+            "provider_credential_status",
+        ] {
+            assert!(
+                registered.contains(&command.to_string()),
+                "provider command {command} must remain registered in lib.rs"
+            );
+            assert!(
+                policy_for_command(command).is_some(),
+                "provider command {command} must retain a policy entry"
+            );
+        }
     }
 
     #[test]

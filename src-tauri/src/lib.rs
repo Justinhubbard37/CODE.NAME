@@ -1,7 +1,6 @@
 mod crash;
 mod kb;
 mod logging;
-mod model;
 mod policy;
 mod provider;
 mod secrets;
@@ -48,9 +47,6 @@ pub fn run() {
             provider::provider_clear_credential,
             provider::provider_credential_status,
             provider::provider_migrate_legacy_config,
-            model::gemini_model_list,
-            model::model_list,
-            model::model_stream,
             kb::kb_init,
             kb::kb_stats,
             kb::kb_ingest_text,
